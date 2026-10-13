@@ -5,8 +5,22 @@ queue and follow up on it, search past agent sessions, and route LLM requests
 through an OpenAI-compatible gateway — one Go binary, built for AI agents to
 call.
 
-> **Status:** pre-release. Nothing is usable yet; the foundation is being laid
-> issue by issue.
+> **Status:** pre-release. `aits shell submit` works with Claude Code; the
+> other command groups are planned.
+
+## Install
+
+    go install github.com/agent-in-the-shell/aits/cmd/aits@latest
+
+## Usage
+
+    aits shell submit --agent claude --cwd ~/src/proj --json "Summarize what this repo does"
+
+prints
+
+    {"status":"ok","agent":"claude","session_id":"…","answer":"…","exit_code":0,"duration_ms":12345}
+
+The full reference is [docs/cli.md](docs/cli.md).
 
 ## Planned command groups
 

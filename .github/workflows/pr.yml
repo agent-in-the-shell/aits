@@ -19,3 +19,34 @@ jobs:
           # Passed through env, never interpolated into the script (P8/P9: untrusted input).
           PR_BODY: ${{ github.event.pull_request.body }}
         run: .github/scripts/check-pr-links-issue.sh
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Read-only HOME (P12)
+        run: |
+          ro="$RUNNER_TEMP/read-only-home"
+          mkdir -p "$ro" && chmod 0555 "$ro"
+          {
+            echo "GOCACHE=$RUNNER_TEMP/gocache"
+            echo "GOMODCACHE=$RUNNER_TEMP/gomodcache"
+            echo "GOPATH=$RUNNER_TEMP/gopath"
+            echo "HOME=$ro"
+          } >> "$GITHUB_ENV"
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
