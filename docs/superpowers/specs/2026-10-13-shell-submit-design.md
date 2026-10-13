@@ -1,6 +1,6 @@
 # `aits shell submit` — Design
 
-- Status: draft, awaiting review
+- Status: approved
 - Issue: #2
 - Principles: P3, P4, P5, P6, P8, P9, P10, P12, P13 (see `docs/principles.md`)
 
@@ -54,6 +54,11 @@ All input is validated before anything is started; any failure exits 2 with
   any command do the same.
 - Flags may appear before, between or after positional arguments. `--`
   ends flag parsing; everything after it is positional.
+- Command names come first. Before the command path reaches a leaf, only the
+  global flags `--json` and `--help` are accepted (`aits --json shell submit …`
+  works, `aits shell --agent claude submit …` is `unknown_flag`): the leaf's
+  flags are unknown until the leaf is, so a flag value could otherwise be
+  mistaken for a command name.
 - `-x`/`--x` both accepted, `--name=value` and `--name value` both accepted
   (the standard library's behaviour), boolean flags take no value.
 - Unknown command, unknown flag, missing flag value: exit 2. Nothing is
@@ -90,8 +95,8 @@ event is discarded after parsing. A line that is not JSON is
 `bad_agent_output`. A line above the limit is `output_too_large`, and the
 group is terminated as for a timeout.
 
-**Reading stderr.** Kept in a ring buffer of the last 64 KiB. Only the last
-4 KiB is reported, and only for `agent_failed`, as `stderr_tail`. aits writes
+**Reading stderr.** Only the last 4 KiB is kept, and it is reported only for
+`agent_failed`, as `stderr_tail`. aits writes
 no logs.
 
 ## 6. Outcome
