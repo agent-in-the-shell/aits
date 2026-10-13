@@ -183,7 +183,9 @@ description contains `Closes #`. "No copied code" and "no private details" are
 fake `claude` and `codex` executables, fake upstream HTTP servers. Every test
 uses a temporary `AITS_HOME` and `HOME`, no external network and no accounts.
 Tests against real vendors are opt-in behind a build tag and are not part of
-default CI. Internal logic and edge-case tables may still use unit tests.
+default CI; they use the real `HOME`, where vendor credentials live, and keep
+`AITS_HOME` temporary. Internal logic and edge-case tables may still use unit
+tests.
 
 **Prevents.** Tests that pass only on a developer's machine; tests that read or
 damage the user's real agent state.

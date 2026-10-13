@@ -26,12 +26,17 @@ behaviour the earlier implementation had, say so and why.
 
 ## Tests
 
-There is no code yet. From the first feature onward:
+Run `go test ./...`. CI runs it on Linux and macOS with `HOME` read-only, plus
+`gofmt -l .` and `go vet ./...`.
 
 - Functional tests build `aits` and run the binary against fake vendors, with
   a temporary `AITS_HOME` and `HOME` and no network or accounts (P12).
 - Tests against real vendors are opt-in behind a build tag and are not run in
   default CI.
+- The CLI reference is generated from help: after changing a command, run
+  `go test ./cmd/aits -run TestCLIDocs -update` (P13).
+- `go test -tags live ./cmd/aits -run TestLive` runs one real Claude Code call
+  with your own login.
 
 The pull-request check script has its own test:
 
