@@ -2,32 +2,140 @@ package shell
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 )
 
 // stderrTailSize is how much of the agent's stderr is kept for agent_failed.
 const stderrTailSize = 4 << 10
 
-// run starts the agent and waits for it to exit.
+const (
+	// killGrace is the time between SIGTERM and SIGKILL to the group (P10).
+	killGrace = 5 * time.Second
+	// drainGrace is how long reads wait for the pipes to close after SIGKILL.
+	drainGrace = time.Second
+)
+
+var errTimedOut = errors.New("agent timed out")
+
+// run starts the agent in its own process group and supervises it until it
+// has exited and its output pipes are closed.
 func run(ctx context.Context, ag agent, path string, req Request) (observation, error) {
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return observation{}, err
+	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		outR.Close()
+		outW.Close()
+		return observation{}, err
+	}
+	defer outR.Close()
+	defer errR.Close()
 	cmd := exec.Command(path, ag.args...)
 	cmd.Dir = req.Dir
 	cmd.Env = ag.environ(req.Environ, req.Pass)
 	cmd.Stdin = strings.NewReader(req.Prompt)
-	tail := &tailBuffer{max: stderrTailSize}
-	cmd.Stderr = tail
-	stdout, err := cmd.StdoutPipe()
+	cmd.Stdout, cmd.Stderr = outW, errW
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	err = cmd.Start()
+	outW.Close()
+	errW.Close()
 	if err != nil {
-		return observation{}, err
-	}
-	if err := cmd.Start(); err != nil {
 		return observation{}, fmt.Errorf("start %s: %w", ag.name, err)
 	}
-	ev := readEvents(stdout)
-	_ = cmd.Wait()
-	return observation{exitCode: cmd.ProcessState.ExitCode(), events: ev, stderrTail: tail.String()}, nil
+	return supervise(ctx, cmd, outR, errR, req.Timeout), nil
+}
+
+// supervise waits for three things: the agent to exit, its stdout to reach
+// EOF, and its stderr to reach EOF. A timeout, a cancelled ctx, an oversized
+// event, or the agent's own exit terminates the whole group, so nothing the
+// agent started outlives it (P10).
+func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration) observation {
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errTimedOut)
+	defer cancel()
+	g := &group{pgid: cmd.Process.Pid, pipes: []*os.File{out, errOut}}
+
+	evCh := make(chan events, 1)
+	go func() { evCh <- readEvents(out) }()
+	tail := &tailBuffer{max: stderrTailSize}
+	tailCh := make(chan struct{}, 1)
+	go func() { _, _ = io.Copy(tail, errOut); tailCh <- struct{}{} }()
+	waitCh := make(chan struct{}, 1)
+	go func() { _ = cmd.Wait(); waitCh <- struct{}{} }()
+
+	var o observation
+	done := ctx.Done()
+	for pending := 3; pending > 0; {
+		select {
+		case <-waitCh:
+			pending--
+			o.exitCode = cmd.ProcessState.ExitCode()
+			g.terminate()
+		case o.events = <-evCh:
+			pending--
+			if o.events.tooLarge {
+				g.terminate()
+			}
+		case <-tailCh:
+			pending--
+		case <-done:
+			done = nil
+			if errors.Is(context.Cause(ctx), errTimedOut) {
+				o.timedOut = true
+			} else {
+				o.stopped = true
+			}
+			g.terminate()
+		}
+	}
+	g.settle()
+	o.stderrTail = tail.String()
+	return o
+}
+
+// group is the agent's process group (P10).
+type group struct {
+	pgid    int
+	pipes   []*os.File
+	once    sync.Once
+	started time.Time
+}
+
+// terminate sends SIGTERM to the group, SIGKILL killGrace later, and makes
+// reads from the pipes give up shortly after that, so that a process that left
+// the group cannot hold aits open.
+func (g *group) terminate() {
+	g.once.Do(func() {
+		g.started = time.Now()
+		_ = syscall.Kill(-g.pgid, syscall.SIGTERM)
+		time.AfterFunc(killGrace, func() { _ = syscall.Kill(-g.pgid, syscall.SIGKILL) })
+		for _, p := range g.pipes {
+			_ = p.SetReadDeadline(g.started.Add(killGrace + drainGrace))
+		}
+	})
+}
+
+// settle waits, until the drain deadline at most, for the group to be empty.
+func (g *group) settle() {
+	if g.started.IsZero() {
+		return
+	}
+	deadline := g.started.Add(killGrace + drainGrace)
+	for time.Now().Before(deadline) {
+		if errors.Is(syscall.Kill(-g.pgid, 0), syscall.ESRCH) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // tailBuffer keeps the last max bytes written to it.
