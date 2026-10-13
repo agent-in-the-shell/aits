@@ -85,8 +85,14 @@ every `LC_*`, `TZ`, `TMPDIR`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`,
 environment are omitted, not passed empty.
 
 **Process group.** The child starts in its own process group. On timeout, or
-when aits receives SIGTERM or SIGINT, aits sends SIGTERM to the group, waits
-5 seconds, then sends SIGKILL to the group, then waits for the child (P10).
+when aits receives SIGTERM, SIGINT or SIGHUP, aits sends SIGTERM to the group,
+waits 5 seconds, then sends SIGKILL to the group, then waits for the child
+(P10). SIGHUP is included because the agent's own group never receives the
+terminal's hangup. Once the agent has exited, aits waits at most 1 second more
+for the copy of the prompt to its stdin, so an agent that never read its prompt
+cannot hold aits open. A signal that arrives before the agent starts (for
+example while the prompt is read from stdin) ends the run with the error
+envelope `stopped`, exit 1, and nothing is started.
 
 **Reading stdout.** Line by line, each line at most 16 MiB. From each event
 aits keeps only the `session_id` (first one seen) and, from the event with
@@ -106,7 +112,7 @@ error envelope is only for runs where nothing started.
 
 | Condition (checked in this order) | `status` | aits exit |
 |---|---|---|
-| aits received SIGTERM/SIGINT | `stopped` | 1 |
+| aits received SIGTERM/SIGINT/SIGHUP | `stopped` | 1 |
 | timeout elapsed | `timeout` | 1 |
 | an event line exceeded 16 MiB | `output_too_large` | 1 |
 | child exited non-zero | `agent_failed` | 1 |

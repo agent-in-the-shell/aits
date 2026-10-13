@@ -54,6 +54,9 @@ type Result struct {
 // ErrAgentNotFound means the agent's executable is not on PATH.
 var ErrAgentNotFound = errors.New("agent executable not found")
 
+// ErrStopped means ctx was done before the agent was started (P6).
+var ErrStopped = errors.New("stopped before the agent was started")
+
 // InvalidRequestError means the request was rejected before anything started.
 type InvalidRequestError struct{ Reason string }
 
@@ -105,6 +108,9 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	path, err := exec.LookPath(ag.executable)
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %s is not on PATH", ErrAgentNotFound, ag.executable)
+	}
+	if ctx.Err() != nil {
+		return Result{}, ErrStopped
 	}
 	start := time.Now()
 	obs, err := run(ctx, ag, path, req)

@@ -46,6 +46,10 @@ func run(ctx context.Context, ag agent, path string, req Request) (observation, 
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	cmd.Stdout, cmd.Stderr = outW, errW
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// Wait also waits for the copy of the prompt to stdin. If the agent never
+	// reads it and a descendant holds stdin open, give up drainGrace after the
+	// agent exits instead of waiting for that descendant (P10).
+	cmd.WaitDelay = drainGrace
 	err = cmd.Start()
 	outW.Close()
 	errW.Close()

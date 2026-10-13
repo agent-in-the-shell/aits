@@ -40,11 +40,10 @@ func submitCommand() *Command {
 				}
 				prompt := args[0]
 				if prompt == "-" {
-					b, err := io.ReadAll(env.Stdin)
-					if err != nil {
-						return 0, failure("stdin_failed", "read prompt from stdin: %v", err)
+					var err error
+					if prompt, err = readPrompt(ctx, env.Stdin); err != nil {
+						return 0, err
 					}
-					prompt = string(b)
 				}
 				dir, err := filepath.Abs(*cwd)
 				if err != nil {
@@ -63,11 +62,35 @@ func submitCommand() *Command {
 	}
 }
 
+// readPrompt reads all of r, giving up as soon as ctx is done (P10).
+func readPrompt(ctx context.Context, r io.Reader) (string, error) {
+	type read struct {
+		b   []byte
+		err error
+	}
+	ch := make(chan read, 1)
+	go func() {
+		b, err := io.ReadAll(r)
+		ch <- read{b, err}
+	}()
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			return "", failure("stdin_failed", "read prompt from stdin: %v", res.err)
+		}
+		return string(res.b), nil
+	case <-ctx.Done():
+		return "", submitError(shell.ErrStopped)
+	}
+}
+
 func submitError(err error) error {
 	var invalid *shell.InvalidRequestError
 	switch {
 	case errors.As(err, &invalid):
 		return usageError("invalid_input", "%s", invalid.Reason)
+	case errors.Is(err, shell.ErrStopped):
+		return failure("stopped", "%v", err)
 	case errors.Is(err, shell.ErrAgentNotFound):
 		return failure("agent_not_found", "%v", err)
 	default:

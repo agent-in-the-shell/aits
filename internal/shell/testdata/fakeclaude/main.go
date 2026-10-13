@@ -45,9 +45,12 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	stdin, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fail(err)
+	name := strings.TrimSpace(string(scenario))
+	var stdin []byte
+	if name != "ignore_stdin" {
+		if stdin, err = io.ReadAll(os.Stdin); err != nil {
+			fail(err)
+		}
 	}
 	wd, err := os.Getwd()
 	if err != nil {
@@ -60,7 +63,7 @@ func main() {
 	if err := os.WriteFile(filepath.Join(dir, "record.json"), rec, 0o600); err != nil {
 		fail(err)
 	}
-	play(strings.TrimSpace(string(scenario)), dir, exe)
+	play(name, dir, exe)
 }
 
 func play(scenario, dir, exe string) {
@@ -102,6 +105,11 @@ func play(scenario, dir, exe string) {
 		emit(initEvent())
 		writePID(filepath.Join(dir, "child.pid"))
 		time.Sleep(10 * time.Minute)
+	case "ignore_stdin":
+		// Never reads the prompt; a grandchild keeps stdin (and stdout) open.
+		emit(initEvent())
+		emit(result(false, "fake answer"))
+		spawnGrandchild(dir, exe)
 	case "linger":
 		emit(initEvent())
 		emit(result(false, "fake answer"))
@@ -131,7 +139,7 @@ func emit(v any) {
 // stdout and stderr open, and waits until it has written its pid.
 func spawnGrandchild(dir, exe string) {
 	cmd := exec.Command(exe, "--fake-grandchild", dir)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
 		fail(err)
 	}

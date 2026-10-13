@@ -11,9 +11,10 @@ import (
 )
 
 func main() {
-	// SIGTERM and SIGINT cancel the context; running commands stop their
-	// children and still report a result (P10).
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	// SIGTERM, SIGINT and SIGHUP cancel the context; running commands stop
+	// their children and still report a result (P10). The agent runs in its own
+	// process group, so a closed terminal reaches it only through aits.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt, syscall.SIGHUP)
 	code := cli.Run(ctx, os.Args[1:], cli.Env{
 		Stdin:   os.Stdin,
 		Stdout:  os.Stdout,

@@ -76,7 +76,7 @@ func TestSubmitTimeoutEscalatesToKill(t *testing.T) {
 }
 
 func TestSubmitStopped(t *testing.T) {
-	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
 		t.Run(sig.String(), func(t *testing.T) {
 			bin := vendor(t, "sleep")
 			cmd, stdout, stderr := call{path: bin, args: submitArgs("--json", "hi")}.command(t)
@@ -121,4 +121,54 @@ func TestSubmitLingeringGrandchild(t *testing.T) {
 		t.Errorf("took %s; a grandchild holding stdout must not keep aits waiting", elapsed)
 	}
 	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+}
+
+// An agent that never reads its prompt, with a grandchild holding stdin, must
+// not keep aits waiting: the timeout and the agent's exit both still bound it.
+func TestSubmitUnreadPrompt(t *testing.T) {
+	bin := vendor(t, "ignore_stdin")
+	start := time.Now()
+	out := call{path: bin, stdin: strings.Repeat("p", 1<<20), args: submitArgs("--timeout", "60s", "--json", "-")}.run(t)
+	if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" {
+		t.Fatalf("code=%d result=%+v", out.code, r)
+	}
+	if elapsed := time.Since(start); elapsed > 15*time.Second {
+		t.Errorf("took %s; an unread prompt must not hold aits open", elapsed)
+	}
+	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+}
+
+// Ctrl-C while aits is still reading the prompt from stdin stops it before any
+// agent is started (P6).
+func TestSubmitStoppedWhileReadingPrompt(t *testing.T) {
+	bin := vendor(t, "ok")
+	cmd, stdout, stderr := call{path: bin, args: submitArgs("--json", "-")}.command(t)
+	cmd.Stdin = nil
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond) // let aits block on the prompt
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err = <-done:
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("aits ignored SIGINT while reading the prompt")
+	}
+	out := finish(t, err, stdout, stderr)
+	if r := decode(t, out.stdout); out.code != 1 || r.Error == nil || r.Error.Code != "stopped" {
+		t.Errorf("code=%d stdout=%q", out.code, out.stdout)
+	}
+	if ran(bin) {
+		t.Errorf("the agent was started after the stop")
+	}
 }
