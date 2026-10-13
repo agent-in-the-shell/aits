@@ -4,9 +4,11 @@
 package shell
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -91,4 +93,38 @@ func (r Request) validate() (agent, error) {
 		}
 	}
 	return ag, nil
+}
+
+// Submit validates req, runs the agent, and waits until it finishes, times
+// out, or is stopped through ctx. A non-nil error means nothing was started.
+func Submit(ctx context.Context, req Request) (Result, error) {
+	ag, err := req.validate()
+	if err != nil {
+		return Result{}, err
+	}
+	path, err := exec.LookPath(ag.executable)
+	if err != nil {
+		return Result{}, fmt.Errorf("%w: %s is not on PATH", ErrAgentNotFound, ag.executable)
+	}
+	start := time.Now()
+	obs, err := run(ctx, ag, path, req)
+	if err != nil {
+		return Result{}, err
+	}
+	status, msg := decide(obs)
+	res := Result{
+		Status:     status,
+		Agent:      ag.name,
+		SessionID:  obs.events.sessionID,
+		ExitCode:   obs.exitCode,
+		DurationMS: time.Since(start).Milliseconds(),
+		Message:    msg,
+	}
+	switch status {
+	case StatusOK:
+		res.Answer = obs.events.result.Result
+	case StatusAgentFailed:
+		res.StderrTail = obs.stderrTail
+	}
+	return res, nil
 }

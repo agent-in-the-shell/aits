@@ -27,8 +27,9 @@ type Command struct {
 // Root returns the aits command tree.
 func Root() *Command {
 	root := &Command{
-		Name:    "aits",
-		Summary: "Run coding agents from the command line.",
+		Name:     "aits",
+		Summary:  "Run coding agents from the command line.",
+		Children: []*Command{shellGroup()},
 	}
 	root.Children = append(root.Children, helpCommand(root))
 	return root
