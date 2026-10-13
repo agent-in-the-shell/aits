@@ -1,0 +1,21 @@
+name: pr
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  links-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the check script
+        run: .github/scripts/check-pr-links-issue_test.sh
+      - name: Description links an issue
+        env:
+          # Passed through env, never interpolated into the script (P8/P9: untrusted input).
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: .github/scripts/check-pr-links-issue.sh
