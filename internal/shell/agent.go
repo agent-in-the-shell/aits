@@ -41,7 +41,8 @@ func (a agent) environ(parent, pass []string) []string {
 		if !ok {
 			continue
 		}
-		if slices.Contains(a.env, name) || slices.Contains(pass, name) || slices.ContainsFunc(a.envPrefix, func(p string) bool { return strings.HasPrefix(name, p) }) {
+		hasPrefix := func(p string) bool { return strings.HasPrefix(name, p) }
+		if slices.Contains(a.env, name) || slices.Contains(pass, name) || slices.ContainsFunc(a.envPrefix, hasPrefix) {
 			out = append(out, kv)
 		}
 	}

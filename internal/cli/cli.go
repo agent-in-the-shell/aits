@@ -83,8 +83,8 @@ func wantsJSON(args []string) bool {
 		if a == "--" {
 			break
 		}
-		name, value, hasValue := flagName(a)
-		if !isFlag(a) || name != "json" {
+		name, value, hasValue, ok := flagName(a)
+		if !ok || name != "json" {
 			continue
 		}
 		if !hasValue {

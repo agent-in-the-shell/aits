@@ -54,8 +54,8 @@ func (c *Command) leafFlags(path []string) (*flag.FlagSet, *bool, Runner) {
 // isGlobalFlag reports whether a may appear before the command path reaches a
 // leaf: only --json and --help may.
 func isGlobalFlag(a string) bool {
-	name, _, _ := flagName(a)
-	return name == "json" || name == "help" || name == "h"
+	name, _, _, ok := flagName(a)
+	return ok && (name == "json" || isHelp(name))
 }
 
 // resolve walks args down the tree. Command names come first; before a leaf
