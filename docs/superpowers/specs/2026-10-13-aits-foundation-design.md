@@ -1,7 +1,7 @@
 # aits foundation: principles and development workflow
 
 - Date: 2026-10-13
-- Status: draft, awaiting review
+- Status: approved 2026-10-13
 - Scope: sub-project 1 of aits — the design principles and the repository
   foundation every later feature issue builds on. Each command group gets its
   own issue → spec → plan cycle afterwards.
@@ -249,7 +249,7 @@ first feature issue.
 1. Public GitHub repo `agent-in-the-shell/aits`, `main` as default branch.
 2. `README.md` — what aits is, status (pre-release, nothing usable yet), link
    to principles and contributing.
-3. `LICENSE` — MIT.
+3. `LICENSE` — MIT, copyright "The aits Authors".
 4. `docs/principles.md` — section 3 of this spec.
 5. `CONTRIBUTING.md` — the issue-first workflow, clean-room rules (P11), how
    to run tests once code exists.
