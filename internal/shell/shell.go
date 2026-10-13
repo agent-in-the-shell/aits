@@ -88,7 +88,7 @@ func (r Request) validate() (agent, error) {
 		if name == "" || strings.Contains(name, "=") {
 			return agent{}, invalid("%q is not an environment variable name", name)
 		}
-		if _, ok := lookup(r.Environ, name); !ok {
+		if !isSet(r.Environ, name) {
 			return agent{}, invalid("environment variable %s is not set", name)
 		}
 	}

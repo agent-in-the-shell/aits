@@ -41,28 +41,14 @@ func (a agent) environ(parent, pass []string) []string {
 		if !ok {
 			continue
 		}
-		if slices.Contains(a.env, name) || slices.Contains(pass, name) || hasAnyPrefix(name, a.envPrefix) {
+		if slices.Contains(a.env, name) || slices.Contains(pass, name) || slices.ContainsFunc(a.envPrefix, func(p string) bool { return strings.HasPrefix(name, p) }) {
 			out = append(out, kv)
 		}
 	}
 	return out
 }
 
-func hasAnyPrefix(s string, prefixes []string) bool {
-	for _, p := range prefixes {
-		if strings.HasPrefix(s, p) {
-			return true
-		}
-	}
-	return false
-}
-
-// lookup returns the value of name in environ.
-func lookup(environ []string, name string) (string, bool) {
-	for _, kv := range environ {
-		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
-			return v, true
-		}
-	}
-	return "", false
+// isSet reports whether environ has an entry for name.
+func isSet(environ []string, name string) bool {
+	return slices.ContainsFunc(environ, func(kv string) bool { return strings.HasPrefix(kv, name+"=") })
 }

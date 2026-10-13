@@ -3,7 +3,7 @@ package shell
 import "testing"
 
 func TestDecide(t *testing.T) {
-	okEvents := events{sessionID: "s1", result: &resultEvent{Result: "answer", SessionID: "s1"}}
+	okEvents := events{sessionID: "s1", result: &resultEvent{Result: "answer"}}
 	tests := []struct {
 		name string
 		obs  observation

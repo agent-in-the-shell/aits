@@ -3,7 +3,6 @@ package shell
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 )
 
 // observation is everything aits saw of one run.
@@ -49,9 +48,5 @@ func firstLine(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	s = s[:max]
-	for !utf8.ValidString(s) {
-		s = s[:len(s)-1]
-	}
-	return s + "…"
+	return strings.ToValidUTF8(s[:max], "") + "…"
 }

@@ -46,11 +46,9 @@ func TestMain(m *testing.M) {
 func vendor(t *testing.T, scenario string) string {
 	t.Helper()
 	dir := t.TempDir()
-	b, err := os.ReadFile(fakeBin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "claude"), b, 0o755); err != nil {
+	// A hard link, not a symlink: os.Executable resolves symlinks, and the fake
+	// must find its scenario file in this directory.
+	if err := os.Link(fakeBin, filepath.Join(dir, "claude")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "scenario"), []byte(scenario), 0o600); err != nil {

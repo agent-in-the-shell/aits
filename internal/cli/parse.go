@@ -20,6 +20,11 @@ func newFlagSet(name string) *flag.FlagSet {
 // argument: it means "read standard input".
 func isFlag(a string) bool { return len(a) > 1 && a[0] == '-' }
 
+// flagName splits a flag token such as "--name=value" into its parts.
+func flagName(a string) (name, value string, hasValue bool) {
+	return strings.Cut(strings.TrimLeft(a, "-"), "=")
+}
+
 // parseArgs parses args against fs, allowing flags before, between and after
 // positional arguments; "--" ends flag parsing (P4). It returns the
 // positional arguments in order.
@@ -35,7 +40,7 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 			positional = append(positional, a)
 			continue
 		}
-		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		name, _, hasValue := flagName(a)
 		if name == "h" || name == "help" {
 			return nil, errHelp
 		}

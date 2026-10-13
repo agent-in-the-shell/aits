@@ -20,12 +20,6 @@ func shellGroup() *Command {
 	}
 }
 
-// names collects the values of a repeatable flag.
-type names []string
-
-func (n *names) String() string     { return strings.Join(*n, ",") }
-func (n *names) Set(v string) error { *n = append(*n, v); return nil }
-
 func submitCommand() *Command {
 	return &Command{
 		Name:    "submit",
@@ -35,8 +29,11 @@ func submitCommand() *Command {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required). One of: "+strings.Join(shell.Agents(), ", ")+".")
 			cwd := fs.String("cwd", "", "Run the agent in `DIR` (default: the current directory).")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
-			var pass names
-			fs.Var(&pass, "env", "Pass the variable `NAME` from this environment to the agent. Repeatable.")
+			var pass []string
+			fs.Func("env", "Pass the variable `NAME` from this environment to the agent. Repeatable.", func(v string) error {
+				pass = append(pass, v)
+				return nil
+			})
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
 					return 0, usageError("invalid_input", "expected one prompt argument, or - to read it from stdin; got %d", len(args))

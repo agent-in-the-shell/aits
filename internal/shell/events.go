@@ -20,10 +20,16 @@ type events struct {
 	tooLarge  bool
 }
 
+// header holds the fields aits reads from every event. Decoding into it skips
+// all other fields without copying them, however large they are.
+type header struct {
+	Type      json.RawMessage `json:"type"`
+	SessionID json.RawMessage `json:"session_id"`
+}
+
 type resultEvent struct {
-	IsError   bool   `json:"is_error"`
-	Result    string `json:"result"`
-	SessionID string `json:"session_id"`
+	IsError bool   `json:"is_error"`
+	Result  string `json:"result"`
 }
 
 // readEvents reads r until EOF, a read error, or the first line longer than
@@ -47,18 +53,18 @@ func readEvents(r io.Reader) events {
 
 // add records one event line and reports whether it was a usable JSON object.
 func (ev *events) add(line []byte) bool {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(line, &fields); err != nil || fields == nil {
+	var h *header // stays nil for the JSON literal null
+	if err := json.Unmarshal(line, &h); err != nil || h == nil {
 		return false
 	}
 	if ev.sessionID == "" {
 		var id string
-		if json.Unmarshal(fields["session_id"], &id) == nil {
+		if json.Unmarshal(h.SessionID, &id) == nil {
 			ev.sessionID = id
 		}
 	}
 	var typ string
-	if json.Unmarshal(fields["type"], &typ) != nil || typ != "result" {
+	if json.Unmarshal(h.Type, &typ) != nil || typ != "result" {
 		return true
 	}
 	var res resultEvent

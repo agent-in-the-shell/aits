@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 )
 
 // Exit codes (P5).
@@ -84,7 +83,7 @@ func wantsJSON(args []string) bool {
 		if a == "--" {
 			break
 		}
-		name, value, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		name, value, hasValue := flagName(a)
 		if !isFlag(a) || name != "json" {
 			continue
 		}

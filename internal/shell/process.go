@@ -104,10 +104,11 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 
 // group is the agent's process group (P10).
 type group struct {
-	pgid    int
-	pipes   []*os.File
-	once    sync.Once
-	started time.Time
+	pgid     int
+	pipes    []*os.File
+	once     sync.Once
+	kill     *time.Timer
+	deadline time.Time // when reads give up; zero until terminate
 }
 
 // terminate sends SIGTERM to the group, SIGKILL killGrace later, and makes
@@ -115,23 +116,24 @@ type group struct {
 // the group cannot hold aits open.
 func (g *group) terminate() {
 	g.once.Do(func() {
-		g.started = time.Now()
+		g.deadline = time.Now().Add(killGrace + drainGrace)
 		_ = syscall.Kill(-g.pgid, syscall.SIGTERM)
-		time.AfterFunc(killGrace, func() { _ = syscall.Kill(-g.pgid, syscall.SIGKILL) })
+		g.kill = time.AfterFunc(killGrace, func() { _ = syscall.Kill(-g.pgid, syscall.SIGKILL) })
 		for _, p := range g.pipes {
-			_ = p.SetReadDeadline(g.started.Add(killGrace + drainGrace))
+			_ = p.SetReadDeadline(g.deadline)
 		}
 	})
 }
 
-// settle waits, until the drain deadline at most, for the group to be empty.
+// settle waits, until the drain deadline at most, for the group to be empty,
+// and then cancels the pending SIGKILL so it cannot hit a reused group id.
 func (g *group) settle() {
-	if g.started.IsZero() {
+	if g.deadline.IsZero() {
 		return
 	}
-	deadline := g.started.Add(killGrace + drainGrace)
-	for time.Now().Before(deadline) {
+	for time.Now().Before(g.deadline) {
 		if errors.Is(syscall.Kill(-g.pgid, 0), syscall.ESRCH) {
+			g.kill.Stop()
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
