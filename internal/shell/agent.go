@@ -11,9 +11,15 @@ type agent struct {
 	name       string
 	executable string
 	args       []string // never carries the prompt (P8)
-	env        []string // variables passed through when set
-	envPrefix  []string // variables with one of these prefixes are passed through
+	env        []string // the agent's own variables, passed on top of baseEnv when set
 	parse      parser   // turns one line of the agent's output into events
+}
+
+// baseEnv is passed to every agent when set, together with every LC_*
+// variable (P8).
+var baseEnv = []string{
+	"PATH", "HOME", "USER", "LOGNAME", "LANG", "TZ", "TMPDIR",
+	"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
 }
 
 var agents = map[string]agent{
@@ -21,21 +27,26 @@ var agents = map[string]agent{
 		name:       "claude",
 		executable: "claude",
 		args:       []string{"-p", "--output-format", "stream-json", "--verbose"},
-		env: []string{
-			"PATH", "HOME", "USER", "LOGNAME", "LANG", "TZ", "TMPDIR",
-			"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
-			"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY",
-		},
-		envPrefix: []string{"LC_"},
-		parse:     parseClaude,
+		env:        []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
+		parse:      parseClaude,
+	},
+	"codex": {
+		name:       "codex",
+		executable: "codex",
+		// No --skip-git-repo-check, sandbox or approval flags: Codex keeps its
+		// own safety defaults (P9).
+		args:  []string{"exec", "--json", "-"},
+		env:   []string{"CODEX_HOME", "OPENAI_API_KEY"},
+		parse: parseCodex,
 	},
 }
 
 // Agents returns the supported agent names, sorted.
 func Agents() []string { return slices.Sorted(maps.Keys(agents)) }
 
-// environ builds the child's environment from scratch (P8): the agent's
-// allowlist plus the names in pass, with values taken from parent.
+// environ builds the child's environment from scratch (P8): the base
+// allowlist, the agent's own variables and the names in pass, with values
+// taken from parent.
 func (a agent) environ(parent, pass []string) []string {
 	var out []string
 	for _, kv := range parent {
@@ -43,8 +54,8 @@ func (a agent) environ(parent, pass []string) []string {
 		if !ok {
 			continue
 		}
-		hasPrefix := func(p string) bool { return strings.HasPrefix(name, p) }
-		if slices.Contains(a.env, name) || slices.Contains(pass, name) || slices.ContainsFunc(a.envPrefix, hasPrefix) {
+		if slices.Contains(baseEnv, name) || strings.HasPrefix(name, "LC_") ||
+			slices.Contains(a.env, name) || slices.Contains(pass, name) {
 			out = append(out, kv)
 		}
 	}

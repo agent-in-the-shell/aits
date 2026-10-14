@@ -38,7 +38,7 @@ Usage: aits shell submit [flags] (PROMPT | -)
 Run one prompt through an agent CLI and return the answer and session id.
 
 Flags:
-  --agent AGENT       AGENT CLI to run (required). One of: claude.
+  --agent AGENT       AGENT CLI to run (required). One of: claude, codex.
   --cwd DIR           Run the agent in DIR (default: the current directory).
   --env NAME          Pass the variable NAME from this environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
