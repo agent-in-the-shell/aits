@@ -129,12 +129,12 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	env := ag.environ(req.Environ, req.Pass) // the one environment checked, searched and given
 	for _, name := range req.Pass {
-		if _, ok := lookupEnv(req.Environ, name); !ok {
+		if _, ok := lookupEnv(env, name); !ok {
 			return Result{}, invalid("environment variable %s is not set", name)
 		}
 	}
-	env := ag.environ(req.Environ, req.Pass)
 	path, err := lookPath(env, ag.executable)
 	if err != nil {
 		return Result{}, err
