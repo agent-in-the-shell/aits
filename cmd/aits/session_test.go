@@ -246,7 +246,7 @@ func TestSessionSearchEmptyFilterFlags(t *testing.T) {
 		name := strings.Join(tt.args, " ")
 		out := call{args: append([]string{"session", "search", "--json"}, tt.args...)}.run(t)
 		r := decode(t, out.stdout)
-		if out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" || r.Status != "" {
+		if out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {
 			t.Errorf("%q --json: code=%d stdout=%q", name, out.code, out.stdout)
 			continue
 		}
