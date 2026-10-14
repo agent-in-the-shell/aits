@@ -15,6 +15,7 @@ import (
 
 // started is an aits process a test is watching.
 type started struct {
+	args           []string
 	cmd            *exec.Cmd
 	stdout, stderr *bytes.Buffer
 	done           chan error
@@ -26,7 +27,7 @@ func (c call) start(t *testing.T) *started {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	s := &started{cmd: cmd, stdout: stdout, stderr: stderr, done: make(chan error, 1)}
+	s := &started{args: c.args, cmd: cmd, stdout: stdout, stderr: stderr, done: make(chan error, 1)}
 	go func() { s.done <- cmd.Wait() }()
 	return s
 }
@@ -44,21 +45,15 @@ func (s *started) wait(t *testing.T, d time.Duration) (out output, ok bool) {
 
 // waitOrKill is wait that kills aits and fails the test when it is still
 // running after d.
-func (s *started) waitOrKill(t *testing.T, d time.Duration, what string) output {
+func (s *started) waitOrKill(t *testing.T, d time.Duration) output {
 	t.Helper()
 	out, ok := s.wait(t, d)
 	if !ok {
 		_ = s.cmd.Process.Kill()
 		<-s.done
-		t.Fatalf("%s: aits did not exit within %s", what, d)
+		t.Fatalf("aits %s did not exit within %s", strings.Join(s.args, " "), d)
 	}
 	return out
-}
-
-// runWithin runs c and fails the test if aits has not exited after d.
-func runWithin(t *testing.T, c call, d time.Duration) output {
-	t.Helper()
-	return c.start(t).waitOrKill(t, d, "aits "+strings.Join(c.args, " "))
 }
 
 // oneSession builds a HOME with one session of agent that contains "needle"
@@ -101,12 +96,12 @@ func TestSessionSearchSkipsNonRegularFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			env := []string{"HOME=" + home}
-			out := runWithin(t, call{env: env, args: []string{"session", "search", "--json", "needle"}}, 5*time.Second)
+			out := call{env: env, args: []string{"session", "search", "--json", "needle"}}.start(t).waitOrKill(t, 5*time.Second)
 			o := decodeSearch(t, out.stdout)
 			if out.code != 0 || !slices.Equal(found(o), []string{want}) || o.Skipped.Files != 1 || o.Skipped.Lines != 0 {
 				t.Fatalf("code=%d results=%q skipped=%+v", out.code, found(o), o.Skipped)
 			}
-			out = runWithin(t, call{env: env, args: []string{"session", "search", "needle"}}, 5*time.Second)
+			out = call{env: env, args: []string{"session", "search", "needle"}}.start(t).waitOrKill(t, 5*time.Second)
 			_, id, _ := strings.Cut(want, ":")
 			if out.code != 0 || !strings.Contains(out.stdout, "  "+id+"  ") ||
 				out.stderr != "aits: skipped 1 files and 0 lines that could not be read\n" {
@@ -131,7 +126,7 @@ func assertFifoUnread(t *testing.T, fifo string, env []string) {
 	if _, err := f.Write([]byte{'z'}); err != nil {
 		t.Fatal(err)
 	}
-	out := runWithin(t, call{env: env, args: []string{"session", "search", "--json", "needle"}}, 5*time.Second)
+	out := call{env: env, args: []string{"session", "search", "--json", "needle"}}.start(t).waitOrKill(t, 5*time.Second)
 	if o := decodeSearch(t, out.stdout); out.code != 0 || o.Skipped.Files != 1 {
 		t.Fatalf("with a writer: code=%d skipped=%+v", out.code, o.Skipped)
 	}
@@ -222,7 +217,7 @@ func TestSessionSearchStopsPromptly(t *testing.T) {
 			if err := s.cmd.Process.Signal(tt.sig); err != nil {
 				t.Fatal(err)
 			}
-			out := s.waitOrKill(t, time.Second, "after "+tt.sig.String())
+			out := s.waitOrKill(t, time.Second)
 			if out.code != 1 || out.stdout != tt.stdout || out.stderr != tt.stderr {
 				t.Errorf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 			}
