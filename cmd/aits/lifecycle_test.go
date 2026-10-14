@@ -79,38 +79,40 @@ func TestSubmitTimeoutEscalatesToKill(t *testing.T) {
 	})
 }
 
+// stopWith runs a sleeping agent through aits submit with args, sends aits
+// sig once the agent has started, and checks that the agent's group is gone.
+func stopWith(t *testing.T, agent string, sig syscall.Signal, args ...string) output {
+	t.Helper()
+	bin := vendorAs(t, agent, "sleep")
+	s := call{path: bin, args: agentArgs(agent, args...)}.start(t)
+	waitFile(t, filepath.Join(bin, "child.pid"))
+	if err := s.cmd.Process.Signal(sig); err != nil {
+		t.Fatal(err)
+	}
+	out := s.waitOrKill(t, 10*time.Second)
+	assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+	return out
+}
+
 func TestSubmitStopped(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
-			for _, mode := range []string{"--json", "text"} {
-				t.Run(sig.String()+" "+mode, func(t *testing.T) {
-					bin := vendorAs(t, agent, "sleep")
-					args := agentArgs(agent, "hi")
-					if mode == "--json" {
-						args = agentArgs(agent, "--json", "hi")
-					}
-					cmd, stdout, stderr := call{path: bin, args: args}.command(t)
-					if err := cmd.Start(); err != nil {
-						t.Fatal(err)
-					}
-					waitFile(t, filepath.Join(bin, "child.pid"))
-					if err := cmd.Process.Signal(sig); err != nil {
-						t.Fatal(err)
-					}
-					out := finish(t, cmd.Wait(), stdout, stderr)
-					if mode == "--json" {
-						if r := decode(t, out.stdout); out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" || out.stderr != "" {
-							t.Fatalf("code=%d result=%+v stderr=%q", out.code, r, out.stderr)
-						}
-					} else if out.code != 1 || out.stdout != "" ||
-						out.stderr != "aits: stopped: aits was stopped by a signal before the agent finished\nsession: sess-fake-1\n" {
-						t.Fatalf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
-					}
-					assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
-					assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
-				})
-			}
+			t.Run(sig.String(), func(t *testing.T) {
+				out := stopWith(t, agent, sig, "--json", "hi")
+				if r := decode(t, out.stdout); out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" || out.stderr != "" {
+					t.Fatalf("code=%d result=%+v stderr=%q", out.code, r, out.stderr)
+				}
+			})
 		}
+		// The text rendering does not depend on the signal.
+		t.Run("text", func(t *testing.T) {
+			out := stopWith(t, agent, syscall.SIGTERM, "hi")
+			if out.code != 1 || out.stdout != "" ||
+				out.stderr != "aits: stopped: aits was stopped by a signal before the agent finished\nsession: sess-fake-1\n" {
+				t.Fatalf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+			}
+		})
 	})
 }
 
