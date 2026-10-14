@@ -203,3 +203,22 @@ Supported platforms are Linux and macOS on amd64 and arm64.
 
 **Guard.** CI runs `go generate` and fails on any diff; the CI matrix covers
 Linux and macOS.
+
+## P14 — Small binary, no over-engineering
+
+**Rule.** The release binary (`CGO_ENABLED=0 go build -trimpath
+-ldflags="-s -w" ./cmd/aits`, linux/amd64) stays within the size budget in
+`.github/binary-size-budget`. A change that would exceed it raises the budget
+in the same pull request and says which feature needs the bytes and why a
+smaller way does not work. Heavy standard-library packages (`net/http`,
+`crypto/*`, `text/template`, `regexp` and the like) enter only with the
+feature that needs them, inside that command group. Build the least that
+meets the issue: no abstraction, option or layer before it has a caller.
+
+**Prevents.** The binary growing quietly with every import; a heavy package
+pulled in for one convenience function; general-purpose machinery nobody
+asked for.
+
+**Guard.** CI builds the release binary for linux/amd64, prints its size, and
+fails when it exceeds the budget. Whether code is bigger than its job is
+*review-only*.

@@ -51,5 +51,16 @@ jobs:
         run: go vet ./...
       - name: staticcheck (P2)
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 -tags live ./...
+      - name: binary size (P14)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$RUNNER_TEMP/aits" ./cmd/aits
+          size=$(stat -c %s "$RUNNER_TEMP/aits")
+          budget=$(cat .github/binary-size-budget)
+          echo "release binary linux/amd64: $size bytes, budget $budget bytes"
+          if [ "$size" -gt "$budget" ]; then
+            echo "::error::release binary is $size bytes, over the $budget-byte budget (P14)"
+            exit 1
+          fi
       - name: go test
         run: go test ./...
