@@ -489,12 +489,13 @@ func (q queue) lockDir() func() {
 	return func() { f.Close() }
 }
 
-// slowClaim queues task a, oldest, and a dead worker's task whose leftover
-// group ignores SIGTERM, so that work's claim, after marking a running, waits
-// to stop that group before it starts a's agent: room for the test to take
-// the directory lock first. It returns a and the group, which the test kills
-// to let the claim go on.
-func slowClaim(t *testing.T, q queue, flags ...string) (string, int) {
+// claimThenHoldDir queues task a (with flags), oldest, and a dead worker's
+// task whose leftover group ignores SIGTERM, so that work's claim, after
+// marking a running, waits to stop that group before it starts a's agent. It
+// starts work, waits for the claim, takes the directory lock, checks that a's
+// agent has not started yet, and then kills the group so that the agent
+// starts while the test holds the lock.
+func claimThenHoldDir(t *testing.T, q queue, flags ...string) (string, *started, func()) {
 	t.Helper()
 	a := q.create("hi", flags...)
 	b := q.create("dead")
@@ -506,24 +507,16 @@ func slowClaim(t *testing.T, q queue, flags ...string) (string, int) {
 	go func() { _ = g.Wait() }()
 	q.setRunning(b, map[string]any{"token": "dead", "pgid": g.Process.Pid})
 	q.writeLockFile(b)
-	return a, g.Process.Pid
-}
-
-// holdDirAfterClaim starts work, waits until it has claimed a, takes the
-// directory lock, checks that a's agent has not started yet, and then kills
-// group g so that the claim goes on to start the agent.
-func holdDirAfterClaim(t *testing.T, q queue, a string, g int) (*started, func()) {
-	t.Helper()
 	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
 	q.waitLease(a, 0)
 	unlock := q.lockDir()
 	if r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout); r.Lease == nil || r.Lease.PGID != 0 {
 		t.Fatalf("the agent started before the test held the directory lock: %+v", r.Lease)
 	}
-	if err := syscall.Kill(-g, syscall.SIGKILL); err != nil {
+	if err := syscall.Kill(-g.Process.Pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	return s, unlock
+	return a, s, unlock
 }
 
 // A worker killed after its agent started, while another command holds the
@@ -531,8 +524,7 @@ func holdDirAfterClaim(t *testing.T, q queue, a string, g int) (*started, func()
 // it instead of leaving it to run unsupervised (P10, #44).
 func TestTaskWorkerKilledBeforePgid(t *testing.T) {
 	q := newQueue(t, "sleep")
-	a, g := slowClaim(t, q)
-	s, unlock := holdDirAfterClaim(t, q, a, g)
+	a, s, unlock := claimThenHoldDir(t, q)
 	waitFile(t, filepath.Join(q.path, "child.pid"))
 	agent := readPID(t, filepath.Join(q.path, "child.pid"))
 	q.waitLease(a, agent) // recorded while the directory lock is held
@@ -555,8 +547,7 @@ func TestTaskWorkerKilledBeforePgid(t *testing.T) {
 // holds the directory lock (#44).
 func TestTaskTimeoutWhileDirLocked(t *testing.T) {
 	q := newQueue(t, "sleep")
-	a, g := slowClaim(t, q, "--timeout", "1s")
-	s, unlock := holdDirAfterClaim(t, q, a, g)
+	_, s, unlock := claimThenHoldDir(t, q, "--timeout", "1s")
 	waitFile(t, filepath.Join(q.path, "child.pid"))
 	assertGone(t, readPID(t, filepath.Join(q.path, "child.pid")))
 	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
