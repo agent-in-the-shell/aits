@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/agent-in-the-shell/aits/internal/shell"
@@ -210,25 +209,18 @@ func claim(ctx context.Context, dir, agent string) (*Task, func(), Notes, error)
 	s, groups, err := reclaim(dir)
 	var claimed *Task
 	var release func()
-	if err == nil {
-		for i := range s.tasks {
-			t := &s.tasks[i]
-			if t.Status != Queued || (agent != "" && t.Agent != agent) {
-				continue
-			}
-			if release, err = store.TryLock(lockPath(dir, t.ID), true); err != nil {
-				err = fmt.Errorf("task %s: %w", t.ID, err)
-				break
-			}
-			t.Status = Running
-			t.Lease = &Lease{Token: fmt.Sprintf("%016x", rand.Uint64())}
+	i := slices.IndexFunc(s.tasks, func(t Task) bool { return t.Status == Queued && (agent == "" || t.Agent == agent) })
+	if err == nil && i >= 0 {
+		t := &s.tasks[i]
+		if release, err = store.TryLock(lockPath(dir, t.ID), true); err != nil {
+			err = fmt.Errorf("task %s: %w", t.ID, err)
+		} else {
+			t.Status, t.Lease = Running, &Lease{Token: fmt.Sprintf("%016x", rand.Uint64())}
 			if err = write(dir, *t); err != nil {
 				release()
-				release = nil
-				break
+			} else {
+				claimed = t
 			}
-			claimed = t
-			break
 		}
 	}
 	unlock()
@@ -372,18 +364,11 @@ func readFile(dir, id string) (Task, error) {
 	if !validID(id) {
 		return Task{}, fmt.Errorf("not a task id: %w", os.ErrNotExist)
 	}
-	f, err := os.OpenFile(path(dir, id), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, fi, err := store.OpenRegular(path(dir, id), os.O_RDONLY, 0)
 	if err != nil {
 		return Task{}, err
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return Task{}, err
-	}
-	if !fi.Mode().IsRegular() {
-		return Task{}, errors.New("not a regular file")
-	}
 	var b bytes.Buffer
 	b.Grow(int(fi.Size()) + 1)
 	if _, err := b.ReadFrom(f); err != nil {

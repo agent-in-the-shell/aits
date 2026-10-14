@@ -239,6 +239,10 @@ func TestShowMalformedID(t *testing.T) {
 	environ := env(t)
 	tk := create(t, environ, "claude")
 	dir, _ := store.Dir(environ, "task")
+	tk.ID = "20261014T000000-abcdef" // hex letters, so the upper-case spelling differs
+	if err := write(dir, tk); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, ".x.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -263,6 +267,17 @@ func TestShowDanglingSymlink(t *testing.T) {
 	if _, err := Show(environ, id); err == nil || errors.As(err, &invalid) || !strings.Contains(err.Error(), "could not be read") {
 		t.Errorf("Show = %v, want could not be read", err)
 	}
+}
+
+// lock takes the lock file of task id as a worker does and returns its
+// unlock function; lock(…)() leaves the file as a claim does, unlocked.
+func lock(t *testing.T, dir, id string) func() {
+	t.Helper()
+	unlock, err := store.TryLock(lockPath(dir, id), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return unlock
 }
 
 // running writes tk as a running task with the raw lease JSON, as a worker
@@ -290,11 +305,7 @@ func TestReclaimDeadWorker(t *testing.T) {
 	dir, _ := store.Dir(environ, "task")
 	running(t, dir, tk, fmt.Sprintf(`{"token":"w","worker_pid":%d,"pgid":0,"expires_at":%q}`,
 		os.Getpid(), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))
-	unlock, err := store.TryLock(filepath.Join(dir, tk.ID+".lock"), true) // as a claim leaves it
-	if err != nil {
-		t.Fatal(err)
-	}
-	unlock()
+	lock(t, dir, tk.ID)() // as a claim leaves it
 	tasks, _, err := List(environ)
 	if err != nil || len(tasks) != 1 {
 		t.Fatalf("List = %+v, %v", tasks, err)
@@ -312,10 +323,7 @@ func TestReclaimSparesLiveWorker(t *testing.T) {
 	tk := create(t, environ, "claude")
 	dir, _ := store.Dir(environ, "task")
 	running(t, dir, tk, `{"token":"w","pgid":0}`)
-	unlock, err := store.TryLock(filepath.Join(dir, tk.ID+".lock"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	unlock := lock(t, dir, tk.ID)
 	if tasks, _, err := List(environ); err != nil || tasks[0].Status != Running {
 		t.Fatalf("List = %+v, %v; want the task still running", tasks, err)
 	}
@@ -338,7 +346,7 @@ func TestReclaimMissingLockFile(t *testing.T) {
 	if err != nil || tasks[0].Status != Running || !slices.Equal(notes.Unknown, []string{tk.ID}) {
 		t.Fatalf("List = %+v, %+v, %v; want running and unknown", tasks, notes, err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, tk.ID+".lock")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(lockPath(dir, tk.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("reclaim made a lock file: %v", err)
 	}
 }
@@ -349,7 +357,7 @@ func TestReclaimLockError(t *testing.T) {
 	tk := create(t, environ, "claude")
 	dir, _ := store.Dir(environ, "task")
 	running(t, dir, tk, `{"token":"w","pgid":0}`)
-	if err := os.Mkdir(filepath.Join(dir, tk.ID+".lock"), 0o700); err != nil {
+	if err := os.Mkdir(lockPath(dir, tk.ID), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := List(environ); err == nil {
@@ -366,10 +374,7 @@ func TestClaimLockHeld(t *testing.T) {
 	environ := env(t)
 	tk := create(t, environ, "claude")
 	dir, _ := store.Dir(environ, "task")
-	unlock, err := store.TryLock(filepath.Join(dir, tk.ID+".lock"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	unlock := lock(t, dir, tk.ID)
 	defer unlock()
 	if got, _, err := Work(context.Background(), environ, ""); err == nil {
 		t.Fatalf("Work = %+v, want an error", got)
@@ -388,12 +393,8 @@ func TestReclaimLockSymlink(t *testing.T) {
 	b := create(t, environ, "claude")
 	dir, _ := store.Dir(environ, "task")
 	running(t, dir, a, `{"token":"w","pgid":0}`)
-	unlock, err := store.TryLock(filepath.Join(dir, b.ID+".lock"), true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	unlock()
-	if err := os.Symlink(filepath.Join(dir, b.ID+".lock"), filepath.Join(dir, a.ID+".lock")); err != nil {
+	lock(t, dir, b.ID)()
+	if err := os.Symlink(lockPath(dir, b.ID), lockPath(dir, a.ID)); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := List(environ); err == nil {

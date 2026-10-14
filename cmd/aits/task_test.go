@@ -88,12 +88,36 @@ func (q queue) writeTaskFile(id, body string, mode os.FileMode) string {
 	return file
 }
 
+// lockFile is the path of task id's lock file.
+func (q queue) lockFile(id string) string { return filepath.Join(q.home, "task", id+".lock") }
+
 // writeLockFile leaves the lock file of id as a claim does, unlocked.
 func (q queue) writeLockFile(id string) {
 	q.t.Helper()
-	if err := os.WriteFile(filepath.Join(q.home, "task", id+".lock"), nil, 0o600); err != nil {
+	if err := os.WriteFile(q.lockFile(id), nil, 0o600); err != nil {
 		q.t.Fatal(err)
 	}
+}
+
+// setRunning rewrites task id as running with lease, as a worker (or an
+// earlier aits) would have left it, and returns the bytes written.
+func (q queue) setRunning(id string, lease map[string]any) []byte {
+	q.t.Helper()
+	file := filepath.Join(q.home, "task", id+".json")
+	var rec map[string]any
+	b, err := os.ReadFile(file)
+	if err == nil {
+		err = json.Unmarshal(b, &rec)
+	}
+	if err != nil {
+		q.t.Fatal(err)
+	}
+	rec["status"], rec["lease"] = "running", lease
+	b, _ = json.Marshal(rec)
+	if err := os.WriteFile(file, b, 0o600); err != nil {
+		q.t.Fatal(err)
+	}
+	return b
 }
 
 // waitLease waits until task id records the agent's process group pgid.
@@ -211,19 +235,8 @@ func TestTaskReclaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	go func() { _ = sleeper.Wait() }()
-	file := filepath.Join(q.home, "task", id+".json")
-	var rec map[string]any
-	b, _ := os.ReadFile(file)
-	if err := json.Unmarshal(b, &rec); err != nil {
-		t.Fatal(err)
-	}
-	rec["status"] = "running"
-	rec["lease"] = map[string]any{"token": "dead", "worker_pid": os.Getpid(), "pgid": sleeper.Process.Pid,
-		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)}
-	b, _ = json.Marshal(rec)
-	if err := os.WriteFile(file, b, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	q.setRunning(id, map[string]any{"token": "dead", "worker_pid": os.Getpid(), "pgid": sleeper.Process.Pid,
+		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
 	q.writeLockFile(id)
 	// An unreadable file next to it does not stop the reclaim.
 	q.writeTaskFile("20261014T000000-bad000", "garbage", 0o600)
@@ -296,7 +309,7 @@ func TestTaskLockFileRemoved(t *testing.T) {
 	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
 	waitFile(t, filepath.Join(q.path, "child.pid"))
 	q.waitLease(id, readPID(t, filepath.Join(q.path, "child.pid")))
-	if err := os.Remove(filepath.Join(q.home, "task", id+".lock")); err != nil {
+	if err := os.Remove(q.lockFile(id)); err != nil {
 		t.Fatal(err)
 	}
 	want := "aits: cannot tell whether the worker of task " + id + " is alive: its lock file is missing\n"
@@ -323,28 +336,22 @@ func TestTaskLockError(t *testing.T) {
 	t.Run("running", func(t *testing.T) {
 		q := newQueue(t, "ok")
 		id := q.create("hi")
-		file := filepath.Join(q.home, "task", id+".json")
-		b, _ := os.ReadFile(file)
-		b = []byte(strings.Replace(strings.Replace(string(b), `"status":"queued"`, `"status":"running"`, 1),
-			`"lease":null`, `"lease":{"token":"w","pgid":0}`, 1))
-		if err := os.WriteFile(file, b, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Mkdir(filepath.Join(q.home, "task", id+".lock"), 0o700); err != nil {
+		b := q.setRunning(id, map[string]any{"token": "w", "pgid": 0})
+		if err := os.Mkdir(q.lockFile(id), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		out := q.run("list", "--json")
 		if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
 			t.Errorf("list: code=%d stdout=%q", out.code, out.stdout)
 		}
-		if after, _ := os.ReadFile(file); string(after) != string(b) {
+		if after, _ := os.ReadFile(filepath.Join(q.home, "task", id+".json")); string(after) != string(b) {
 			t.Errorf("record changed: %s", after)
 		}
 	})
 	t.Run("queued", func(t *testing.T) {
 		q := newQueue(t, "ok")
 		id := q.create("hi")
-		if err := os.Mkdir(filepath.Join(q.home, "task", id+".lock"), 0o700); err != nil {
+		if err := os.Mkdir(q.lockFile(id), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		out := q.run("work", "--json")

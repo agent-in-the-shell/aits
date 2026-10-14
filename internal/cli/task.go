@@ -126,15 +126,14 @@ Errors: invalid_input (exit 2); internal (exit 1).
 					items = append(items, item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt})
 				}
 				if env.JSON {
-					reportUnknown(env, notes.Unknown)
+					reportNotes(env, task.Notes{Unknown: notes.Unknown}) // skipped ids are in the JSON
 					writeJSON(env.Stdout, struct {
 						Tasks   []item   `json:"tasks"`
 						Skipped []string `json:"skipped"`
 					}{items, append([]string{}, notes.Skipped...)})
 					return exitOK, nil
 				}
-				reportSkipped(env, notes.Skipped)
-				reportUnknown(env, notes.Unknown)
+				reportNotes(env, notes)
 				for _, i := range items {
 					fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n", i.ID, i.Status, i.Agent, i.CreatedAt.Format(time.RFC3339))
 				}
@@ -199,8 +198,7 @@ Errors: invalid_input (exit 2); stopped, internal (exit 1).
 					return 0, usageError("invalid_input", "work takes no arguments")
 				}
 				t, notes, err := task.Work(ctx, env.Environ, *agent)
-				reportSkipped(env, notes.Skipped)
-				reportUnknown(env, notes.Unknown)
+				reportNotes(env, notes)
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -241,17 +239,14 @@ func writeTask(env *Env, t task.Task) {
 	}
 }
 
-// reportSkipped names, on stderr, each task file that could not be read.
-func reportSkipped(env *Env, ids []string) {
-	for _, id := range ids {
+// reportNotes names, on stderr, each task file that could not be read and
+// each running task whose lock file is missing, so that whether its worker is
+// alive cannot be told.
+func reportNotes(env *Env, n task.Notes) {
+	for _, id := range n.Skipped {
 		fmt.Fprintf(env.Stderr, "aits: skipped task %s that could not be read\n", printable(id))
 	}
-}
-
-// reportUnknown names, on stderr, each running task whose lock file is
-// missing, so that whether its worker is alive cannot be told.
-func reportUnknown(env *Env, ids []string) {
-	for _, id := range ids {
+	for _, id := range n.Unknown {
 		fmt.Fprintf(env.Stderr, "aits: cannot tell whether the worker of task %s is alive: its lock file is missing\n", printable(id))
 	}
 }
