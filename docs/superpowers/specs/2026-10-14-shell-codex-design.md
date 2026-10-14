@@ -116,19 +116,20 @@ status, of a Claude run that reports an error and exits non-zero.
 `internal/shell/testdata/fakevendor`. It reads its dialect from the base name
 of its executable (`claude` or `codex`) and its scenario from the `scenario`
 file beside it, and records argv, stdin, working directory and environment as
-today. `TestMain` builds it once; `vendor(t, agent, scenario)` hard-links it
-into the test's directory under the agent's name.
+today. `TestMain` builds it once; `vendorAs(t, agent, scenario)` hard-links
+it into the test's directory under the agent's name, and `vendor(t, scenario)`
+stays as the shorthand for Claude.
 
 **Shared scenarios**, emitted in each dialect: `ok`, `exit_nonzero`,
-`agent_error` (Claude `is_error`, Codex `turn.failed`), `not_json`,
+`agent_error` (Claude `is_error`, Codex `turn.failed`, then exit 1, as both
+real CLIs do), `agent_error_exit0` (the same report, exit 0), `not_json`,
 `no_result`, `empty_result`, `no_session`, `huge_line`, `sleep`,
 `ignore_term`, `linger`, `ignore_stdin`. The functional and lifecycle tests
 that use them run once per agent.
 
 **Codex-only scenarios:** `several_messages` (answer is the last),
-`retry_errors` (`error` events then success → `ok`), `failed_exit0`
-(`turn.failed`, exit 0 → `agent_failed`), `not_git` (stderr message, exit 1
-→ `agent_failed` with it in `stderr_tail`).
+`retry_errors` (`error` events then success → `ok`), `not_git` (stderr
+message, exit 1 → `agent_failed` with it in `stderr_tail`).
 
 **Assertions specific to this issue:**
 - Codex argv is exactly `exec --json -`; the prompt is never in argv.
