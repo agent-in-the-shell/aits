@@ -206,12 +206,18 @@ Flags:
   --json  Print the result, or the error, as JSON on stdout.
 
 Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
-{"tasks":[{"id","status","agent","cwd","created_at"}]}. Expired leases of
-dead workers are reclaimed first.
+{"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}.
+Expired leases of dead workers are reclaimed first.
+
+A task file that cannot be read (not JSON, not a record of its own id, an
+unknown status, or running without a lease) is skipped and left as it is:
+its id is in "skipped" (always present, sorted) or, without --json, on
+stderr as "aits: skipped task ID that could not be read". A running task
+whose file cannot be read is not reclaimed, and its agent is not stopped.
 
 Exit codes:
   0  Listed.
-  1  The tasks could not be read.
+  1  The queue could not be read or updated.
   2  Usage error.
 
 Errors: invalid_input (exit 2); internal (exit 1).
@@ -278,7 +284,9 @@ stdout; the session id and why a task failed on stderr.
 
 With nothing queued, work prints {"status":"empty"} with --json (nothing
 otherwise) and exits 0. A worker whose lease was reclaimed records nothing
-and fails with "task ID was reclaimed after its lease expired".
+and fails with "task ID was reclaimed after its lease expired". A task file
+that cannot be read is skipped and left as it is, with
+"aits: skipped task ID that could not be read" on stderr.
 
 Exit codes:
   0  The task is done, or nothing was queued.

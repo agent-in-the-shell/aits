@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -55,14 +56,14 @@ func TestWorkClaimOrder(t *testing.T) {
 	environ := env(t)
 	a := create(t, environ, "claude")
 	b := create(t, environ, "codex")
-	got, err := Work(context.Background(), environ, "codex")
+	got, _, err := Work(context.Background(), environ, "codex")
 	if err != nil || got == nil || got.ID != b.ID {
 		t.Fatalf("Work(codex) = %+v, %v; want %s", got, err, b.ID)
 	}
-	if got, _ := Work(context.Background(), environ, ""); got == nil || got.ID != a.ID {
+	if got, _, _ := Work(context.Background(), environ, ""); got == nil || got.ID != a.ID {
 		t.Fatalf("Work() claimed %+v, want %s", got, a.ID)
 	}
-	if got, err := Work(context.Background(), environ, ""); got != nil || err != nil {
+	if got, _, err := Work(context.Background(), environ, ""); got != nil || err != nil {
 		t.Fatalf("Work on an empty queue = %+v, %v", got, err)
 	}
 }
@@ -73,7 +74,7 @@ func TestWorkNotStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := Work(context.Background(), environ, "")
+	got, _, err := Work(context.Background(), environ, "")
 	if err != nil || got.ID != tk.ID || got.Status != Failed || got.Run == nil || got.Run.Status != NotStarted || got.Run.Message == "" || !got.Run.StartedAt.IsZero() || got.Lease != nil {
 		t.Fatalf("Work = %+v, %v", got, err)
 	}
@@ -93,7 +94,7 @@ func TestReclaim(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	tasks, err := List(environ)
+	tasks, _, err := List(environ)
 	if err != nil || len(tasks) != 2 {
 		t.Fatalf("List = %+v, %v", tasks, err)
 	}
@@ -141,7 +142,7 @@ func TestReclaimSparesLiveWorker(t *testing.T) {
 	if err := write(dir, tk); err != nil {
 		t.Fatal(err)
 	}
-	if tasks, err := List(environ); err != nil || tasks[0].Status != Running {
+	if tasks, _, err := List(environ); err != nil || tasks[0].Status != Running {
 		t.Fatalf("List = %+v, %v; want the task still running", tasks, err)
 	}
 }
@@ -157,7 +158,7 @@ func TestWorkStoppedBeforeClaim(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, err := Work(ctx, environ, ""); done <- err }()
+	go func() { _, _, err := Work(ctx, environ, ""); done <- err }()
 	time.Sleep(100 * time.Millisecond) // let Work block on the lock
 	cancel()
 	unlock()
@@ -186,7 +187,7 @@ func TestEnvValuesNotStored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Work(context.Background(), environ, ""); err != nil {
+	if _, _, err := Work(context.Background(), environ, ""); err != nil {
 		t.Fatal(err)
 	}
 	dir, err := store.Dir(environ, "task")
@@ -199,5 +200,71 @@ func TestEnvValuesNotStored(t *testing.T) {
 	}
 	if s := string(data); !strings.Contains(s, "AITS_TEST_SECRET") || strings.Contains(s, "s3cr3t-value") {
 		t.Fatalf("task file = %s", s)
+	}
+}
+
+// A task file is readable only as a record of its own id with a known
+// status, and a running record has its lease (P6, P10).
+func TestReadRejects(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	valid, err := os.ReadFile(path(dir, tk.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := strings.Replace(string(valid), tk.ID, "20000101T000000-000000", 1)
+	for name, body := range map[string]string{
+		"garbage":           "garbage",
+		"empty":             "",
+		"empty object":      "{}",
+		"another id":        other,
+		"unknown status":    strings.Replace(string(valid), `"status":"queued"`, `"status":"paused"`, 1),
+		"running, no lease": strings.Replace(string(valid), `"status":"queued"`, `"status":"running"`, 1),
+	} {
+		file := filepath.Join(t.TempDir(), tk.ID+".json")
+		if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := read(file); err == nil {
+			t.Errorf("%s: read = %+v, want an error", name, got)
+		}
+	}
+	if got, err := read(path(dir, tk.ID)); err != nil || got.ID != tk.ID {
+		t.Errorf("valid record: %+v, %v", got, err)
+	}
+}
+
+// List and Work skip unreadable task files, report their ids and leave them
+// as they are; the rest of the queue keeps working (P10).
+func TestUnreadableSkipped(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	bad := filepath.Join(dir, "20000101T000000-bad000.json")
+	if err := os.WriteFile(bad, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tasks, skipped, err := List(environ)
+	if err != nil || len(tasks) != 1 || tasks[0].ID != tk.ID || !slices.Equal(skipped, []string{"20000101T000000-bad000"}) {
+		t.Fatalf("List = %+v, %q, %v", tasks, skipped, err)
+	}
+	got, skipped, err := Work(context.Background(), environ, "")
+	if err != nil || got == nil || got.ID != tk.ID || !slices.Equal(skipped, []string{"20000101T000000-bad000"}) {
+		t.Fatalf("Work = %+v, %q, %v", got, skipped, err)
+	}
+	if b, err := os.ReadFile(bad); err != nil || string(b) != "garbage" {
+		t.Errorf("bad file changed: %q, %v", b, err)
+	}
+}
+
+// A task directory that cannot be listed still fails.
+func TestLoadDirError(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := load(file); err == nil {
+		t.Fatal("load of a regular file succeeded")
 	}
 }

@@ -49,7 +49,7 @@ func TestOutputChannels(t *testing.T) {
 		{name: "task create internal", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"}, code: 1,
 			setup: homeIsFile, errCode: "internal"},
 
-		{name: "task list empty", scenario: "ok", args: []string{"task", "list"}, result: jsonIs(`{"tasks":[]}`)},
+		{name: "task list empty", scenario: "ok", args: []string{"task", "list"}, result: jsonIs(`{"tasks":[],"skipped":[]}`)},
 		{name: "task list", scenario: "ok", args: []string{"task", "list"}, setup: queued,
 			result: listIs, stdout: "{ID}  queued  claude  {CREATED_AT}\n"},
 		{name: "task list with an argument", scenario: "ok", args: []string{"task", "list", "extra"}, code: 2,
@@ -198,9 +198,10 @@ func listIs(t *testing.T, stdout string, v vars) {
 			Cwd       string `json:"cwd"`
 			CreatedAt string `json:"created_at"`
 		} `json:"tasks"`
+		Skipped []string `json:"skipped"`
 	}](t, stdout)
 	if len(r.Tasks) != 1 || r.Tasks[0].ID != v.id || r.Tasks[0].Status != "queued" || r.Tasks[0].Agent != "claude" ||
-		r.Tasks[0].Cwd != v.dir || r.Tasks[0].CreatedAt == "" {
+		r.Tasks[0].Cwd != v.dir || r.Tasks[0].CreatedAt == "" || r.Skipped == nil || len(r.Skipped) != 0 {
 		t.Errorf("--json: %+v", r)
 	}
 }

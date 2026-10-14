@@ -85,12 +85,18 @@ func taskList() *Command {
 		Name:    "list",
 		Summary: "List tasks, oldest first.",
 		Details: `Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
-{"tasks":[{"id","status","agent","cwd","created_at"}]}. Expired leases of
-dead workers are reclaimed first.
+{"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}.
+Expired leases of dead workers are reclaimed first.
+
+A task file that cannot be read (not JSON, not a record of its own id, an
+unknown status, or running without a lease) is skipped and left as it is:
+its id is in "skipped" (always present, sorted) or, without --json, on
+stderr as "aits: skipped task ID that could not be read". A running task
+whose file cannot be read is not reclaimed, and its agent is not stopped.
 
 Exit codes:
   0  Listed.
-  1  The tasks could not be read.
+  1  The queue could not be read or updated.
   2  Usage error.
 
 Errors: invalid_input (exit 2); internal (exit 1).
@@ -100,7 +106,7 @@ Errors: invalid_input (exit 2); internal (exit 1).
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "list takes no arguments")
 				}
-				tasks, err := task.List(env.Environ)
+				tasks, skipped, err := task.List(env.Environ)
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -116,9 +122,13 @@ Errors: invalid_input (exit 2); internal (exit 1).
 					items = append(items, item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt})
 				}
 				if env.JSON {
-					writeJSON(env.Stdout, map[string]any{"tasks": items})
+					writeJSON(env.Stdout, struct {
+						Tasks   []item   `json:"tasks"`
+						Skipped []string `json:"skipped"`
+					}{items, append([]string{}, skipped...)})
 					return exitOK, nil
 				}
+				reportSkipped(env, skipped)
 				for _, i := range items {
 					fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n", i.ID, i.Status, i.Agent, i.CreatedAt.Format(time.RFC3339))
 				}
@@ -164,7 +174,9 @@ func taskWork() *Command {
 		Details: taskFields + `
 With nothing queued, work prints {"status":"empty"} with --json (nothing
 otherwise) and exits 0. A worker whose lease was reclaimed records nothing
-and fails with "task ID was reclaimed after its lease expired".
+and fails with "task ID was reclaimed after its lease expired". A task file
+that cannot be read is skipped and left as it is, with
+"aits: skipped task ID that could not be read" on stderr.
 
 Exit codes:
   0  The task is done, or nothing was queued.
@@ -179,7 +191,8 @@ Errors: invalid_input (exit 2); stopped, internal (exit 1).
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "work takes no arguments")
 				}
-				t, err := task.Work(ctx, env.Environ, *agent)
+				t, skipped, err := task.Work(ctx, env.Environ, *agent)
+				reportSkipped(env, skipped)
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -217,6 +230,13 @@ func writeTask(env *Env, t task.Task) {
 		fmt.Fprintln(env.Stdout, t.Run.Answer)
 	} else {
 		fmt.Fprintf(env.Stderr, "aits: task %s failed: %s: %s\n", t.ID, t.Run.Status, t.Run.Message)
+	}
+}
+
+// reportSkipped names, on stderr, each task file that could not be read.
+func reportSkipped(env *Env, ids []string) {
+	for _, id := range ids {
+		fmt.Fprintf(env.Stderr, "aits: skipped task %s that could not be read\n", id)
 	}
 }
 

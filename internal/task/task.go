@@ -116,20 +116,21 @@ func Create(environ []string, s Spec) (Task, error) {
 	return t, write(dir, t)
 }
 
-// List reclaims expired leases and returns every task, oldest first.
-func List(environ []string) ([]Task, error) {
+// List reclaims expired leases and returns every readable task, oldest
+// first, and the sorted ids of the task files that could not be read.
+func List(environ []string) ([]Task, []string, error) {
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	unlock, err := store.Lock(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	tasks, groups, err := reclaim(dir)
+	s, groups, err := reclaim(dir)
 	unlock()
 	shell.Stop(groups...)
-	return tasks, err
+	return s.tasks, s.skipped, err
 }
 
 // Show returns one task; an unknown id is a *shell.InvalidRequestError.
@@ -145,24 +146,29 @@ func Show(environ []string, id string) (Task, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return Task{}, invalid("no task %s", id)
 	}
-	return t, err
+	if err != nil {
+		return Task{}, fmt.Errorf("task %s could not be read: %w", id, err)
+	}
+	return t, nil
 }
 
 // Work reclaims expired leases, claims the oldest queued task (of agent, if
-// not empty), runs it through shell and records the run. It returns nil when
-// nothing is queued, shell.ErrStopped when ctx is done before the claim, and
-// errReclaimed, wrapped with the task id, when the lease was lost.
-func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
+// not empty), runs it through shell and records the run. It also returns the
+// ids of the task files it skipped as unreadable. The task is nil when
+// nothing is queued; the error is shell.ErrStopped when ctx is done before
+// the claim, and errReclaimed, wrapped with the task id, when the lease was
+// lost.
+func Work(ctx context.Context, environ []string, agent string) (*Task, []string, error) {
 	if agent != "" && !slices.Contains(shell.Agents(), agent) {
-		return nil, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
+		return nil, nil, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
 	}
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	t, err := claim(ctx, dir, agent)
+	t, skipped, err := claim(ctx, dir, agent)
 	if t == nil || err != nil {
-		return nil, err
+		return nil, skipped, err
 	}
 	token := t.Lease.Token
 	var started time.Time // stays zero unless the agent starts
@@ -182,28 +188,29 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	run := &Run{Result: res, StartedAt: started, FinishedAt: time.Now().UTC()}
 	done, err := update(dir, t.ID, token, func(t *Task) { t.Status, t.Run, t.Lease = status, run, nil })
 	if err != nil {
-		return nil, err
+		return nil, skipped, err
 	}
-	return &done, nil
+	return &done, skipped, nil
 }
 
 // claim, under the lock, reclaims expired leases and marks the oldest queued
-// task of agent running with a fresh lease. A signal that arrived while it
-// waited for the lock claims nothing.
-func claim(ctx context.Context, dir, agent string) (*Task, error) {
+// task of agent running with a fresh lease; it also returns the ids of the
+// unreadable task files. A signal that arrived while it waited for the lock
+// claims nothing.
+func claim(ctx context.Context, dir, agent string) (*Task, []string, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if ctx.Err() != nil {
 		unlock()
-		return nil, shell.ErrStopped
+		return nil, nil, shell.ErrStopped
 	}
-	tasks, groups, err := reclaim(dir)
+	s, groups, err := reclaim(dir)
 	var claimed *Task
 	if err == nil {
-		for i := range tasks {
-			if t := &tasks[i]; t.Status == Queued && (agent == "" || t.Agent == agent) {
+		for i := range s.tasks {
+			if t := &s.tasks[i]; t.Status == Queued && (agent == "" || t.Agent == agent) {
 				t.Status = Running
 				t.Lease = &Lease{
 					Token:     fmt.Sprintf("%016x", rand.Uint64()),
@@ -219,24 +226,24 @@ func claim(ctx context.Context, dir, agent string) (*Task, error) {
 	}
 	unlock()
 	shell.Stop(groups...)
-	return claimed, err
+	return claimed, s.skipped, err
 }
 
 // reclaim, under the lock, loads every task and fails each running one whose
-// lease has expired and whose worker is gone. It returns the tasks and the
-// agent process groups to stop once the lock is free. A live worker keeps its
+// lease has expired and whose worker is gone. It returns what it loaded and
+// the agent process groups to stop once the lock is free. A live worker keeps its
 // task even past the lease: the lease is wall-clock time, and after the
 // machine sleeps it can expire while the worker's own timeout (monotonic)
 // still has time left.
-func reclaim(dir string) ([]Task, []int, error) {
-	tasks, err := load(dir)
+func reclaim(dir string) (snapshot, []int, error) {
+	s, err := load(dir)
 	if err != nil {
-		return nil, nil, err
+		return s, nil, err
 	}
 	var groups []int
 	now := time.Now()
-	for i := range tasks {
-		t := &tasks[i]
+	for i := range s.tasks {
+		t := &s.tasks[i]
 		if t.Status != Running || t.Lease == nil || now.Before(t.Lease.ExpiresAt) || alive(t.Lease.WorkerPID) {
 			continue
 		}
@@ -247,10 +254,10 @@ func reclaim(dir string) ([]Task, []int, error) {
 			Message: "the worker's lease expired before it recorded a result",
 		}, FinishedAt: now.UTC()}
 		if err := write(dir, *t); err != nil {
-			return tasks, groups, err
+			return s, groups, err
 		}
 	}
-	return tasks, groups, nil
+	return s, groups, nil
 }
 
 // alive reports whether process pid exists.
@@ -269,7 +276,7 @@ func update(dir, id, token string, fn func(*Task)) (Task, error) {
 	defer unlock()
 	t, err := read(path(dir, id))
 	if err != nil {
-		return Task{}, err
+		return Task{}, fmt.Errorf("task %s could not be read: %w", id, err)
 	}
 	if t.Lease == nil || t.Lease.Token != token {
 		return t, fmt.Errorf("task %s was %w", id, errReclaimed)
@@ -278,32 +285,42 @@ func update(dir, id, token string, fn func(*Task)) (Task, error) {
 	return t, write(dir, t)
 }
 
-// load reads every task in dir, oldest first by created_at, then by id.
+// snapshot is the task directory as load found it.
+type snapshot struct {
+	tasks   []Task   // every readable task, oldest first by created_at, then by id
+	skipped []string // the sorted ids of task files that could not be read
+}
+
+// load reads every task in dir. An unreadable task file is skipped and left
+// as it is (P10); a directory that cannot be listed is an error.
 // (Readdirnames rather than os.ReadDir keeps the binary smaller, P14.)
-func load(dir string) ([]Task, error) {
+func load(dir string) (snapshot, error) {
+	var s snapshot
 	f, err := os.Open(dir)
 	if err != nil {
-		return nil, err
+		return s, err
 	}
 	names, err := f.Readdirnames(-1)
 	f.Close()
 	if err != nil {
-		return nil, err
+		return s, err
 	}
-	var tasks []Task
 	for _, name := range names {
-		if strings.HasSuffix(name, ".json") && !strings.HasPrefix(name, ".") {
-			t, err := read(filepath.Join(dir, name))
-			if err != nil {
-				return nil, err
-			}
-			tasks = append(tasks, t)
+		id, ok := strings.CutSuffix(name, ".json")
+		if !ok || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if t, err := read(filepath.Join(dir, name)); err == nil {
+			s.tasks = append(s.tasks, t)
+		} else {
+			s.skipped = append(s.skipped, id)
 		}
 	}
-	slices.SortFunc(tasks, func(a, b Task) int {
+	slices.SortFunc(s.tasks, func(a, b Task) int {
 		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
 	})
-	return tasks, nil
+	slices.Sort(s.skipped)
+	return s, nil
 }
 
 // request is the shell request that runs t in environ.
@@ -316,6 +333,9 @@ func (t Task) request(environ []string) shell.Request {
 
 func path(dir, id string) string { return filepath.Join(dir, id+".json") }
 
+// read reads the task in file. It is readable only as a record of the id in
+// its file name, with a known status, and with a lease while running (P6):
+// anything else, such as a copy of another task's file, is an error.
 func read(file string) (Task, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
@@ -323,7 +343,15 @@ func read(file string) (Task, error) {
 	}
 	var t Task
 	if err := json.Unmarshal(b, &t); err != nil {
-		return Task{}, fmt.Errorf("%s: %w", filepath.Base(file), err)
+		return Task{}, err
+	}
+	switch id := strings.TrimSuffix(filepath.Base(file), ".json"); {
+	case t.ID != id:
+		return Task{}, fmt.Errorf("its id is %q, not %q", t.ID, id)
+	case !slices.Contains([]Status{Queued, Running, Done, Failed}, t.Status):
+		return Task{}, fmt.Errorf("unknown status %q", t.Status)
+	case t.Status == Running && t.Lease == nil:
+		return Task{}, errors.New("running without a lease")
 	}
 	return t, nil
 }
