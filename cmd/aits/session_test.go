@@ -253,3 +253,34 @@ func TestSessionSearchEmptyFilterFlags(t *testing.T) {
 		}
 	}
 }
+
+// Text mode shows control characters from transcripts as Go escapes, so a
+// transcript cannot drive the terminal; --json keeps the original text (P5).
+func TestSessionSearchEscapesControls(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	writeTranscript(t, home, ".claude/projects/-w/a.jsonl", now,
+		`{"type":"user","sessionId":"a","cwd":"/work/a\rFAKE","message":{"content":"before \u001b[2J\u001b]0;title\u0007 needle \u001b[31mred\u001b[0m"}}`)
+	writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-x-b.jsonl", now.Add(-time.Hour),
+		`{"type":"session_meta","payload":{"id":"abc\u001b[8mx","cwd":"/home/u/项目\\dir"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"needle \u009b \u007f"}]}}`)
+
+	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "needle"}}.run(t)
+	if out.code != 0 || strings.ContainsAny(out.stdout, "\x1b\x07\r\x7f\u009b") {
+		t.Fatalf("text output holds raw control characters: code=%d stdout=%q", out.code, out.stdout)
+	}
+	for _, want := range []string{
+		`/work/a\rFAKE`, `before \x1b[2J\x1b]0;title\a needle \x1b[31mred\x1b[0m`,
+		`abc\x1b[8mx`, `/home/u/项目\dir`, `needle \u009b \x7f`,
+	} {
+		if !strings.Contains(out.stdout, want) {
+			t.Errorf("text output lacks %q:\n%s", want, out.stdout)
+		}
+	}
+
+	o := decodeSearch(t, call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "needle"}}.run(t).stdout)
+	if len(o.Results) != 2 || o.Results[0].Cwd != "/work/a\rFAKE" || o.Results[1].SessionID != "abc\x1b[8mx" ||
+		o.Results[1].Snippet != "needle \u009b \x7f" {
+		t.Errorf("--json changed the text: %+v", o.Results)
+	}
+}

@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/agent-in-the-shell/aits/internal/session"
 )
@@ -25,8 +27,9 @@ const searchDetails = `Output:
   With --json, stdout is one JSON object:
   {"results":[...],"skipped":{"files":N,"lines":N}}. Without --json, each
   result is a line "UPDATED_AT  AGENT  SESSION_ID  CWD" and an indented
-  snippet, and anything skipped is reported on stderr. No match is not an
-  error.
+  snippet, and anything skipped is reported on stderr. Text output shows
+  control characters from transcripts as Go escapes (\x1b, \r); --json
+  carries the original text. No match is not an error.
 
 Result fields:
   agent        The agent whose transcript matched.
@@ -127,9 +130,29 @@ func writeSearch(env *Env, out session.Output) {
 		return
 	}
 	for _, r := range out.Results {
-		fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n    %s\n", r.UpdatedAt.Format(time.RFC3339), r.Agent, r.SessionID, r.Cwd, r.Snippet)
+		fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n    %s\n", r.UpdatedAt.Format(time.RFC3339), r.Agent,
+			printable(r.SessionID), printable(r.Cwd), printable(r.Snippet))
 	}
 	if s := out.Skipped; s.Files+s.Lines > 0 {
 		fmt.Fprintf(env.Stderr, "aits: skipped %d files and %d lines that could not be read\n", s.Files, s.Lines)
 	}
+}
+
+// printable spells control characters as Go escapes (\x1b, \r, \u009b), so
+// text taken from a transcript cannot drive the terminal. --json keeps the
+// original text.
+func printable(s string) string {
+	if !strings.ContainsFunc(s, unicode.IsControl) {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			q := strconv.QuoteRune(r)
+			b.WriteString(q[1 : len(q)-1])
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
