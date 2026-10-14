@@ -306,7 +306,7 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 func TestSubmitEnvironment(t *testing.T) {
 	own := map[string][]string{
 		"claude": {"ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"},
-		"codex":  {"OPENAI_API_KEY", "CODEX_HOME"},
+		"codex":  {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "CODEX_HOME"},
 	}
 	for _, agent := range agentNames {
 		t.Run(agent, func(t *testing.T) {

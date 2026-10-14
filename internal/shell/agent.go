@@ -35,8 +35,9 @@ var agents = map[string]agent{
 		executable: "codex",
 		// No --skip-git-repo-check, sandbox or approval flags: Codex keeps its
 		// own safety defaults (P9).
-		args:  []string{"exec", "--json", "-"},
-		env:   []string{"CODEX_HOME", "OPENAI_API_KEY"},
+		args: []string{"exec", "--json", "-"},
+		// The credential variables Codex reads besides its login in CODEX_HOME.
+		env:   []string{"CODEX_HOME", "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"},
 		parse: parseCodex,
 	},
 }

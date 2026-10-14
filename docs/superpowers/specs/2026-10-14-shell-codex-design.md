@@ -40,7 +40,7 @@ Claude.
 | Agent | Own variables |
 |---|---|
 | `claude` | `CLAUDE_CONFIG_DIR`, `ANTHROPIC_API_KEY` |
-| `codex` | `CODEX_HOME`, `OPENAI_API_KEY` |
+| `codex` | `CODEX_HOME`, `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` |
 
 Neither agent receives the other's variables. `--env NAME` works as before.
 
