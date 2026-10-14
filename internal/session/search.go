@@ -214,8 +214,8 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 // eachLine calls fn for every non-blank line of r and returns how many lines
 // were unusable: fn returned false, or the line exceeded maxLine. A line over
 // maxLine is passed as nil, so that fn still sees each line's place (the
-// first line matters to a parser); it counts as unusable whatever fn returns. It returns
-// ctx's error as soon as ctx is cancelled, between lines.
+// first line matters to a parser); it counts as unusable whatever fn
+// returns. It returns ctx's error as soon as ctx is cancelled, between lines.
 func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
 	b.reader.Reset(r)
 	line := b.line[:0]

@@ -24,14 +24,27 @@ func (h home) env() []string { return []string{"HOME=" + h.dir} }
 
 func (h home) write(rel string, mtime time.Time, lines ...string) string {
 	h.t.Helper()
+	return h.writeFrom(rel, mtime, strings.NewReader(strings.Join(lines, "\n")+"\n"))
+}
+
+// writeFrom writes r to rel, so that a large file need not be built in memory.
+func (h home) writeFrom(rel string, mtime time.Time, r io.Reader) string {
+	h.t.Helper()
 	p := filepath.Join(h.dir, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		h.t.Fatal(err)
 	}
-	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
-		h.t.Fatal(err)
+	f, err := os.Create(p)
+	if err == nil {
+		_, err = io.Copy(f, r)
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
 	}
-	if err := os.Chtimes(p, mtime, mtime); err != nil {
+	if err == nil {
+		err = os.Chtimes(p, mtime, mtime)
+	}
+	if err != nil {
 		h.t.Fatal(err)
 	}
 	return p
@@ -226,38 +239,20 @@ func TestSearchCountsSessionWithoutCwd(t *testing.T) {
 // cannot be read (here not JSON, or over maxLine), a later session_meta does
 // not name the file, which is reported and never returned (P6, #23).
 func TestSearchCodexIdentityFromFirstLine(t *testing.T) {
-	const rel = ".codex/sessions/2026/10/14/rollout-c.jsonl"
-	later := codexLines("parent-1", "/w", "subagentword review")
-	firsts := map[string]func(h home){
-		"not JSON": func(h home) {
-			h.write(rel, time.Now(), append([]string{`{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"thread_sp`}, later...)...)
+	later := "\n" + strings.Join(codexLines("parent-1", "/w", "subagentword review"), "\n") + "\n"
+	firsts := map[string]func() io.Reader{
+		"not JSON": func() io.Reader {
+			return strings.NewReader(`{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"thread_sp` + later)
 		},
-		"too long": func(h home) { // streamed: building a 64 MiB string costs several copies
-			f, err := os.Create(filepath.Join(h.dir, rel))
-			if err == nil {
-				_, err = io.WriteString(f, `{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","x":"`)
-			}
-			if err == nil {
-				_, err = io.CopyN(f, repeatA{}, maxLine)
-			}
-			if err == nil {
-				_, err = io.WriteString(f, "\"}}\n"+strings.Join(later, "\n")+"\n")
-			}
-			if cerr := f.Close(); err == nil {
-				err = cerr
-			}
-			if err != nil {
-				h.t.Fatal(err)
-			}
+		"too long": func() io.Reader { // streamed: a 64 MiB string would cost several copies
+			return io.MultiReader(strings.NewReader(`{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","x":"`),
+				io.LimitReader(repeatA{}, maxLine), strings.NewReader(`"}}`+later))
 		},
 	}
-	for name, write := range firsts {
+	for name, first := range firsts {
 		t.Run(name, func(t *testing.T) {
 			h := newHome(t)
-			if err := os.MkdirAll(filepath.Join(h.dir, filepath.Dir(rel)), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			write(h)
+			h.writeFrom(".codex/sessions/2026/10/14/rollout-c.jsonl", time.Now(), first())
 			out := search(t, Query{Terms: []string{"subagentword"}, Environ: h.env()})
 			if len(out.Results) != 0 || out.Skipped != (Skipped{Files: 1, Lines: 1}) {
 				t.Errorf("results %q, skipped %+v", ids(out), out.Skipped)
