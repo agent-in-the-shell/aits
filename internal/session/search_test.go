@@ -179,6 +179,7 @@ func TestQueryValidate(t *testing.T) {
 		"relative cwd":   func(q *Query) { q.Cwd = "rel" },
 		"negative since": func(q *Query) { q.Since = -time.Second },
 		"zero limit":     func(q *Query) { q.Limit = 0 },
+		"unknown source": func(q *Query) { q.Source = "both" },
 	} {
 		q := good
 		edit(&q)
@@ -269,4 +270,52 @@ func (repeatA) Read(p []byte) (int, error) {
 		p[i] = 'a'
 	}
 	return len(p), nil
+}
+
+// A session's source is the first value its transcript records, classified
+// per vendor; a missing, unknown or non-string value is "" (#24).
+func TestSourceKinds(t *testing.T) {
+	const head = `"sessionId":"s","cwd":"/w"`
+	claude := map[string]string{
+		`{"type":"user",` + head + `,"entrypoint":"cli"}`:            "interactive",
+		`{"type":"user",` + head + `,"entrypoint":"claude-vscode"}`:  "interactive",
+		`{"type":"user",` + head + `,"entrypoint":"claude-desktop"}`: "interactive",
+		`{"type":"user",` + head + `,"entrypoint":"sdk-cli"}`:        "scripted",
+		`{"type":"user",` + head + `,"entrypoint":"sdk-ts"}`:         "scripted",
+		`{"type":"user",` + head + `,"entrypoint":"sdk-py"}`:         "scripted",
+		`{"type":"user",` + head + `,"entrypoint":"remote"}`:         "",
+		`{"type":"user",` + head + `,"entrypoint":7}`:                "",
+		`{"type":"user",` + head + `}`:                               "",
+	}
+	codex := map[string]string{
+		`{"type":"session_meta","payload":{"id":"s","cwd":"/w","source":"cli"}}`:            "interactive",
+		`{"type":"session_meta","payload":{"id":"s","cwd":"/w","source":"vscode"}}`:         "interactive",
+		`{"type":"session_meta","payload":{"id":"s","cwd":"/w","source":"exec"}}`:           "scripted",
+		`{"type":"session_meta","payload":{"id":"s","cwd":"/w","source":"mcp"}}`:            "",
+		`{"type":"session_meta","payload":{"id":"s","cwd":"/w","source":{"subagent":"x"}}}`: "",
+		`{"type":"session_meta","payload":{"id":"s","cwd":"/w"}}`:                           "",
+	}
+	for agent, lines := range map[string]map[string]string{"claude": claude, "codex": codex} {
+		v := vendors[agent]
+		for line, want := range lines {
+			p, ok := v.parse([]byte(line), true)
+			if got := v.kinds[p.source]; !ok || got != want {
+				t.Errorf("%s %s: kind %q (source %q, ok %v), want %q", agent, line, got, p.source, ok, want)
+			}
+		}
+	}
+}
+
+// The first recorded source decides: an interactive Claude session later
+// continued with claude -p stays interactive (#24).
+func TestSourceFirstValue(t *testing.T) {
+	h := newHome(t)
+	h.write(".claude/projects/-w/c.jsonl", time.Now(),
+		`{"type":"user","sessionId":"c","cwd":"/w","entrypoint":"cli","message":{"content":"migration"}}`,
+		`{"type":"user","sessionId":"c","cwd":"/w","entrypoint":"sdk-cli","message":{"content":"migration again"}}`)
+	for source, want := range map[string]int{"interactive": 1, "scripted": 0} {
+		if out := search(t, Query{Terms: []string{"migration"}, Source: source, Environ: h.env()}); len(out.Results) != want {
+			t.Errorf("--source %s: %q, want %d results", source, ids(out), want)
+		}
+	}
 }

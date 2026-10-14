@@ -35,7 +35,7 @@ func parseCodex(line []byte, first bool) (parsed, bool) {
 	}
 	switch e.Type {
 	case "session_meta":
-		p := parsed{id: rawString(e.Payload.ID), cwd: rawString(e.Payload.Cwd)}
+		p := parsed{id: rawString(e.Payload.ID), cwd: rawString(e.Payload.Cwd), source: rawString(e.Payload.Source)}
 		if p.id == "" && len(e.Payload.ID) > 0 {
 			return parsed{}, false // an id that is not a string
 		}
