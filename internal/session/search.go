@@ -176,9 +176,10 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 	}
 	t := newTranscript(terms)
 	parse := vendors[j.agent].parse
-	notSession, sawMessage := false, false
+	notSession, sawMessage, first := false, false, true
 	bad, err := eachLine(ctx, f, b, func(line []byte) bool {
-		p, ok := parse(line)
+		p, ok := parse(line, first)
+		first = false
 		t.identify(p.id, p.cwd)
 		notSession = notSession || p.notSession
 		sawMessage = sawMessage || p.message || len(p.texts) > 0
@@ -211,8 +212,10 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 }
 
 // eachLine calls fn for every non-blank line of r and returns how many lines
-// were unusable: fn returned false, or the line exceeded maxLine. It returns
-// ctx's error as soon as ctx is cancelled, between lines.
+// were unusable: fn returned false, or the line exceeded maxLine. A line over
+// maxLine is passed as nil, so that fn still sees each line's place (the
+// first line matters to a parser); it counts as unusable whatever fn
+// returns. It returns ctx's error as soon as ctx is cancelled, between lines.
 func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
 	b.reader.Reset(r)
 	line := b.line[:0]
@@ -237,7 +240,11 @@ func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool
 		if err == bufio.ErrBufferFull {
 			continue
 		}
-		if l := bytes.TrimSpace(line); tooLong || (len(l) > 0 && !fn(l)) {
+		switch l := bytes.TrimSpace(line); {
+		case tooLong:
+			fn(nil)
+			bad++
+		case len(l) > 0 && !fn(l):
 			bad++
 		}
 		line, tooLong = line[:0], false

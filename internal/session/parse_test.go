@@ -20,7 +20,7 @@ func run(t *testing.T, parse parser, c parseCase) {
 	var id, cwd string
 	var texts []string
 	for i, l := range c.lines {
-		p, ok := parse([]byte(l))
+		p, ok := parse([]byte(l), i == 0)
 		if ok != c.ok[i] {
 			t.Errorf("%s: line %d ok = %v, want %v", c.name, i, ok, c.ok[i])
 		}
@@ -80,6 +80,17 @@ func TestParseClaude(t *testing.T) {
 			`{"type":"attachment",` + head + `,"attachment":{"type":"file","content":"secret file"}}`,
 			`{"type":"attachment",` + head + `,"attachment":"a string"}`},
 			[]bool{true, true, true, true, true, true, true, true}, "s1", "/w", []string{"also check the docs", "no origin recorded"}},
+		{"a queued prompt given as blocks is searched by its text blocks", []string{
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"blockqueued see this"},{"type":"image","source":{"type":"base64","data":"iVBORw0KGgo="}}],"origin":{"kind":"human"}}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"<system-reminder>x"},{"type":"text","text":"my own words"}]}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"from an agent"}],"origin":{"kind":"agent"}}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":null}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt"}}`},
+			[]bool{true, true, true, true, true}, "s1", "/w", []string{"blockqueued see this", "my own words"}},
+		{"a queued prompt of another shape is not usable", []string{
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":7}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":{}}}`},
+			[]bool{false, false}, "s1", "/w", nil},
 		{"other event types", []string{
 			`{"type":"summary","summary":"x","leafUuid":"u"}`,
 			`{"type":"file-history-snapshot","snapshot":{}}`,
@@ -145,7 +156,7 @@ func TestParseCodexSubagent(t *testing.T) {
 		`{"type":"session_meta","payload":{"id":"c1","cwd":"/w","source":"cli"}}`:                                                   false,
 		`{"type":"session_meta","payload":{"id":"c1","cwd":"/w","source":{"exec":{}}}}`:                                             false,
 	} {
-		if p, ok := parseCodex([]byte(line)); !ok || p.notSession != want {
+		if p, ok := parseCodex([]byte(line), true); !ok || p.notSession != want {
 			t.Errorf("%s: notSession = %v, ok = %v; want %v", line, p.notSession, ok, want)
 		}
 	}

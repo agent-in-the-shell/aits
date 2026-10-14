@@ -11,11 +11,12 @@ var codexInjected = []string{
 	"<subagent_notification>", "<turn_aborted>", "<user_action>", "<image", "</image>",
 }
 
-// parseCodex reads one line of a Codex rollout file. The session_meta line
-// names the session and its directory, and marks a subagent's rollout;
-// response_item messages carry the text. Other lines are ignored, whatever
-// their shape.
-func parseCodex(line []byte) (parsed, bool) {
+// parseCodex reads one line of a Codex rollout file. The session_meta line,
+// when it is the first line, names the session and its directory and marks a
+// subagent's rollout: a later one never does, so a rollout whose first line
+// cannot be read stays unnamed (#23). response_item messages carry the text.
+// Other lines are ignored, whatever their shape.
+func parseCodex(line []byte, first bool) (parsed, bool) {
 	// One decode per line (see parseClaude); payload fields are raw because
 	// each line type gives them a different shape.
 	var e struct {
@@ -37,6 +38,9 @@ func parseCodex(line []byte) (parsed, bool) {
 		p := parsed{id: rawString(e.Payload.ID), cwd: rawString(e.Payload.Cwd)}
 		if p.id == "" && len(e.Payload.ID) > 0 {
 			return parsed{}, false // an id that is not a string
+		}
+		if !first {
+			return parsed{}, true
 		}
 		var source map[string]json.RawMessage
 		if json.Unmarshal(e.Payload.Source, &source) == nil {

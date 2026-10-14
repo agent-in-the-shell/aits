@@ -30,9 +30,10 @@ type parsed struct {
 	notSession bool     // the file is not a conversation the user can continue
 }
 
-// parser reads one transcript line; ok is false when the line is not usable.
-// Lines of shapes it does not search are usable and carry no text.
-type parser func(line []byte) (p parsed, ok bool)
+// parser reads one transcript line, first when it is the file's first
+// non-blank line; ok is false when the line is not usable. Lines of shapes it
+// does not search are usable and carry no text.
+type parser func(line []byte, first bool) (p parsed, ok bool)
 
 func newTranscript(terms []string) *transcript {
 	t := &transcript{found: make([]bool, len(terms))}

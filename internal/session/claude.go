@@ -14,7 +14,7 @@ var claudeInjected = []string{
 // carry sessionId and cwd; user and assistant events carry the message text,
 // and a prompt the user queued while the agent was working is an attachment.
 // Events of other types are ignored, whatever their shape.
-func parseClaude(line []byte) (parsed, bool) {
+func parseClaude(line []byte, _ bool) (parsed, bool) {
 	// One decode per line: Unmarshal validates the whole line first, and
 	// lines carrying tool output can be megabytes. Fields are raw so that
 	// events of other shapes are not errors.
@@ -62,17 +62,20 @@ func parseClaude(line []byte) (parsed, bool) {
 		}
 		p.texts = texts
 	case "attachment":
-		if s := queuedPrompt(e.Attachment); s != "" && !injected(s, claudeInjected) {
-			p.texts = []string{s}
+		texts, ok := queuedPrompt(e.Attachment)
+		if !ok {
+			return p, false
 		}
+		p.texts = ownText(texts, claudeInjected)
 	}
 	return p, true
 }
 
 // queuedPrompt returns the text of a prompt the user typed while the agent was
-// working, or "" for any other attachment (files, agent-to-agent messages,
-// queued shell commands).
-func queuedPrompt(raw json.RawMessage) string {
+// working, as a string or as content blocks (with a pasted image), and nothing
+// for any other attachment (files, agent-to-agent messages, queued shell
+// commands); ok is false when such a prompt has another shape.
+func queuedPrompt(raw json.RawMessage) ([]string, bool) {
 	var a struct {
 		Type        json.RawMessage `json:"type"`
 		CommandMode json.RawMessage `json:"commandMode"`
@@ -85,9 +88,9 @@ func queuedPrompt(raw json.RawMessage) string {
 	if json.Unmarshal(raw, &a) != nil || rawString(a.Type) != "queued_command" ||
 		rawString(a.CommandMode) != "prompt" || string(a.IsMeta) == "true" ||
 		(a.Origin != nil && rawString(a.Origin.Kind) != "human") {
-		return ""
+		return nil, true
 	}
-	return rawString(a.Prompt)
+	return claudeTexts(a.Prompt)
 }
 
 // claudeTexts returns the searched text of a message's content: the content
