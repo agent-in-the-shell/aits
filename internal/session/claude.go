@@ -14,7 +14,7 @@ var claudeInjected = []string{
 // carry sessionId and cwd; user and assistant events carry the message text,
 // and a prompt the user queued while the agent was working is an attachment.
 // Events of other types are ignored, whatever their shape.
-func parseClaude(line []byte) (parsed, bool) {
+func parseClaude(line []byte, _ bool) (parsed, bool) {
 	// One decode per line: Unmarshal validates the whole line first, and
 	// lines carrying tool output can be megabytes. Fields are raw so that
 	// events of other shapes are not errors.

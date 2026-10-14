@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -225,19 +226,52 @@ func TestSearchCountsSessionWithoutCwd(t *testing.T) {
 // cannot be read (here not JSON, or over maxLine), a later session_meta does
 // not name the file, which is reported and never returned (P6, #23).
 func TestSearchCodexIdentityFromFirstLine(t *testing.T) {
-	later := []string{
-		`{"type":"session_meta","payload":{"id":"parent-1","cwd":"/w","source":"cli"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"subagentword review"}]}}`,
+	const rel = ".codex/sessions/2026/10/14/rollout-c.jsonl"
+	later := codexLines("parent-1", "/w", "subagentword review")
+	firsts := map[string]func(h home){
+		"not JSON": func(h home) {
+			h.write(rel, time.Now(), append([]string{`{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"thread_sp`}, later...)...)
+		},
+		"too long": func(h home) { // streamed: building a 64 MiB string costs several copies
+			f, err := os.Create(filepath.Join(h.dir, rel))
+			if err == nil {
+				_, err = io.WriteString(f, `{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","x":"`)
+			}
+			if err == nil {
+				_, err = io.CopyN(f, repeatA{}, maxLine)
+			}
+			if err == nil {
+				_, err = io.WriteString(f, "\"}}\n"+strings.Join(later, "\n")+"\n")
+			}
+			if cerr := f.Close(); err == nil {
+				err = cerr
+			}
+			if err != nil {
+				h.t.Fatal(err)
+			}
+		},
 	}
-	huge := `{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"x":"` + strings.Repeat("a", maxLine) + `"}}}}`
-	for name, first := range map[string]string{"not JSON": `{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"thread_sp`, "too long": huge} {
+	for name, write := range firsts {
 		t.Run(name, func(t *testing.T) {
 			h := newHome(t)
-			h.write(".codex/sessions/2026/10/14/rollout-c.jsonl", time.Now(), append([]string{first}, later...)...)
+			if err := os.MkdirAll(filepath.Join(h.dir, filepath.Dir(rel)), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			write(h)
 			out := search(t, Query{Terms: []string{"subagentword"}, Environ: h.env()})
 			if len(out.Results) != 0 || out.Skipped != (Skipped{Files: 1, Lines: 1}) {
 				t.Errorf("results %q, skipped %+v", ids(out), out.Skipped)
 			}
 		})
 	}
+}
+
+// repeatA reads as an endless run of 'a'.
+type repeatA struct{}
+
+func (repeatA) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'a'
+	}
+	return len(p), nil
 }

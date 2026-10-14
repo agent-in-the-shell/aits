@@ -20,7 +20,7 @@ func run(t *testing.T, parse parser, c parseCase) {
 	var id, cwd string
 	var texts []string
 	for i, l := range c.lines {
-		p, ok := parse([]byte(l))
+		p, ok := parse([]byte(l), i == 0)
 		if ok != c.ok[i] {
 			t.Errorf("%s: line %d ok = %v, want %v", c.name, i, ok, c.ok[i])
 		}
@@ -156,7 +156,7 @@ func TestParseCodexSubagent(t *testing.T) {
 		`{"type":"session_meta","payload":{"id":"c1","cwd":"/w","source":"cli"}}`:                                                   false,
 		`{"type":"session_meta","payload":{"id":"c1","cwd":"/w","source":{"exec":{}}}}`:                                             false,
 	} {
-		if p, ok := parseCodex([]byte(line)); !ok || p.notSession != want {
+		if p, ok := parseCodex([]byte(line), true); !ok || p.notSession != want {
 			t.Errorf("%s: notSession = %v, ok = %v; want %v", line, p.notSession, ok, want)
 		}
 	}

@@ -26,15 +26,11 @@ type vendor struct {
 	rootHome string // the root under HOME otherwise
 	pattern  string // transcript files under the root, for filepath.Glob
 	parse    parser
-	// firstLine: the session's identity (id, cwd, subagent mark) comes from
-	// its first line only, so an unreadable first line leaves the file
-	// unidentified rather than named by a later line.
-	firstLine bool
 }
 
 var vendors = map[string]vendor{
 	"claude": {rootVar: "CLAUDE_CONFIG_DIR", rootHome: ".claude", pattern: "projects/*/*.jsonl", parse: parseClaude},
-	"codex":  {rootVar: "CODEX_HOME", rootHome: ".codex", pattern: "sessions/*/*/*/rollout-*.jsonl", parse: parseCodex, firstLine: true},
+	"codex":  {rootVar: "CODEX_HOME", rootHome: ".codex", pattern: "sessions/*/*/*/rollout-*.jsonl", parse: parseCodex},
 }
 
 // files lists the vendor's transcript files. A missing root lists nothing.
@@ -179,14 +175,11 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 		return outcome{badFile: true}
 	}
 	t := newTranscript(terms)
-	v := vendors[j.agent]
-	notSession, sawMessage, lines, unidentified := false, false, 0, false
+	parse := vendors[j.agent].parse
+	notSession, sawMessage, first := false, false, true
 	bad, err := eachLine(ctx, f, b, func(line []byte) bool {
-		p, ok := v.parse(line)
-		if lines++; v.firstLine && lines > 1 {
-			p.id, p.cwd, p.notSession = "", "", false
-		}
-		unidentified = unidentified || (v.firstLine && lines == 1 && !ok)
+		p, ok := parse(line, first)
+		first = false
 		t.identify(p.id, p.cwd)
 		notSession = notSession || p.notSession
 		sawMessage = sawMessage || p.message || len(p.texts) > 0
@@ -196,7 +189,7 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 		return ok
 	})
 	switch {
-	case err != nil, unidentified:
+	case err != nil:
 		return outcome{lines: bad, badFile: true}
 	case notSession:
 		return outcome{lines: bad} // a subagent's rollout: not a session to return
@@ -219,7 +212,9 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 }
 
 // eachLine calls fn for every non-blank line of r and returns how many lines
-// were unusable: fn returned false, or the line exceeded maxLine. It returns
+// were unusable: fn returned false, or the line exceeded maxLine. A line over
+// maxLine is passed as nil, so that fn still sees each line's place (the
+// first line matters to a parser); it counts as unusable whatever fn returns. It returns
 // ctx's error as soon as ctx is cancelled, between lines.
 func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
 	b.reader.Reset(r)
@@ -247,7 +242,7 @@ func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool
 		}
 		switch l := bytes.TrimSpace(line); {
 		case tooLong:
-			fn(nil) // still a line, in its place, but not one to read
+			fn(nil)
 			bad++
 		case len(l) > 0 && !fn(l):
 			bad++
