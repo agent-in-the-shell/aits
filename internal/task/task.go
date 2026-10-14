@@ -33,15 +33,11 @@ const (
 )
 
 // Run statuses besides shell's: the agent was never started after the claim,
-// or the worker's lease expired before it recorded a result.
+// or the worker exited before it recorded a result.
 const (
-	NotStarted   shell.Status = "not_started"
-	LeaseExpired shell.Status = "lease_expired"
+	NotStarted shell.Status = "not_started"
+	WorkerDied shell.Status = "worker_died"
 )
-
-// leaseSlack is how long past the task's own timeout a lease lasts: shell
-// stops the agent at the timeout, so only a dead worker outlives its lease.
-const leaseSlack = time.Minute
 
 // Task is one queued agent run and, once worked, its result.
 type Task struct {
@@ -57,12 +53,11 @@ type Task struct {
 	Run       *Run      `json:"run"`
 }
 
-// Lease is a worker's claim on a running task.
+// Lease is a worker's claim on a running task. Whether the worker is alive is
+// not recorded: it holds the task's lock file while it runs (lockPath).
 type Lease struct {
-	Token     string    `json:"token"`
-	WorkerPID int       `json:"worker_pid"`
-	PGID      int       `json:"pgid"` // the agent's process group; 0 until it starts
-	ExpiresAt time.Time `json:"expires_at"`
+	Token string `json:"token"`
+	PGID  int    `json:"pgid"` // the agent's process group; 0 until it starts
 }
 
 // Run is the outcome of working a task.
@@ -85,9 +80,19 @@ func invalid(format string, a ...any) error {
 	return &shell.InvalidRequestError{Reason: fmt.Sprintf(format, a...)}
 }
 
-// errReclaimed means the worker's lease expired and another caller failed the
-// task before the worker could record its run.
-var errReclaimed = errors.New("reclaimed after its lease expired")
+// errReclaimed means another caller failed the task, its worker being gone,
+// before this worker recorded its run.
+var errReclaimed = errors.New("reclaimed before its run was recorded")
+
+// Notes are what list and work report besides tasks, as sorted ids: task
+// files that could not be read, and running tasks whose lock file is missing,
+// so that whether their worker is alive cannot be told.
+type Notes struct{ Skipped, Unknown []string }
+
+// lockPath is the lock file a task's worker holds while it runs. It is made
+// by the claim and never removed: removing a held lock file would let a new
+// one at the same path be locked by someone else.
+func lockPath(dir, id string) string { return filepath.Join(dir, id+".lock") }
 
 // Create validates s as the request it will be run as, and queues it.
 func Create(environ []string, s Spec) (Task, error) {
@@ -117,21 +122,21 @@ func Create(environ []string, s Spec) (Task, error) {
 	return t, write(dir, t)
 }
 
-// List reclaims expired leases and returns every readable task, oldest
-// first, and the sorted ids of the task files that could not be read.
-func List(environ []string) ([]Task, []string, error) {
+// List reclaims tasks of dead workers and returns every readable task, oldest
+// first, and its notes.
+func List(environ []string) ([]Task, Notes, error) {
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
-		return nil, nil, err
+		return nil, Notes{}, err
 	}
 	unlock, err := store.Lock(dir)
 	if err != nil {
-		return nil, nil, err
+		return nil, Notes{}, err
 	}
 	s, groups, err := reclaim(dir)
 	unlock()
 	shell.Stop(groups...)
-	return s.tasks, s.skipped, err
+	return s.tasks, s.Notes, err
 }
 
 // Show returns one task; an unknown id is a *shell.InvalidRequestError.
@@ -147,24 +152,24 @@ func Show(environ []string, id string) (Task, error) {
 	return t, err
 }
 
-// Work reclaims expired leases, claims the oldest queued task (of agent, if
-// not empty), runs it through shell and records the run. It also returns the
-// ids of the task files it skipped as unreadable. The task is nil when
-// nothing is queued; the error is shell.ErrStopped when ctx is done before
-// the claim, and errReclaimed, wrapped with the task id, when the lease was
-// lost.
-func Work(ctx context.Context, environ []string, agent string) (*Task, []string, error) {
+// Work reclaims tasks of dead workers, claims the oldest queued task (of
+// agent, if not empty), runs it through shell and records the run. It also
+// returns the notes of the reclaim. The task is nil when nothing is queued;
+// the error is shell.ErrStopped when ctx is done before the claim, and
+// errReclaimed, wrapped with the task id, when the task was reclaimed.
+func Work(ctx context.Context, environ []string, agent string) (*Task, Notes, error) {
 	if agent != "" && !slices.Contains(shell.Agents(), agent) {
-		return nil, nil, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
+		return nil, Notes{}, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
 	}
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
-		return nil, nil, err
+		return nil, Notes{}, err
 	}
-	t, skipped, err := claim(ctx, dir, agent)
+	t, release, notes, err := claim(ctx, dir, agent)
 	if t == nil || err != nil {
-		return nil, skipped, err
+		return nil, notes, err
 	}
+	defer release() // the worker holds the task's lock until its run is recorded
 	token := t.Lease.Token
 	var started time.Time // stays zero unless the agent starts
 	req := t.request(environ)
@@ -183,82 +188,94 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, []string,
 	run := &Run{Result: res, StartedAt: started, FinishedAt: time.Now().UTC()}
 	done, err := update(dir, t.ID, token, func(t *Task) { t.Status, t.Run, t.Lease = status, run, nil })
 	if err != nil {
-		return nil, skipped, err
+		return nil, notes, err
 	}
-	return &done, skipped, nil
+	return &done, notes, nil
 }
 
-// claim, under the lock, reclaims expired leases and marks the oldest queued
-// task of agent running with a fresh lease; it also returns the ids of the
-// unreadable task files. A signal that arrived while it waited for the lock
-// claims nothing.
-func claim(ctx context.Context, dir, agent string) (*Task, []string, error) {
+// claim, under the lock, reclaims tasks of dead workers and marks the oldest
+// queued task of agent running with a fresh lease. It locks the task's lock
+// file first, so that a running task's lock is never free while its worker
+// lives, and returns the function that releases it, with the notes of the
+// reclaim. A signal that arrived while it waited for the lock claims nothing.
+func claim(ctx context.Context, dir, agent string) (*Task, func(), Notes, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, Notes{}, err
 	}
 	if ctx.Err() != nil {
 		unlock()
-		return nil, nil, shell.ErrStopped
+		return nil, nil, Notes{}, shell.ErrStopped
 	}
 	s, groups, err := reclaim(dir)
 	var claimed *Task
+	var release func()
 	if err == nil {
 		for i := range s.tasks {
-			if t := &s.tasks[i]; t.Status == Queued && (agent == "" || t.Agent == agent) {
-				t.Status = Running
-				t.Lease = &Lease{
-					Token:     fmt.Sprintf("%016x", rand.Uint64()),
-					WorkerPID: os.Getpid(),
-					ExpiresAt: time.Now().UTC().Add(time.Duration(t.TimeoutMS)*time.Millisecond + leaseSlack),
-				}
-				if err = write(dir, *t); err == nil {
-					claimed = t
-				}
+			t := &s.tasks[i]
+			if t.Status != Queued || (agent != "" && t.Agent != agent) {
+				continue
+			}
+			if release, err = store.TryLock(lockPath(dir, t.ID), true); err != nil {
+				err = fmt.Errorf("task %s: %w", t.ID, err)
 				break
 			}
+			t.Status = Running
+			t.Lease = &Lease{Token: fmt.Sprintf("%016x", rand.Uint64())}
+			if err = write(dir, *t); err != nil {
+				release()
+				release = nil
+				break
+			}
+			claimed = t
+			break
 		}
 	}
 	unlock()
 	shell.Stop(groups...)
-	return claimed, s.skipped, err
+	return claimed, release, s.Notes, err
 }
 
 // reclaim, under the lock, loads every task and fails each running one whose
-// lease has expired and whose worker is gone. It returns what it loaded and
-// the agent process groups to stop once the lock is free. A live worker keeps its
-// task even past the lease: the lease is wall-clock time, and after the
-// machine sleeps it can expire while the worker's own timeout (monotonic)
-// still has time left.
+// lock file it can lock: no worker holds it, so the worker is gone. A held
+// lock is a live worker, whatever its age (P10); a missing lock file cannot be
+// judged and is noted (P6); any other error stops it. It returns what it
+// loaded and the agent process groups to stop once the lock is free.
 func reclaim(dir string) (snapshot, []int, error) {
 	s, err := load(dir)
 	if err != nil {
 		return s, nil, err
 	}
 	var groups []int
-	now := time.Now()
 	for i := range s.tasks {
 		t := &s.tasks[i]
-		if t.Status != Running || t.Lease == nil || now.Before(t.Lease.ExpiresAt) || alive(t.Lease.WorkerPID) {
+		if t.Status != Running {
 			continue
+		}
+		release, err := store.TryLock(lockPath(dir, t.ID), false)
+		switch {
+		case errors.Is(err, store.ErrLocked):
+			continue
+		case errors.Is(err, os.ErrNotExist):
+			s.Unknown = append(s.Unknown, t.ID)
+			continue
+		case err != nil:
+			return s, groups, fmt.Errorf("task %s: %w", t.ID, err)
 		}
 		groups = append(groups, t.Lease.PGID)
 		t.Status, t.Lease = Failed, nil
 		t.Run = &Run{Result: shell.Result{
-			Status: LeaseExpired, Agent: t.Agent,
-			Message: "the worker's lease expired before it recorded a result",
-		}, FinishedAt: now.UTC()}
-		if err := write(dir, *t); err != nil {
+			Status: WorkerDied, Agent: t.Agent,
+			Message: "the worker exited before it recorded a result",
+		}, FinishedAt: time.Now().UTC()}
+		err = write(dir, *t)
+		release()
+		if err != nil {
 			return s, groups, err
 		}
 	}
+	slices.Sort(s.Unknown)
 	return s, groups, nil
-}
-
-// alive reports whether process pid exists.
-func alive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return pid > 0 && (err == nil || errors.Is(err, syscall.EPERM))
 }
 
 // update applies fn to task id under the lock if the caller still holds its
@@ -282,8 +299,8 @@ func update(dir, id, token string, fn func(*Task)) (Task, error) {
 
 // snapshot is the task directory as load found it.
 type snapshot struct {
-	tasks   []Task   // every readable task, oldest first by created_at, then by id
-	skipped []string // the sorted ids of task files that could not be read
+	tasks []Task // every readable task, oldest first by created_at, then by id
+	Notes
 }
 
 // load reads every task in dir. An unreadable task file is skipped and left
@@ -308,13 +325,13 @@ func load(dir string) (snapshot, error) {
 		if t, err := read(dir, id); err == nil {
 			s.tasks = append(s.tasks, t)
 		} else {
-			s.skipped = append(s.skipped, id)
+			s.Skipped = append(s.Skipped, id)
 		}
 	}
 	slices.SortFunc(s.tasks, func(a, b Task) int {
 		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
 	})
-	slices.Sort(s.skipped)
+	slices.Sort(s.Skipped)
 	return s, nil
 }
 

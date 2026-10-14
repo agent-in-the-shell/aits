@@ -107,7 +107,7 @@ Errors: invalid_input (exit 2); internal (exit 1).
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "list takes no arguments")
 				}
-				tasks, skipped, err := task.List(env.Environ)
+				tasks, notes, err := task.List(env.Environ)
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -123,13 +123,15 @@ Errors: invalid_input (exit 2); internal (exit 1).
 					items = append(items, item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt})
 				}
 				if env.JSON {
+					reportUnknown(env, notes.Unknown)
 					writeJSON(env.Stdout, struct {
 						Tasks   []item   `json:"tasks"`
 						Skipped []string `json:"skipped"`
-					}{items, append([]string{}, skipped...)})
+					}{items, append([]string{}, notes.Skipped...)})
 					return exitOK, nil
 				}
-				reportSkipped(env, skipped)
+				reportSkipped(env, notes.Skipped)
+				reportUnknown(env, notes.Unknown)
 				for _, i := range items {
 					fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n", i.ID, i.Status, i.Agent, i.CreatedAt.Format(time.RFC3339))
 				}
@@ -192,8 +194,9 @@ Errors: invalid_input (exit 2); stopped, internal (exit 1).
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "work takes no arguments")
 				}
-				t, skipped, err := task.Work(ctx, env.Environ, *agent)
-				reportSkipped(env, skipped)
+				t, notes, err := task.Work(ctx, env.Environ, *agent)
+				reportSkipped(env, notes.Skipped)
+				reportUnknown(env, notes.Unknown)
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -238,6 +241,14 @@ func writeTask(env *Env, t task.Task) {
 func reportSkipped(env *Env, ids []string) {
 	for _, id := range ids {
 		fmt.Fprintf(env.Stderr, "aits: skipped task %s that could not be read\n", printable(id))
+	}
+}
+
+// reportUnknown names, on stderr, each running task whose lock file is
+// missing, so that whether its worker is alive cannot be told.
+func reportUnknown(env *Env, ids []string) {
+	for _, id := range ids {
+		fmt.Fprintf(env.Stderr, "aits: cannot tell whether the worker of task %s is alive: its lock file is missing\n", printable(id))
 	}
 }
 
