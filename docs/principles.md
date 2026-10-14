@@ -150,15 +150,16 @@ bind is loopback; no environment variable enables a privilege-raising flag.
 runs in its own process group; on timeout, cancel or SIGTERM aits sends TERM,
 waits a bounded grace period, sends KILL, reaps, and still prints a result —
 with timeout and stop as distinct statuses. Persisted "in progress" state must
-be recoverable by aits itself (for example, an expiring lease), without manual
-repair. One user action is one atomic command.
+be recoverable by aits itself (for example, a lock the kernel releases when
+its holder exits), without manual repair. One user action is one atomic
+command.
 
 **Prevents.** Orphaned agent processes; a task stuck `running` forever after
 its worker dies; two-step follow-ups that race a background worker.
 
 **Guard.** Tests with a fake vendor that spawns a grandchild assert nothing
-survives a timeout or SIGTERM; a test asserts an expired lease can be
-reclaimed.
+survives a timeout or SIGTERM; a test asserts the task of a dead worker is
+reclaimed, even when its pid now belongs to a live process.
 
 ## P11 — Clean-room, issue-first
 

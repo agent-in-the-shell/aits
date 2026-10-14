@@ -26,10 +26,8 @@ type taskRecord struct {
 	Env       []string `json:"env"`
 	CreatedAt string   `json:"created_at"`
 	Lease     *struct {
-		Token     string `json:"token"`
-		WorkerPID int    `json:"worker_pid"`
-		PGID      int    `json:"pgid"`
-		ExpiresAt string `json:"expires_at"`
+		Token string `json:"token"`
+		PGID  int    `json:"pgid"`
 	} `json:"lease"`
 	Run *struct {
 		Status     string `json:"status"`
@@ -83,11 +81,57 @@ func (q queue) run(args ...string) output {
 // aits would.
 func (q queue) writeTaskFile(id, body string, mode os.FileMode) string {
 	q.t.Helper()
-	file := filepath.Join(q.home, "task", id+".json")
+	file := q.taskFile(id)
 	if err := os.WriteFile(file, []byte(body), mode); err != nil {
 		q.t.Fatal(err)
 	}
 	return file
+}
+
+// taskFile is the path of task id's record.
+func (q queue) taskFile(id string) string { return filepath.Join(q.home, "task", id+".json") }
+
+// lockFile is the path of task id's lock file.
+func (q queue) lockFile(id string) string { return filepath.Join(q.home, "task", id+".lock") }
+
+// writeLockFile leaves the lock file of id as a claim does, unlocked.
+func (q queue) writeLockFile(id string) {
+	q.t.Helper()
+	if err := os.WriteFile(q.lockFile(id), nil, 0o600); err != nil {
+		q.t.Fatal(err)
+	}
+}
+
+// setRunning rewrites task id as running with lease, as a worker (or an
+// earlier aits) would have left it, and returns the bytes written.
+func (q queue) setRunning(id string, lease map[string]any) []byte {
+	q.t.Helper()
+	file := q.taskFile(id)
+	var rec map[string]any
+	b, err := os.ReadFile(file)
+	if err == nil {
+		err = json.Unmarshal(b, &rec)
+	}
+	if err != nil {
+		q.t.Fatal(err)
+	}
+	rec["status"], rec["lease"] = "running", lease
+	b, _ = json.Marshal(rec)
+	if err := os.WriteFile(file, b, 0o600); err != nil {
+		q.t.Fatal(err)
+	}
+	return b
+}
+
+// waitLease waits until task id records the agent's process group pgid.
+func (q queue) waitLease(id string, pgid int) {
+	q.t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if r := decodeOne[taskRecord](q.t, q.run("show", id, "--json").stdout); r.Lease != nil && r.Lease.PGID == pgid {
+			return
+		}
+	}
+	q.t.Fatalf("task %s never recorded pgid %d", id, pgid)
 }
 
 func (q queue) create(prompt string, flags ...string) string {
@@ -182,8 +226,9 @@ func TestTaskConcurrentWorkers(t *testing.T) {
 	}
 }
 
-// A running task whose lease has expired is failed by the next list, and its
-// leftover agent group is stopped (P10).
+// A running task whose lock nobody holds is failed by the next list, even
+// with an old lease whose pid is alive, and its leftover agent group is
+// stopped (P10).
 func TestTaskReclaim(t *testing.T) {
 	q := newQueue(t, "ok")
 	id := q.create("hi")
@@ -193,29 +238,15 @@ func TestTaskReclaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	go func() { _ = sleeper.Wait() }()
-	file := filepath.Join(q.home, "task", id+".json")
-	var rec map[string]any
-	b, _ := os.ReadFile(file)
-	if err := json.Unmarshal(b, &rec); err != nil {
-		t.Fatal(err)
-	}
-	rec["status"] = "running"
-	worker := exec.Command("true") // a worker that has died
-	if err := worker.Run(); err != nil {
-		t.Fatal(err)
-	}
-	rec["lease"] = map[string]any{"token": "dead", "worker_pid": worker.Process.Pid, "pgid": sleeper.Process.Pid,
-		"expires_at": time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)}
-	b, _ = json.Marshal(rec)
-	if err := os.WriteFile(file, b, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	q.setRunning(id, map[string]any{"token": "dead", "worker_pid": os.Getpid(), "pgid": sleeper.Process.Pid,
+		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339)})
+	q.writeLockFile(id)
 	// An unreadable file next to it does not stop the reclaim.
 	q.writeTaskFile("20261014T000000-bad000", "garbage", 0o600)
 	if out := q.run("list"); out.code != 0 {
 		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
 	}
-	if s := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); s.Status != "failed" || s.Run == nil || s.Run.Status != "lease_expired" {
+	if s := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); s.Status != "failed" || s.Run == nil || s.Run.Status != "worker_died" {
 		t.Errorf("after reclaim: %+v", s)
 	}
 	assertGone(t, sleeper.Process.Pid)
@@ -230,6 +261,16 @@ func TestTaskWorkStopped(t *testing.T) {
 	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Lease == nil || r.Lease.PGID != readPID(t, filepath.Join(q.path, "child.pid")) {
 		t.Errorf("running task lease = %+v, want the agent's process group", r.Lease)
 	}
+	var raw struct {
+		Lease map[string]any `json:"lease"`
+	}
+	if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &raw); err != nil || len(raw.Lease) != 2 ||
+		raw.Lease["token"] == nil || raw.Lease["pgid"] == nil {
+		t.Errorf("lease = %v, want exactly token and pgid", raw.Lease)
+	}
+	if out := q.run("list", "--json"); out.code != 0 || decodeOne[taskList](t, out.stdout).Tasks[0].Status != "running" {
+		t.Errorf("list while the worker runs: code=%d stdout=%q", out.code, out.stdout)
+	}
 	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
@@ -237,6 +278,93 @@ func TestTaskWorkStopped(t *testing.T) {
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run.Status != "stopped" || w.Run.SessionID != "sess-fake-1" {
 		t.Fatalf("code=%d %+v", out.code, w)
 	}
+}
+
+// A worker killed mid-run is found dead by the next list at once, not after
+// the task's 30-minute timeout, and its agent, still running, is stopped: the
+// agent does not keep the worker's lock (P10).
+func TestTaskWorkerKilled(t *testing.T) {
+	q := newQueue(t, "sleep")
+	id := q.create("hi")
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	pgid := readPID(t, filepath.Join(q.path, "child.pid"))
+	q.waitLease(id, pgid)
+	if err := s.cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	s.waitOrKill(t, 10*time.Second)
+	if out := q.run("list"); out.code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+		t.Errorf("after the worker was killed: %+v", r)
+	}
+	assertGone(t, pgid)
+}
+
+// A lock file removed by hand while its worker runs cannot be judged: list
+// leaves the task running and says so, and the worker still records its run
+// (P6).
+func TestTaskLockFileRemoved(t *testing.T) {
+	q := newQueue(t, "sleep")
+	id := q.create("hi")
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	q.waitLease(id, readPID(t, filepath.Join(q.path, "child.pid")))
+	if err := os.Remove(q.lockFile(id)); err != nil {
+		t.Fatal(err)
+	}
+	want := "aits: cannot tell whether the worker of task " + id + " is alive: its lock file is missing\n"
+	for _, args := range [][]string{{"list"}, {"list", "--json"}} {
+		if out := q.run(args...); out.code != 0 || out.stderr != want {
+			t.Errorf("%v: code=%d stderr=%q, want %q", args, out.code, out.stderr, want)
+		}
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "running" {
+		t.Errorf("task = %+v, want still running", r)
+	}
+	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	out := s.waitOrKill(t, 10*time.Second)
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run == nil || w.Run.Status != "stopped" {
+		t.Errorf("work after SIGTERM: code=%d %+v", out.code, w)
+	}
+}
+
+// A lock that cannot be tried fails list and work with internal and changes
+// no task (P6).
+func TestTaskLockError(t *testing.T) {
+	t.Run("running", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		id := q.create("hi")
+		b := q.setRunning(id, map[string]any{"token": "w", "pgid": 0})
+		if err := os.Mkdir(q.lockFile(id), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		out := q.run("list", "--json")
+		if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
+			t.Errorf("list: code=%d stdout=%q", out.code, out.stdout)
+		}
+		if after, _ := os.ReadFile(q.taskFile(id)); string(after) != string(b) {
+			t.Errorf("record changed: %s", after)
+		}
+	})
+	t.Run("queued", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		id := q.create("hi")
+		if err := os.Mkdir(q.lockFile(id), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		out := q.run("work", "--json")
+		if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
+			t.Errorf("work: code=%d stdout=%q", out.code, out.stdout)
+		}
+		if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "queued" || r.Lease != nil {
+			t.Errorf("task changed: %+v", r)
+		}
+	})
 }
 
 // Unreadable task files are skipped and reported by list and work, never

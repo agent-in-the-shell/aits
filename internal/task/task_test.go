@@ -1,11 +1,14 @@
 package task
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -80,32 +83,6 @@ func TestWorkNotStarted(t *testing.T) {
 	}
 }
 
-func TestReclaim(t *testing.T) {
-	environ := env(t)
-	expired := create(t, environ, "claude")
-	live := create(t, environ, "claude")
-	dir, _ := store.Dir(environ, "task")
-	for _, x := range []struct {
-		tk      Task
-		expires time.Time
-	}{{expired, time.Now().Add(-time.Second)}, {live, time.Now().Add(time.Hour)}} {
-		x.tk.Status, x.tk.Lease = Running, &Lease{Token: "w", WorkerPID: deadPID(t), ExpiresAt: x.expires}
-		if err := write(dir, x.tk); err != nil {
-			t.Fatal(err)
-		}
-	}
-	tasks, _, err := List(environ)
-	if err != nil || len(tasks) != 2 {
-		t.Fatalf("List = %+v, %v", tasks, err)
-	}
-	if e := tasks[0]; e.Status != Failed || e.Run == nil || e.Run.Status != LeaseExpired || e.Lease != nil {
-		t.Errorf("expired task = %+v", e)
-	}
-	if l := tasks[1]; l.Status != Running || l.Lease == nil {
-		t.Errorf("live task = %+v", l)
-	}
-}
-
 // A worker whose lease was reclaimed must not overwrite the failed record.
 func TestUpdateForeignToken(t *testing.T) {
 	environ := env(t)
@@ -132,21 +109,6 @@ func TestShowUnknown(t *testing.T) {
 	}
 }
 
-// A lease that has expired by the wall clock while its worker is still alive
-// (the laptop slept: shell's timeout uses the monotonic clock) is left alone.
-func TestReclaimSparesLiveWorker(t *testing.T) {
-	environ := env(t)
-	tk := create(t, environ, "claude")
-	dir, _ := store.Dir(environ, "task")
-	tk.Status, tk.Lease = Running, &Lease{Token: "w", WorkerPID: os.Getpid(), ExpiresAt: time.Now().Add(-time.Hour)}
-	if err := write(dir, tk); err != nil {
-		t.Fatal(err)
-	}
-	if tasks, _, err := List(environ); err != nil || tasks[0].Status != Running {
-		t.Fatalf("List = %+v, %v; want the task still running", tasks, err)
-	}
-}
-
 // A signal that arrives while work waits for the lock touches no task.
 func TestWorkStoppedBeforeClaim(t *testing.T) {
 	environ := env(t)
@@ -168,16 +130,6 @@ func TestWorkStoppedBeforeClaim(t *testing.T) {
 	if got, _ := Show(environ, tk.ID); got.Status != Queued || got.Run != nil {
 		t.Errorf("task touched: %+v", got)
 	}
-}
-
-// deadPID returns the pid of a process that has exited: a worker that died.
-func deadPID(t *testing.T) int {
-	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^$") // this test binary
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	return cmd.Process.Pid
 }
 
 // The record keeps --env names; values stay in the worker's environment (P8).
@@ -287,6 +239,10 @@ func TestShowMalformedID(t *testing.T) {
 	environ := env(t)
 	tk := create(t, environ, "claude")
 	dir, _ := store.Dir(environ, "task")
+	tk.ID = "20261014T000000-abcdef" // hex letters, so the upper-case spelling differs
+	if err := write(dir, tk); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, ".x.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -310,5 +266,141 @@ func TestShowDanglingSymlink(t *testing.T) {
 	var invalid *shell.InvalidRequestError
 	if _, err := Show(environ, id); err == nil || errors.As(err, &invalid) || !strings.Contains(err.Error(), "could not be read") {
 		t.Errorf("Show = %v, want could not be read", err)
+	}
+}
+
+// lock takes the lock file of task id as a worker does and returns its
+// unlock function; lock(…)() leaves the file as a claim does, unlocked.
+func lock(t *testing.T, dir, id string) func() {
+	t.Helper()
+	unlock, err := store.TryLock(lockPath(dir, id), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return unlock
+}
+
+// running writes tk as a running task with the raw lease JSON, as a worker
+// (or an earlier aits) would have left it.
+func running(t *testing.T, dir string, tk Task, lease string) {
+	t.Helper()
+	tk.Status = Running
+	b, err := json.Marshal(tk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = bytes.Replace(b, []byte(`"lease":null`), []byte(`"lease":`+lease), 1)
+	if err := store.WriteFile(path(dir, tk.ID), b); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A running task whose lock nobody holds is failed by the next list, even
+// when its recorded worker pid is alive and its old lease has not expired:
+// liveness is the lock, not the pid or the clock (P10). Its pgid is 0, as
+// for a worker that died before the agent started: nothing is signalled.
+func TestReclaimDeadWorker(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, tk, fmt.Sprintf(`{"token":"w","worker_pid":%d,"pgid":0,"expires_at":%q}`,
+		os.Getpid(), time.Now().Add(time.Hour).UTC().Format(time.RFC3339)))
+	lock(t, dir, tk.ID)() // as a claim leaves it
+	tasks, _, err := List(environ)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("List = %+v, %v", tasks, err)
+	}
+	if e := tasks[0]; e.Status != Failed || e.Run == nil || e.Run.Status != "worker_died" ||
+		e.Run.Message != "the worker exited before it recorded a result" || e.Lease != nil {
+		t.Errorf("dead worker's task = %+v", e)
+	}
+}
+
+// A live worker keeps its task, however old: it holds the lock (here the
+// test does). Once the lock is free, the next list fails the task.
+func TestReclaimSparesLiveWorker(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, tk, `{"token":"w","pgid":0}`)
+	unlock := lock(t, dir, tk.ID)
+	if tasks, _, err := List(environ); err != nil || tasks[0].Status != Running {
+		t.Fatalf("List = %+v, %v; want the task still running", tasks, err)
+	}
+	unlock()
+	if tasks, _, err := List(environ); err != nil || tasks[0].Status != Failed || tasks[0].Run.Status != "worker_died" {
+		t.Fatalf("List after unlock = %+v, %v; want worker_died", tasks, err)
+	}
+}
+
+// A running task without a lock file, as one left by an earlier aits or after
+// the file was removed by hand, cannot be judged: it stays running and is
+// reported, and no lock file is made for it (P6).
+func TestReclaimMissingLockFile(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, tk, fmt.Sprintf(`{"token":"w","worker_pid":1,"pgid":0,"expires_at":%q}`,
+		time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)))
+	tasks, notes, err := List(environ)
+	if err != nil || tasks[0].Status != Running || !slices.Equal(notes.Unknown, []string{tk.ID}) {
+		t.Fatalf("List = %+v, %+v, %v; want running and unknown", tasks, notes, err)
+	}
+	if _, err := os.Stat(lockPath(dir, tk.ID)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("reclaim made a lock file: %v", err)
+	}
+}
+
+// A lock that cannot be tried fails list and changes no task (P6).
+func TestReclaimLockError(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, tk, `{"token":"w","pgid":0}`)
+	if err := os.Mkdir(lockPath(dir, tk.ID), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := List(environ); err == nil {
+		t.Fatal("List succeeded with a lock file that cannot be opened")
+	}
+	if got, _ := Show(environ, tk.ID); got.Status != Running || got.Lease == nil {
+		t.Errorf("task changed: %+v", got)
+	}
+}
+
+// A queued task whose lock is held (re-queued by hand while its old worker
+// runs) is not claimed: work fails and writes nothing.
+func TestClaimLockHeld(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	unlock := lock(t, dir, tk.ID)
+	defer unlock()
+	if got, _, err := Work(context.Background(), environ, ""); err == nil {
+		t.Fatalf("Work = %+v, want an error", got)
+	}
+	if got, _ := Show(environ, tk.ID); got.Status != Queued || got.Lease != nil {
+		t.Errorf("task changed: %+v", got)
+	}
+}
+
+// A lock file replaced by a symlink to another task's free lock must not be
+// taken for a dead worker: that would stop a live agent. It is a lock error,
+// and list fails without changing the task (P6).
+func TestReclaimLockSymlink(t *testing.T) {
+	environ := env(t)
+	a := create(t, environ, "claude")
+	b := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, a, `{"token":"w","pgid":0}`)
+	lock(t, dir, b.ID)()
+	if err := os.Symlink(lockPath(dir, b.ID), lockPath(dir, a.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := List(environ); err == nil {
+		t.Error("List took a symlinked lock file")
+	}
+	if got, _ := Show(environ, a.ID); got.Status != Running || got.Lease == nil {
+		t.Errorf("task changed: %+v", got)
 	}
 }

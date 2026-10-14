@@ -6,6 +6,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,15 +59,64 @@ func WriteFile(path string, data []byte) error {
 // Lock takes an exclusive lock on dir/.lock, waiting for it if another
 // process holds it, and returns the function that releases it.
 func Lock(dir string) (func(), error) {
-	f, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	return lockFile(filepath.Join(dir, ".lock"), true, syscall.LOCK_EX)
+}
+
+// ErrLocked means another holder has the lock TryLock asked for.
+var ErrLocked = errors.New("locked by another process")
+
+// TryLock takes an exclusive lock on path without waiting and returns the
+// function that releases it. With create it creates path, or tightens an
+// existing file, to 0600; without it a missing path is an os.ErrNotExist
+// error and nothing is created. Another holder gives ErrLocked.
+func TryLock(path string, create bool) (func(), error) {
+	return lockFile(path, create, syscall.LOCK_EX|syscall.LOCK_NB)
+}
+
+// lockFile opens the lock file path (see OpenRegular), creating it 0600 or
+// tightening it to 0600 with create, and flocks it as how says.
+func lockFile(path string, create bool, how int) (func(), error) {
+	flag := os.O_RDWR
+	if create {
+		flag |= os.O_CREATE
+	}
+	f, fi, err := OpenRegular(path, flag, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if create && fi.Mode().Perm() != 0o600 {
+		err = f.Chmod(0o600)
+	}
+	if err == nil {
+		err = syscall.Flock(int(f.Fd()), how)
+	}
+	if err != nil {
 		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			err = ErrLocked
+		}
 		return nil, err
 	}
 	return func() { f.Close() }, nil // closing the file releases the lock
+}
+
+// OpenRegular opens path without following a symlink or blocking on a FIFO,
+// and requires a regular file: a symlink would reach another file, and a
+// FIFO or device is no aits file.
+func OpenRegular(path string, flag int, perm os.FileMode) (*os.File, os.FileInfo, error) {
+	f, err := os.OpenFile(path, flag|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, perm)
+	if err != nil {
+		return nil, nil, err
+	}
+	fi, err := f.Stat()
+	if err == nil && !fi.Mode().IsRegular() {
+		err = fmt.Errorf("%s: not a regular file", path)
+	}
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return f, fi, nil
 }
 
 // Lookup returns the last value of name in environ, or "".

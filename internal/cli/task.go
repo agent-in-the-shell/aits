@@ -26,12 +26,13 @@ const taskFields = `Task fields (--json):
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
-  lease        While running: token, worker_pid, pgid, expires_at.
+  lease        While running: token, pgid.
   run          Once worked: the "shell submit" result (status, session_id,
                answer, exit_code, duration_ms, stderr_tail, message) plus
                started_at and finished_at. run.status is a shell status,
                not_started (the agent was never started; no started_at), or
-               lease_expired (the worker died; set by the next work or list).
+               worker_died (its worker exited first; set by the next work or
+               list).
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
@@ -86,7 +87,9 @@ func taskList() *Command {
 		Summary: "List tasks, oldest first.",
 		Details: `Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
 {"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}.
-Expired leases of dead workers are reclaimed first.
+Tasks of dead workers are reclaimed first. A running task whose lock file is
+missing cannot be judged: it stays running, with "aits: cannot tell whether
+the worker of task ID is alive: its lock file is missing" on stderr.
 
 A task file that cannot be read (not a regular file named by a task id, not
 JSON, not the record of that id, an unknown status, or running without a
@@ -107,7 +110,7 @@ Errors: invalid_input (exit 2); internal (exit 1).
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "list takes no arguments")
 				}
-				tasks, skipped, err := task.List(env.Environ)
+				tasks, notes, err := task.List(env.Environ)
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -123,13 +126,14 @@ Errors: invalid_input (exit 2); internal (exit 1).
 					items = append(items, item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt})
 				}
 				if env.JSON {
+					reportNotes(env, task.Notes{Unknown: notes.Unknown}) // skipped ids are in the JSON
 					writeJSON(env.Stdout, struct {
 						Tasks   []item   `json:"tasks"`
 						Skipped []string `json:"skipped"`
-					}{items, append([]string{}, skipped...)})
+					}{items, append([]string{}, notes.Skipped...)})
 					return exitOK, nil
 				}
-				reportSkipped(env, skipped)
+				reportNotes(env, notes)
 				for _, i := range items {
 					fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n", i.ID, i.Status, i.Agent, i.CreatedAt.Format(time.RFC3339))
 				}
@@ -174,10 +178,11 @@ func taskWork() *Command {
 		Summary: "Claim the oldest queued task, run it, record the result, exit.",
 		Details: taskFields + `
 With nothing queued, work prints {"status":"empty"} with --json (nothing
-otherwise) and exits 0. A worker whose lease was reclaimed records nothing
-and fails with "task ID was reclaimed after its lease expired". A task file
-that cannot be read is skipped and left as it is, with
-"aits: skipped task ID that could not be read" on stderr.
+otherwise) and exits 0. A worker whose task was reclaimed records nothing
+and fails with "task ID was reclaimed before its run was recorded". A task
+file that cannot be read is skipped and left as it is, with
+"aits: skipped task ID that could not be read" on stderr. Running tasks
+whose lock file is missing are reported as list does.
 
 Exit codes:
   0  The task is done, or nothing was queued.
@@ -192,8 +197,8 @@ Errors: invalid_input (exit 2); stopped, internal (exit 1).
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "work takes no arguments")
 				}
-				t, skipped, err := task.Work(ctx, env.Environ, *agent)
-				reportSkipped(env, skipped)
+				t, notes, err := task.Work(ctx, env.Environ, *agent)
+				reportNotes(env, notes)
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -234,10 +239,15 @@ func writeTask(env *Env, t task.Task) {
 	}
 }
 
-// reportSkipped names, on stderr, each task file that could not be read.
-func reportSkipped(env *Env, ids []string) {
-	for _, id := range ids {
+// reportNotes names, on stderr, each task file that could not be read and
+// each running task whose lock file is missing, so that whether its worker is
+// alive cannot be told.
+func reportNotes(env *Env, n task.Notes) {
+	for _, id := range n.Skipped {
 		fmt.Fprintf(env.Stderr, "aits: skipped task %s that could not be read\n", printable(id))
+	}
+	for _, id := range n.Unknown {
+		fmt.Fprintf(env.Stderr, "aits: cannot tell whether the worker of task %s is alive: its lock file is missing\n", printable(id))
 	}
 }
 
