@@ -74,7 +74,6 @@ type job struct {
 	agent string
 	path  string
 	mtime time.Time
-	parse parser
 }
 
 type outcome struct {
@@ -109,18 +108,20 @@ func Search(ctx context.Context, q Query) (Output, error) {
 			if fi.ModTime().Before(cutoff) {
 				continue
 			}
-			jobs = append(jobs, job{agent: name, path: p, mtime: fi.ModTime(), parse: v.parse})
+			jobs = append(jobs, job{agent: name, path: p, mtime: fi.ModTime()})
 		}
 	}
 
 	ns := needles(q.Terms)
+	dirs := cwdForms(q.Cwd)
 	outcomes := make([]outcome, len(jobs))
 	next := make(chan int)
 	var wg sync.WaitGroup
 	for range runtime.NumCPU() {
 		wg.Go(func() {
+			b := newBuffers()
 			for i := range next {
-				outcomes[i] = examine(jobs[i], q, ns)
+				outcomes[i] = examine(jobs[i], q.Terms, ns, dirs, b)
 			}
 		})
 	}
@@ -160,13 +161,13 @@ feed:
 }
 
 // examine prefilters one file and, if every term may occur, parses it.
-func examine(j job, q Query, ns [][]byte) outcome {
+func examine(j job, terms []string, ns [][]byte, dirs []string, b *buffers) outcome {
 	f, err := os.Open(j.path)
 	if err != nil {
 		return outcome{badFile: true}
 	}
 	defer f.Close()
-	if ok, err := mayMatch(f, ns); err != nil {
+	if ok, err := mayMatch(f, ns, b); err != nil {
 		return outcome{badFile: true}
 	} else if !ok {
 		return outcome{}
@@ -174,11 +175,14 @@ func examine(j job, q Query, ns [][]byte) outcome {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return outcome{badFile: true}
 	}
-	t := newTranscript(q.Terms)
-	bad, err := eachLine(f, func(line []byte) bool {
-		p, ok := j.parse(line)
+	t := newTranscript(terms)
+	parse := vendors[j.agent].parse
+	notSession, sawMessage := false, false
+	bad, err := eachLine(f, b, func(line []byte) bool {
+		p, ok := parse(line)
 		t.identify(p.id, p.cwd)
-		t.notSession = t.notSession || p.notSession
+		notSession = notSession || p.notSession
+		sawMessage = sawMessage || p.message
 		for _, s := range p.texts {
 			t.add(s)
 		}
@@ -187,14 +191,15 @@ func examine(j job, q Query, ns [][]byte) outcome {
 	switch {
 	case err != nil:
 		return outcome{lines: bad, badFile: true}
-	case t.notSession:
+	case notSession:
 		return outcome{lines: bad} // a subagent's rollout: not a session to return
-	case t.cwd == "" && t.texts == 0 && bad == 0:
+	case t.cwd == "" && !sawMessage && bad == 0:
 		return outcome{} // a readable file that holds no conversation, such as metadata
 	case t.sessionID == "" || t.cwd == "":
 		return outcome{lines: bad, badFile: true}
 	}
-	if !t.matched() || !slices.ContainsFunc(cwds(q), func(base string) bool { return within(t.cwd, base) }) {
+	inDir := len(dirs) == 0 || slices.ContainsFunc(dirs, func(d string) bool { return within(t.cwd, d) })
+	if !t.matched() || !inDir {
 		return outcome{lines: bad}
 	}
 	return outcome{lines: bad, result: &Result{
@@ -208,13 +213,14 @@ func examine(j job, q Query, ns [][]byte) outcome {
 
 // eachLine calls fn for every non-blank line of r and returns how many lines
 // were unusable: fn returned false, or the line exceeded maxLine.
-func eachLine(r io.Reader, fn func([]byte) bool) (int, error) {
-	br := bufio.NewReaderSize(r, 64<<10)
+func eachLine(r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
+	b.reader.Reset(r)
+	line := b.line[:0]
+	defer func() { b.line = line[:0] }()
 	bad := 0
-	var line []byte
 	tooLong := false
 	for {
-		part, err := br.ReadSlice('\n')
+		part, err := b.reader.ReadSlice('\n')
 		if tooLong || len(line)+len(part) > maxLine {
 			tooLong = true
 		} else {
@@ -236,19 +242,23 @@ func eachLine(r io.Reader, fn func([]byte) bool) (int, error) {
 	}
 }
 
-// cwds returns the directories a session may be in: any, or one of q.Cwd.
-func cwds(q Query) []string {
-	if len(q.Cwd) == 0 {
-		return []string{""}
+// cwdForms returns the directories a session may be in for --cwd: none (any)
+// for "", else dir as given and, if different, with symlinks resolved. Agents
+// usually record the resolved path (on macOS /tmp is /private/tmp), but not
+// always.
+func cwdForms(dir string) []string {
+	if dir == "" {
+		return nil
 	}
-	return q.Cwd
+	forms := []string{dir}
+	if real, err := filepath.EvalSymlinks(dir); err == nil && real != filepath.Clean(dir) {
+		forms = append(forms, real)
+	}
+	return forms
 }
 
-// within reports whether dir is base or below it; an empty base matches all.
+// within reports whether dir is base or below it.
 func within(dir, base string) bool {
-	if base == "" {
-		return true
-	}
 	dir, base = filepath.Clean(dir), filepath.Clean(base)
 	return dir == base || strings.HasPrefix(dir, strings.TrimSuffix(base, "/")+"/")
 }

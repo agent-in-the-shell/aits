@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -60,19 +58,9 @@ type searchOutput struct {
 	} `json:"skipped"`
 }
 
-// decodeSearch parses stdout as exactly one search object (P5).
 func decodeSearch(t *testing.T, stdout string) searchOutput {
 	t.Helper()
-	dec := json.NewDecoder(strings.NewReader(stdout))
-	dec.DisallowUnknownFields()
-	var o searchOutput
-	if err := dec.Decode(&o); err != nil {
-		t.Fatalf("stdout is not one search object: %v\n%s", err, stdout)
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		t.Fatalf("stdout holds more than one JSON value: %q", stdout)
-	}
-	return o
+	return decodeOne[searchOutput](t, stdout)
 }
 
 func found(o searchOutput) []string {
@@ -200,8 +188,8 @@ func TestOneVendorVocabulary(t *testing.T) {
 	}
 }
 
-// Vendors record the working directory with symlinks resolved, so --cwd must
-// resolve them too: on macOS /tmp and $TMPDIR are symlinks.
+// Vendors usually record the working directory with symlinks resolved, so
+// --cwd also matches the resolved form: on macOS /tmp and $TMPDIR are symlinks.
 func TestSessionSearchCwdThroughSymlink(t *testing.T) {
 	real, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

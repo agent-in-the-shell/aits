@@ -86,22 +86,16 @@ func searchCommand() *Command {
 				for _, a := range args {
 					terms = append(terms, strings.Fields(a)...)
 				}
-				var dirs []string
-				if *cwd != "" {
-					abs, err := filepath.Abs(*cwd)
+				dir := *cwd
+				if dir != "" {
+					abs, err := filepath.Abs(dir)
 					if err != nil {
 						return 0, failure("internal", "resolve --cwd: %v", err)
 					}
-					// Agents usually record the directory with symlinks
-					// resolved (on macOS /tmp is /private/tmp), but not
-					// always: match either form.
-					dirs = append(dirs, abs)
-					if real, err := filepath.EvalSymlinks(abs); err == nil && real != abs {
-						dirs = append(dirs, real)
-					}
+					dir = abs
 				}
 				out, err := session.Search(ctx, session.Query{
-					Terms: terms, Agent: *agent, Cwd: dirs, Since: since, Limit: *limit, Environ: env.Environ,
+					Terms: terms, Agent: *agent, Cwd: dir, Since: since, Limit: *limit, Environ: env.Environ,
 				})
 				if err != nil {
 					return 0, searchError(err)

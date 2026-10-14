@@ -33,7 +33,7 @@ func parseClaude(line []byte) (parsed, bool) {
 	if json.Unmarshal(line, &e) != nil {
 		return parsed{}, false
 	}
-	p := parsed{id: rawString(e.SessionID), cwd: rawString(e.Cwd)}
+	p := parsed{id: rawString(e.SessionID), cwd: rawString(e.Cwd), message: e.Type == "user" || e.Type == "assistant"}
 	// Text the CLI writes itself: subagent turns, meta turns, compaction
 	// summaries (which restate tool output) and synthesized API errors.
 	for _, flag := range []json.RawMessage{e.IsSidechain, e.IsMeta, e.IsCompactSummary, e.TranscriptOnly, e.IsAPIErrorMessage} {
@@ -53,19 +53,17 @@ func parseClaude(line []byte) (parsed, bool) {
 		if rawString(m.Model) == "<synthetic>" {
 			return p, true
 		}
-		all, ok := claudeTexts(m.Content)
+		texts, ok := claudeTexts(m.Content)
 		if !ok {
 			return p, false
 		}
-		for _, s := range all {
-			if e.Type == "user" && injected(s, claudeInjected) {
-				continue
-			}
-			p.texts = append(p.texts, s)
+		if e.Type == "user" {
+			texts = ownText(texts, claudeInjected)
 		}
+		p.texts = texts
 	case "attachment":
-		if s := queuedPrompt(e.Attachment); s != "" && !injected(s, claudeInjected) {
-			p.texts = append(p.texts, s)
+		if s := queuedPrompt(e.Attachment); s != "" {
+			p.texts = ownText([]string{s}, claudeInjected)
 		}
 	}
 	return p, true
@@ -93,29 +91,20 @@ func queuedPrompt(raw json.RawMessage) string {
 }
 
 // claudeTexts returns the searched text of a message's content: the content
-// itself when it is a string, else the text of its "text" blocks.
+// itself when it is a string, else the text of its "text" blocks. The first
+// byte decides, so a large content is decoded once.
 func claudeTexts(content json.RawMessage) ([]string, bool) {
-	if len(content) == 0 {
+	switch {
+	case len(content) == 0 || string(content) == "null":
 		return nil, true
-	}
-	var s string
-	if json.Unmarshal(content, &s) == nil {
+	case content[0] == '"':
+		var s string
+		if json.Unmarshal(content, &s) != nil {
+			return nil, false
+		}
 		return []string{s}, true
 	}
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(content, &blocks) != nil {
-		return nil, false
-	}
-	var out []string
-	for _, b := range blocks {
-		if b.Type == "text" {
-			out = append(out, b.Text)
-		}
-	}
-	return out, true
+	return blockTexts(content, "text")
 }
 
 // rawString returns raw as a string, or "" when it is not a JSON string.

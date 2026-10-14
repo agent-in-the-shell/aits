@@ -85,8 +85,8 @@ func TestSearch(t *testing.T) {
 	}{
 		{"both agents, newest first, subagent not searched", Query{Terms: []string{"process", "timeout"}}, []string{"claude:c1", "codex:x1"}},
 		{"agent filter", Query{Terms: []string{"process"}, Agent: "codex"}, []string{"codex:x1"}},
-		{"cwd filter is a path prefix", Query{Terms: []string{"process"}, Cwd: []string{"/w/aits"}}, []string{"claude:c1", "codex:x1"}},
-		{"cwd boundary", Query{Terms: []string{"process"}, Cwd: []string{"/w/ait"}}, nil},
+		{"cwd filter is a path prefix", Query{Terms: []string{"process"}, Cwd: "/w/aits"}, []string{"claude:c1", "codex:x1"}},
+		{"cwd boundary", Query{Terms: []string{"process"}, Cwd: "/w/ait"}, nil},
 		{"since", Query{Terms: []string{"process"}, Since: 24 * time.Hour}, []string{"claude:c1", "codex:x1"}},
 		{"limit", Query{Terms: []string{"process"}, Limit: 1}, []string{"claude:c1"}},
 		{"quote in term", Query{Terms: []string{`"hi"`}}, []string{"claude:q"}},
@@ -162,7 +162,7 @@ func TestQueryValidate(t *testing.T) {
 		"no terms":       func(q *Query) { q.Terms = nil },
 		"empty term":     func(q *Query) { q.Terms = []string{""} },
 		"unknown agent":  func(q *Query) { q.Agent = "nope" },
-		"relative cwd":   func(q *Query) { q.Cwd = []string{"rel"} },
+		"relative cwd":   func(q *Query) { q.Cwd = "rel" },
 		"negative since": func(q *Query) { q.Since = -time.Second },
 		"zero limit":     func(q *Query) { q.Limit = 0 },
 	} {
@@ -205,6 +205,18 @@ func TestSearchCountsCorruptFile(t *testing.T) {
 	h.write(".claude/projects/-w/broken.jsonl", time.Now(), `{"type":"user" needle`, `needle not json`)
 	out := search(t, Query{Terms: []string{"needle"}, Environ: h.env()})
 	if len(out.Results) != 0 || out.Skipped != (Skipped{Files: 1, Lines: 2}) {
+		t.Errorf("results %q, skipped %+v", ids(out), out.Skipped)
+	}
+}
+
+// A file with messages but no cwd is reported even when every message is text
+// that is not searched: it is a conversation aits could not place (P6).
+func TestSearchCountsSessionWithoutCwd(t *testing.T) {
+	h := newHome(t)
+	h.write(".claude/projects/-w/nocwd.jsonl", time.Now(),
+		`{"type":"user","sessionId":"x","message":{"content":"<system-reminder>needle</system-reminder>"}}`)
+	out := search(t, Query{Terms: []string{"needle"}, Environ: h.env()})
+	if len(out.Results) != 0 || out.Skipped != (Skipped{Files: 1}) {
 		t.Errorf("results %q, skipped %+v", ids(out), out.Skipped)
 	}
 }

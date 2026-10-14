@@ -48,24 +48,14 @@ func parseCodex(line []byte) (parsed, bool) {
 		if rawString(e.Payload.Type) != "message" || (role != "user" && role != "assistant") || len(e.Payload.Content) == 0 {
 			return parsed{}, true
 		}
-		var blocks []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		}
-		if json.Unmarshal(e.Payload.Content, &blocks) != nil {
+		texts, ok := blockTexts(e.Payload.Content, "input_text", "output_text")
+		if !ok {
 			return parsed{}, false
 		}
-		var p parsed
-		for _, b := range blocks {
-			if b.Type != "input_text" && b.Type != "output_text" {
-				continue
-			}
-			if role == "user" && injected(b.Text, codexInjected) {
-				continue
-			}
-			p.texts = append(p.texts, b.Text)
+		if role == "user" {
+			texts = ownText(texts, codexInjected)
 		}
-		return p, true
+		return parsed{message: true, texts: texts}, true
 	}
 	return parsed{}, true
 }

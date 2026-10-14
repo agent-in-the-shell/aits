@@ -33,10 +33,20 @@ func TestMayMatch(t *testing.T) {
 			for _, term := range tt.terms {
 				ns = append(ns, []byte(term))
 			}
-			got, err := mayMatch(bytes.NewReader([]byte(tt.text)), ns)
+			got, err := mayMatch(bytes.NewReader([]byte(tt.text)), ns, newBuffers())
 			if err != nil || got != tt.want {
 				t.Errorf("mayMatch = %v, %v; want %v", got, err, tt.want)
 			}
 		})
+	}
+}
+
+// lowerInto must lower-case exactly as bytes.ToLower does on valid UTF-8, so
+// the prefilter never disagrees with the matcher.
+func TestLowerInto(t *testing.T) {
+	for _, s := range []string{"", "ASCII Only", "Kelvin \u212a and İstanbul", "ΣΊΣΥΦΟΣ", "中文 Ü ẞ ǅ", strings.Repeat("Aé", 1000)} {
+		if got, want := lowerInto(nil, []byte(s)), bytes.ToLower([]byte(s)); !bytes.Equal(got, want) {
+			t.Errorf("lowerInto(%q) = %q, want %q", s, got, want)
+		}
 	}
 }
