@@ -3,15 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -51,111 +47,56 @@ func TestCLIDocs(t *testing.T) {
 
 // TestSubmitHelpDocumentsOutput enforces the P5 rule that output shapes are
 // documented in help: every result field, status and error code the code can
-// produce appears in "aits shell submit --help".
+// produce has a row in "aits shell submit --help", and each error code's row
+// names the exit code it causes.
 func TestSubmitHelpDocumentsOutput(t *testing.T) {
-	out := call{args: []string{"shell", "submit", "--help"}}.run(t)
-	help := out.stdout
-	row := func(name string) bool { // a table row starting with name
-		return regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(name) + `( |$)`).MatchString(help)
-	}
-	word := func(name string) bool {
-		return regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(help)
+	rows := map[string]string{} // first word of each indented help line -> line
+	for _, line := range strings.Split(call{args: []string{"shell", "submit", "--help"}}.run(t).stdout, "\n") {
+		if f := strings.Fields(line); strings.HasPrefix(line, "  ") && len(f) > 0 {
+			rows[f[0]] += line + "\n"
+		}
 	}
 	rt := reflect.TypeFor[shell.Result]()
 	for i := range rt.NumField() {
-		if name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ","); !row(name) {
+		if name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ","); rows[name] == "" {
 			t.Errorf("result field %q is not documented in help", name)
 		}
 	}
-	for _, s := range stringConsts(t, "../../internal/shell", "Status") {
-		if !row(s) {
-			t.Errorf("status %q is not documented in help", s)
+	for _, m := range sourceMatches(t, "../../internal/shell", `\bStatus\s*=\s*"(\w+)"`) {
+		if rows[m[1]] == "" {
+			t.Errorf("status %q is not documented in help", m[1])
 		}
 	}
-	for _, c := range firstStringArgs(t, "../../internal/cli", "failure", "usageError") {
-		if !word(c) {
-			t.Errorf("error code %q is not documented in help", c)
+	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
+	for _, m := range sourceMatches(t, "../../internal/cli", `\b(usageError|failure)\(\s*"(\w+)"`) {
+		if !strings.Contains(rows[m[2]], exit[m[1]]) {
+			t.Errorf("error code %q is not documented in help with %s", m[2], exit[m[1]])
 		}
 	}
 }
 
-// goFiles parses the non-test Go files of dir.
-func goFiles(t *testing.T, dir string) []*ast.File {
+// sourceMatches returns the submatches of pattern in the non-test Go files of
+// dir, failing the test if there are none.
+func sourceMatches(t *testing.T, dir, pattern string) [][]string {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var files []*ast.File
+	re := regexp.MustCompile(pattern)
+	var all [][]string
 	for _, p := range paths {
 		if strings.HasSuffix(p, "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(token.NewFileSet(), p, nil, 0)
+		src, err := os.ReadFile(p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		files = append(files, f)
+		all = append(all, re.FindAllStringSubmatch(string(src), -1)...)
 	}
-	return files
-}
-
-// stringConsts returns the values of the string constants of type typ in dir.
-func stringConsts(t *testing.T, dir, typ string) []string {
-	var vals []string
-	for _, f := range goFiles(t, dir) {
-		ast.Inspect(f, func(n ast.Node) bool {
-			spec, ok := n.(*ast.ValueSpec)
-			if !ok {
-				return true
-			}
-			if id, ok := spec.Type.(*ast.Ident); !ok || id.Name != typ {
-				return true
-			}
-			for _, v := range spec.Values {
-				vals = append(vals, stringLit(t, v))
-			}
-			return true
-		})
+	if len(all) == 0 {
+		t.Fatalf("no match for %s in %s", pattern, dir)
 	}
-	if len(vals) == 0 {
-		t.Fatalf("no %s constants found in %s", typ, dir)
-	}
-	return vals
-}
-
-// firstStringArgs returns the first argument of every call to one of funcs in
-// dir, which must be a string literal.
-func firstStringArgs(t *testing.T, dir string, funcs ...string) []string {
-	var vals []string
-	for _, f := range goFiles(t, dir) {
-		ast.Inspect(f, func(n ast.Node) bool {
-			c, ok := n.(*ast.CallExpr)
-			if !ok || len(c.Args) == 0 {
-				return true
-			}
-			if id, ok := c.Fun.(*ast.Ident); ok && slices.Contains(funcs, id.Name) {
-				vals = append(vals, stringLit(t, c.Args[0]))
-			}
-			return true
-		})
-	}
-	if len(vals) == 0 {
-		t.Fatalf("no calls to %v found in %s", funcs, dir)
-	}
-	slices.Sort(vals)
-	return slices.Compact(vals)
-}
-
-func stringLit(t *testing.T, e ast.Expr) string {
-	t.Helper()
-	lit, ok := e.(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		t.Fatalf("expected a string literal, got %T", e)
-	}
-	s, err := strconv.Unquote(lit.Value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return all
 }
