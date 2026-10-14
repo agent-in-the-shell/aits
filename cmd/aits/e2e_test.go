@@ -303,6 +303,8 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 		{"prompt and dash", submitArgs("hi", "-"), "invalid_input"},
 		{"no prompt", submitArgs(), "invalid_input"},
 		{"missing cwd", submitArgs("--cwd", "/nonexistent/aits-test", "hi"), "invalid_input"},
+		{"empty cwd", submitArgs("--cwd=", "hi"), "invalid_input"},
+		{"empty cwd value", submitArgs("--cwd", "", "hi"), "invalid_input"},
 		{"zero timeout", submitArgs("--timeout", "0s", "hi"), "invalid_input"},
 		{"bad timeout", submitArgs("--timeout", "soon", "hi"), "invalid_input"},
 		{"unset env", submitArgs("--env", "AITS_TEST_UNSET", "hi"), "invalid_input"},
@@ -463,4 +465,22 @@ func TestSubmitUnknownSession(t *testing.T) {
 			t.Fatalf("code=%d result=%+v", out.code, r)
 		}
 	})
+}
+
+// An explicitly empty --cwd is refused, never read as "the current
+// directory" (P6), with the same message as session search.
+func TestSubmitEmptyCwd(t *testing.T) {
+	bin := vendor(t, "ok")
+	out := call{path: bin, args: submitArgs("--cwd=", "--json", "hi")}.run(t)
+	if r := decode(t, out.stdout); out.code != 2 || r.Error == nil ||
+		r.Error.Message != `invalid value "" for flag -cwd: needs a directory` {
+		t.Errorf("--json: code=%d stdout=%q", out.code, out.stdout)
+	}
+	out = call{path: bin, args: submitArgs("--cwd", "", "hi")}.run(t)
+	if out.code != 2 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") || strings.Count(out.stderr, "\n") != 1 {
+		t.Errorf("text: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+	}
+	if ran(bin) {
+		t.Error("the agent was started")
+	}
 }
