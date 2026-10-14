@@ -405,60 +405,35 @@ func TestReclaimLockSymlink(t *testing.T) {
 	}
 }
 
-// runningTask writes a running task whose lease has token, as a claim does.
-func runningTask(t *testing.T, environ []string, token string) (string, Task) {
-	t.Helper()
+// A worker writes its pgid without waiting for the directory lock: while
+// another command holds it, a killed worker would otherwise leave its agent
+// unrecorded (P10). (Its token check is update's, see TestUpdateForeignToken.)
+func TestModifyWithoutDirLock(t *testing.T) {
+	environ := env(t)
 	tk := create(t, environ, "claude")
 	dir, _ := store.Dir(environ, "task")
-	tk.Status, tk.Lease = Running, &Lease{Token: token}
+	tk.Status, tk.Lease = Running, &Lease{Token: "w"}
 	if err := write(dir, tk); err != nil {
 		t.Fatal(err)
 	}
-	return dir, tk
-}
-
-// The worker records its agent's group in its own running record.
-func TestSetPGID(t *testing.T) {
-	dir, tk := runningTask(t, env(t), "w")
-	if err := setPGID(dir, tk.ID, "w", 4242); err != nil {
-		t.Fatal(err)
-	}
-	got, err := read(dir, tk.ID)
-	tk.Lease.PGID = 4242
-	if err != nil || got.Lease == nil || *got.Lease != *tk.Lease || got.Status != Running || got.CreatedAt != tk.CreatedAt {
-		t.Errorf("record = %+v, %v", got, err)
-	}
-}
-
-// A worker that lost its lease writes nothing.
-func TestSetPGIDForeignToken(t *testing.T) {
-	dir, tk := runningTask(t, env(t), "other")
-	before, _ := os.ReadFile(path(dir, tk.ID))
-	if err := setPGID(dir, tk.ID, "w", 4242); !errors.Is(err, errReclaimed) {
-		t.Fatalf("setPGID = %v, want errReclaimed", err)
-	}
-	if after, _ := os.ReadFile(path(dir, tk.ID)); string(after) != string(before) {
-		t.Errorf("record changed: %s", after)
-	}
-}
-
-// The pgid write never waits for the directory lock: while another command
-// holds it, a killed worker would otherwise leave its agent unrecorded (P10).
-func TestSetPGIDWithoutDirLock(t *testing.T) {
-	dir, tk := runningTask(t, env(t), "w")
 	unlock, err := store.Lock(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer unlock()
 	done := make(chan error, 1)
-	go func() { done <- setPGID(dir, tk.ID, "w", 4242) }()
+	go func() {
+		_, err := modify(dir, tk.ID, "w", func(t *Task) { t.Lease.PGID = 4242 })
+		done <- err
+	}()
 	select {
 	case err := <-done:
-		if got, _ := read(dir, tk.ID); err != nil || got.Lease.PGID != 4242 {
-			t.Errorf("setPGID = %v, record %+v", err, got)
+		got, rerr := read(dir, tk.ID)
+		tk.Lease.PGID = 4242
+		if err != nil || rerr != nil || *got.Lease != *tk.Lease || got.Status != Running || !got.CreatedAt.Equal(tk.CreatedAt) {
+			t.Errorf("modify = %v; record %+v, %v", err, got, rerr)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("setPGID waited for the directory lock")
+		t.Fatal("modify waited for the directory lock")
 	}
 }
