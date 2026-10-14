@@ -166,7 +166,9 @@ Functional, `cmd/aits` (built binary, fake vendor):
 - **lock file removed mid-run**:
   - while `work` runs, delete `<id>.lock`. `list` exits 0, prints the unknown
     line on stderr, and the task is still `running`;
-  - the worker then records `done`.
+  - SIGTERM to the worker then ends the run, and the worker records it
+    (`failed`, run status `stopped`) as usual: nothing reclaimed it. (The
+    fake vendor's `sleep` scenario does not finish on its own.)
 - `TestTaskLockError`, new. `<id>.lock` is a directory:
   - for a `running` task, `list --json` gives `internal`, exit 1, and leaves
     the record unchanged;
