@@ -1,6 +1,6 @@
 # `aits task` worker liveness — Design
 
-- Status: draft
+- Status: approved
 - Issue: #37
 - Revises: `2026-10-14-task-queue-design.md` §2 (Lease, Expired lease), §3,
   §4, §6, §8
