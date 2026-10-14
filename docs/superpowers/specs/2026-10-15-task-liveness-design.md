@@ -28,7 +28,7 @@ Today a task is reclaimed only when its wall-clock lease has expired and
 | Probe, before design | Measured on macOS (APFS) and Linux (Docker, overlayfs), Go 1.26, with the same results: a second open in one process gets `EWOULDBLOCK`; a holder killed with SIGKILL releases the lock; an agent started with `os/exec` (`Setpgid`) does not inherit it (`O_CLOEXEC`), unless passed through `ExtraFiles`; a SIGSTOPped holder keeps it; unlinking a held lock file lets a new file at the same path be locked by another process. | P13 |
 | Lock files | Never removed. One empty file per task, next to its record, which is kept as well. | Removing a held lock file splits the lock (probe). Never removing it makes that impossible by construction, with no ordering rules (P14). |
 | Missing lock file | Reclaim opens only an existing lock file; only claim creates one. A `running` task whose lock file is missing is left `running` and reported on stderr. | P6: "cannot tell" is not "dead". Treating a missing file as dead would stop a live agent and lose its run. |
-| Lock errors | Any try-lock error other than "held" or "missing" fails `list` and `work` (`internal`, exit 1) and changes no task. | P6 |
+| Lock errors | Any try-lock error other than "held" or "missing" fails `list` and `work` (`internal`, exit 1) and leaves that task unchanged. A lock file that is not a regular file (a symlink, a FIFO) is such an error. | P6: a symlink would lock another task's file and fail a live task. |
 | Run status | `lease_expired` becomes `worker_died`, message `the worker exited before it recorded a result`. | P6: the status says what happened. P5: output shapes may change before 1.0. |
 | Lease | `{"token","pgid"}`. `worker_pid`, `expires_at` and `leaseSlack` go. | P2: nothing reads them; `expires_at` is wrong after sleep. `token` still guards the record step if a lock is lost; `pgid` stops a dead worker's agent. |
 | P10 | Example "an expiring lease" becomes "a lock the kernel releases when its holder exits"; guard "a test asserts an expired lease can be reclaimed" becomes "a test asserts the task of a dead worker is reclaimed, even when its pid now belongs to a live process". | Tightens P10; loosens nothing. Changed through this issue (P11). |
@@ -39,6 +39,7 @@ Today a task is reclaimed only when its wall-clock lease has expired and
   - It opens `path`, creating it with mode 0600 when `create` is true and
     tightening an existing file to 0600 then (P7). It then takes
     `LOCK_EX|LOCK_NB`.
+  - It opens with `O_NOFOLLOW|O_NONBLOCK` and requires a regular file.
   - Errors:
     - `ErrLocked` when another holder has the lock;
     - an error wrapping `os.ErrNotExist` when `create` is false and the file
@@ -97,7 +98,9 @@ task, `TryLock(<id>.lock, create=false)`:
 - **`ErrLocked`**: a live worker holds it; leave the task.
 - **missing**: leave the task `running`; add its id to `Unknown`.
 - **any other error**: stop and return it. `list` and `work` fail with
-  `internal`, exit 1, and no task is changed.
+  `internal`, exit 1. That task is left unchanged; tasks already reclaimed
+  earlier in the same pass stay reclaimed, and their groups are still
+  stopped.
 
 **Deadlock**: claim and reclaim take D then L; the worker holds L and then
 waits for D in the record step. This is safe only because L is always

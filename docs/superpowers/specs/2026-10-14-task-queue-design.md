@@ -39,8 +39,9 @@ Follow-ups on a task's session come in a later issue.
     directory, then rename; mode 0600;
   - `Lock(dir string) (unlock func(), err error)` — `flock` on `<dir>/.lock`;
   - `TryLock(path string, create bool) (unlock func(), err error)` — the same
-    without waiting: `ErrLocked` when held; with `create` false a missing
-    file is `os.ErrNotExist` and nothing is created (#37).
+    without waiting, on a regular file only (no symlink, no FIFO):
+    `ErrLocked` when held; with `create` false a missing file is
+    `os.ErrNotExist` and nothing is created (#37).
 - `internal/cli/task.go`: the `task` group, reusing `nonEmpty`, `readPrompt`
   and the error mapping of `shell submit`.
 - `internal/shell`: `Request.Started func(pgid int)`, called once right after

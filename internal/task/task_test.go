@@ -378,3 +378,28 @@ func TestClaimLockHeld(t *testing.T) {
 		t.Errorf("task changed: %+v", got)
 	}
 }
+
+// A lock file replaced by a symlink to another task's free lock must not be
+// taken for a dead worker: that would stop a live agent. It is a lock error,
+// and list fails without changing the task (P6).
+func TestReclaimLockSymlink(t *testing.T) {
+	environ := env(t)
+	a := create(t, environ, "claude")
+	b := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, a, `{"token":"w","pgid":0}`)
+	unlock, err := store.TryLock(filepath.Join(dir, b.ID+".lock"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if err := os.Symlink(filepath.Join(dir, b.ID+".lock"), filepath.Join(dir, a.ID+".lock")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := List(environ); err == nil {
+		t.Error("List took a symlinked lock file")
+	}
+	if got, _ := Show(environ, a.ID); got.Status != Running || got.Lease == nil {
+		t.Errorf("task changed: %+v", got)
+	}
+}

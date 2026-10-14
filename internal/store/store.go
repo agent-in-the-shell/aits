@@ -6,6 +6,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,14 +76,23 @@ var ErrLocked = errors.New("locked by another process")
 // TryLock takes an exclusive lock on path without waiting and returns the
 // function that releases it. With create it creates path, or tightens an
 // existing file, to 0600; without it a missing path is an os.ErrNotExist
-// error and nothing is created. Another holder gives ErrLocked.
+// error and nothing is created. Another holder gives ErrLocked. path must be
+// a regular file: a symlink would lock another file, and a FIFO or device is
+// no lock file, so either is an error.
 func TryLock(path string, create bool) (func(), error) {
-	flags := os.O_RDWR
+	flags := os.O_RDWR | syscall.O_NOFOLLOW | syscall.O_NONBLOCK
 	if create {
 		flags |= os.O_CREATE
 	}
 	f, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
+		return nil, err
+	}
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		f.Close()
+		if err == nil {
+			err = fmt.Errorf("%s: not a regular file", path)
+		}
 		return nil, err
 	}
 	if create {

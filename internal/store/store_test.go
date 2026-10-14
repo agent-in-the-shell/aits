@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -125,5 +126,36 @@ func TestTryLock(t *testing.T) {
 	u()
 	if m := mode(t, loose); m != 0o600 {
 		t.Errorf("existing file mode %v, want 0600 (tightened)", m)
+	}
+}
+
+// A lock file that is not a regular file is an error, never a lock: a symlink
+// to another lock would lock the wrong file, and a FIFO is not a lock file
+// (on Linux it can even be flocked).
+func TestTryLockRefusesOddFiles(t *testing.T) {
+	dir := t.TempDir()
+	free := filepath.Join(dir, "free.lock")
+	unlock, err := TryLock(free, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	link := filepath.Join(dir, "link.lock")
+	if err := os.Symlink(free, link); err != nil {
+		t.Fatal(err)
+	}
+	fifo := filepath.Join(dir, "fifo.lock")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{link, fifo} {
+		for _, create := range []bool{true, false} {
+			if u, err := TryLock(path, create); err == nil || errors.Is(err, ErrLocked) || errors.Is(err, os.ErrNotExist) {
+				if err == nil {
+					u()
+				}
+				t.Errorf("TryLock(%s, create=%v) = %v, want another error", filepath.Base(path), create, err)
+			}
+		}
 	}
 }
