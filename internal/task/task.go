@@ -315,7 +315,8 @@ func update(dir, id, token string, fn func(*Task)) (Task, error) {
 	return t, write(dir, t)
 }
 
-// load reads every task in dir, oldest first (ids sort by creation time).
+// load reads every task in dir, oldest first. Ids carry the creation second
+// only, so tasks created within one second are ordered by created_at.
 func load(dir string) ([]Task, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -331,6 +332,7 @@ func load(dir string) ([]Task, error) {
 			tasks = append(tasks, t)
 		}
 	}
+	slices.SortStableFunc(tasks, func(a, b Task) int { return a.CreatedAt.Compare(b.CreatedAt) })
 	return tasks, nil
 }
 

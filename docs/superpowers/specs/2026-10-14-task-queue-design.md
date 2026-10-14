@@ -45,8 +45,8 @@ Follow-ups on a task's session come in a later issue.
 ## 4. Task record
 
 `$AITS_HOME/task/<id>.json`, mode 0600. The id is the creation time plus a
-random suffix from `math/rand/v2` (`20261014T112233-a3f9c2`), so name order is
-creation order and `list` needs no index.
+random suffix from `math/rand/v2` (`20261014T112233-a3f9c2`). Tasks are
+ordered by `created_at` (nanoseconds), since several can share a second.
 
 ```json
 {"id":"20261014T112233-a3f9c2","status":"done","agent":"claude","cwd":"/abs/dir",
