@@ -20,11 +20,53 @@ func shellGroup() *Command {
 	}
 }
 
+// submitDetails documents the output of "aits shell submit" (P5).
+const submitDetails = `Output:
+  With --json, stdout is exactly one JSON object: a result once the agent has
+  started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
+  stdout is the answer for status ok and empty otherwise; everything else
+  goes to stderr.
+
+Result fields:
+  status       Always. One of the statuses below.
+  agent        Always.
+  session_id   When the agent reported one, on every status; use it to resume.
+  answer       Only for ok.
+  exit_code    Always. The agent's exit code; -1 if a signal ended it.
+  duration_ms  Always.
+  stderr_tail  Only for agent_failed: the last 4 KiB of the agent's stderr.
+  message      Every status but ok: one line explaining it.
+
+Statuses:
+  ok                The agent answered.
+  agent_failed      The agent exited non-zero or reported an error.
+  bad_agent_output  The agent's output was not usable stream-json.
+  output_too_large  One output event exceeded 16 MiB; the agent was stopped.
+  timeout           --timeout elapsed; the agent was stopped.
+  stopped           aits got SIGTERM, SIGINT or SIGHUP; the agent was stopped.
+
+Errors (nothing was started):
+  unknown_command     exit 2  No such command.
+  unknown_flag        exit 2  No such flag for this command.
+  invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
+  agent_not_found     exit 1  The agent CLI is not on PATH.
+  agent_start_failed  exit 1  The agent CLI could not be started.
+  stdin_failed        exit 1  The prompt could not be read from stdin.
+  stopped             exit 1  aits got a signal before the agent started.
+  internal            exit 1  An unexpected failure inside aits.
+
+Exit codes:
+  0  The status is ok.
+  1  Any other status, or an error marked exit 1 above.
+  2  Usage error or invalid input; nothing was started.
+`
+
 func submitCommand() *Command {
 	return &Command{
 		Name:    "submit",
 		Args:    "(PROMPT | -)",
 		Summary: "Run one prompt through an agent CLI and return the answer and session id.",
+		Details: submitDetails,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required). One of: "+strings.Join(shell.Agents(), ", ")+".")
 			cwd := fs.String("cwd", "", "Run the agent in `DIR` (default: the current directory).")
