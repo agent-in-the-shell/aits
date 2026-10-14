@@ -31,13 +31,14 @@ const (
 
 // Request is one prompt to run.
 type Request struct {
-	Agent   string        // one of Agents()
-	Prompt  string        // sent on the agent's stdin, never in argv (P8)
-	Dir     string        // absolute working directory
-	Timeout time.Duration // must be positive
-	Environ []string      // the caller's environment, KEY=VALUE
-	Pass    []string      // variable names passed from Environ beyond the allowlist (P8)
-	Session string        // a session to continue; empty starts a new one
+	Agent   string         // one of Agents()
+	Prompt  string         // sent on the agent's stdin, never in argv (P8)
+	Dir     string         // absolute working directory
+	Timeout time.Duration  // must be positive
+	Environ []string       // the caller's environment, KEY=VALUE
+	Pass    []string       // variable names passed from Environ beyond the allowlist (P8)
+	Session string         // a session to continue; empty starts a new one
+	Started func(pgid int) // if set, called once with the agent's process group right after it starts
 }
 
 // Result describes a run that started.

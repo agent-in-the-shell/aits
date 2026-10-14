@@ -56,6 +56,9 @@ func run(ctx context.Context, ag agent, path string, req Request) (observation, 
 	if err != nil {
 		return observation{}, fmt.Errorf("start %s: %w", ag.name, err)
 	}
+	if req.Started != nil {
+		req.Started(cmd.Process.Pid) // the agent leads its own group (Setpgid)
+	}
 	return supervise(ctx, cmd, outR, errR, req.Timeout, ag.parse), nil
 }
 
