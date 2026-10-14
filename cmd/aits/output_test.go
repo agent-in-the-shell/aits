@@ -16,11 +16,11 @@ type outputCase struct {
 	scenario string // "" means no agent on PATH
 	args     []string
 	code     int
-	setup    func(q queue, dir string) map[string]string // nil: an empty queue
+	setup    func(q queue, dir string) vars // nil: an empty queue
 
 	errCode string // the --json error envelope's code; "" means a result
 	errMsg  string // and its exact message, when set
-	result  func(t *testing.T, stdout string, v map[string]string)
+	result  func(t *testing.T, stdout string, v vars)
 	stdout  string // text mode, exact; an error prints only "aits: MESSAGE"
 	stderr  string
 }
@@ -43,7 +43,7 @@ func TestOutputChannels(t *testing.T) {
 		{name: "ok", scenario: "ok", args: submitArgs("hi"), result: submitIs("ok"), stdout: "fake answer\n", stderr: "session: sess-fake-1\n"},
 
 		{name: "task create", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"},
-			result: createdIs, stdout: "{ID}\n"},
+			result: jsonIs(`{"id":"{ID}","status":"queued"}`), stdout: "{ID}\n"},
 		{name: "task create without agent", scenario: "ok", args: []string{"task", "create", "--cwd", "{DIR}", "hi"}, code: 2,
 			errCode: "invalid_input", errMsg: "agent is required (one of: claude, codex)"},
 		{name: "task create internal", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"}, code: 1,
@@ -84,8 +84,29 @@ func TestOutputChannels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			q, dir := newQueue(t, tt.scenario), t.TempDir()
+			// run rebuilds the row's state and runs it once. A row that creates
+			// its task itself (task create) gets its {ID} from the queue.
+			run := func(extra ...string) (output, vars) {
+				if err := os.RemoveAll(q.home); err != nil {
+					t.Fatal(err)
+				}
+				var v vars
+				if tt.setup != nil {
+					v = tt.setup(q, dir)
+				}
+				v.dir = dir
+				var args []string
+				for _, a := range tt.args {
+					args = append(args, v.fill(a))
+				}
+				out := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append(args, extra...)}.run(t)
+				if v.id == "" && strings.Contains(tt.stdout, "{ID}") {
+					v.id = onlyTask(q).id
+				}
+				return out, v
+			}
 
-			out, v := tt.run(q, dir, "--json")
+			out, v := run("--json")
 			if out.code != tt.code || out.stderr != "" {
 				t.Errorf("--json: code=%d, want %d; stderr=%q", out.code, tt.code, out.stderr)
 			}
@@ -100,53 +121,28 @@ func TestOutputChannels(t *testing.T) {
 				tt.result(t, out.stdout, v)
 			}
 
-			out, v = tt.run(q, dir)
+			out, v = run()
 			stdout, stderr := tt.stdout, tt.stderr
 			if tt.errCode != "" {
 				stdout, stderr = "", "aits: "+msg+"\n"
 			}
-			r := replacer(v)
-			if out.code != tt.code || out.stdout != r.Replace(stdout) || out.stderr != r.Replace(stderr) {
-				t.Errorf("text: code=%d stdout=%q stderr=%q; want %d %q %q", out.code, out.stdout, out.stderr, tt.code, r.Replace(stdout), r.Replace(stderr))
+			if out.code != tt.code || out.stdout != v.fill(stdout) || out.stderr != v.fill(stderr) {
+				t.Errorf("text: code=%d stdout=%q stderr=%q; want %d %q %q", out.code, out.stdout, out.stderr, tt.code, v.fill(stdout), v.fill(stderr))
 			}
 		})
 	}
 }
 
-// run rebuilds the row's state and runs it once with extra arguments. A
-// row that creates its task itself (task create) gets its {ID} from the queue.
-func (tt outputCase) run(q queue, dir string, extra ...string) (output, map[string]string) {
-	q.t.Helper()
-	if err := os.RemoveAll(q.home); err != nil {
-		q.t.Fatal(err)
-	}
-	v := map[string]string{"DIR": dir}
-	if tt.setup != nil {
-		for k, val := range tt.setup(q, dir) {
-			v[k] = val
-		}
-	}
-	args := make([]string, len(tt.args), len(tt.args)+len(extra))
-	for i, a := range tt.args {
-		args[i] = replacer(v).Replace(a)
-	}
-	out := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append(args, extra...)}.run(q.t)
-	if _, ok := v["ID"]; !ok && strings.Contains(tt.stdout, "{ID}") {
-		v["ID"] = onlyTask(q)["ID"]
-	}
-	return out, v
-}
+// vars are the values of one run that "{ID}", "{DIR}" and "{CREATED_AT}"
+// stand for.
+type vars struct{ id, dir, createdAt string }
 
-func replacer(v map[string]string) *strings.Replacer {
-	var pairs []string
-	for k, val := range v {
-		pairs = append(pairs, "{"+k+"}", val)
-	}
-	return strings.NewReplacer(pairs...)
+func (v vars) fill(s string) string {
+	return strings.NewReplacer("{ID}", v.id, "{DIR}", v.dir, "{CREATED_AT}", v.createdAt).Replace(s)
 }
 
 // queued creates one task for claude in dir.
-func queued(q queue, dir string) map[string]string {
+func queued(q queue, dir string) vars {
 	q.t.Helper()
 	if out := q.run("create", "--agent", "claude", "--cwd", dir, "hi"); out.code != 0 {
 		q.t.Fatalf("create: code=%d stderr=%q", out.code, out.stderr)
@@ -155,23 +151,23 @@ func queued(q queue, dir string) map[string]string {
 }
 
 // worked is queued, then worked once with the row's scenario.
-func worked(q queue, dir string) map[string]string {
+func worked(q queue, dir string) vars {
 	v := queued(q, dir)
 	q.run("work")
 	return v
 }
 
 // homeIsFile makes AITS_HOME a regular file, so storage fails.
-func homeIsFile(q queue, _ string) map[string]string {
+func homeIsFile(q queue, _ string) vars {
 	if err := os.WriteFile(q.home, nil, 0o600); err != nil {
 		q.t.Fatal(err)
 	}
-	return nil
+	return vars{}
 }
 
 // onlyTask returns the id of the one task in q and its creation time as
 // text-mode list prints it.
-func onlyTask(q queue) map[string]string {
+func onlyTask(q queue) vars {
 	q.t.Helper()
 	var r struct {
 		Tasks []struct {
@@ -182,28 +178,18 @@ func onlyTask(q queue) map[string]string {
 	if err := json.Unmarshal([]byte(q.run("list", "--json").stdout), &r); err != nil || len(r.Tasks) != 1 {
 		q.t.Fatalf("list: %v %+v", err, r)
 	}
-	return map[string]string{"ID": r.Tasks[0].ID, "CREATED_AT": r.Tasks[0].CreatedAt.Format(time.RFC3339)}
+	return vars{id: r.Tasks[0].ID, createdAt: r.Tasks[0].CreatedAt.Format(time.RFC3339)}
 }
 
-func submitIs(status string) func(*testing.T, string, map[string]string) {
-	return func(t *testing.T, stdout string, _ map[string]string) {
+func submitIs(status string) func(*testing.T, string, vars) {
+	return func(t *testing.T, stdout string, _ vars) {
 		if r := decode(t, stdout); r.Status != status || r.Error != nil {
 			t.Errorf("--json: %+v", r)
 		}
 	}
 }
 
-func createdIs(t *testing.T, stdout string, v map[string]string) {
-	r := decodeOne[struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-	}](t, stdout)
-	if r.ID != v["ID"] || r.Status != "queued" {
-		t.Errorf("--json: %+v, want id %s", r, v["ID"])
-	}
-}
-
-func listIs(t *testing.T, stdout string, v map[string]string) {
+func listIs(t *testing.T, stdout string, v vars) {
 	r := decodeOne[struct {
 		Tasks []struct {
 			ID        string `json:"id"`
@@ -213,31 +199,31 @@ func listIs(t *testing.T, stdout string, v map[string]string) {
 			CreatedAt string `json:"created_at"`
 		} `json:"tasks"`
 	}](t, stdout)
-	if len(r.Tasks) != 1 || r.Tasks[0].ID != v["ID"] || r.Tasks[0].Status != "queued" || r.Tasks[0].Agent != "claude" ||
-		r.Tasks[0].Cwd != v["DIR"] || r.Tasks[0].CreatedAt == "" {
+	if len(r.Tasks) != 1 || r.Tasks[0].ID != v.id || r.Tasks[0].Status != "queued" || r.Tasks[0].Agent != "claude" ||
+		r.Tasks[0].Cwd != v.dir || r.Tasks[0].CreatedAt == "" {
 		t.Errorf("--json: %+v", r)
 	}
 }
 
 // taskIs checks a --json task record of status, whose run has runStatus
 // ("" for no run).
-func taskIs(status, runStatus string) func(*testing.T, string, map[string]string) {
-	return func(t *testing.T, stdout string, v map[string]string) {
+func taskIs(status, runStatus string) func(*testing.T, string, vars) {
+	return func(t *testing.T, stdout string, v vars) {
 		r := decodeOne[taskRecord](t, stdout)
 		got := ""
 		if r.Run != nil {
 			got = r.Run.Status
 		}
-		if r.ID != v["ID"] || r.Status != status || r.Cwd != v["DIR"] || got != runStatus {
+		if r.ID != v.id || r.Status != status || r.Cwd != v.dir || got != runStatus {
 			t.Errorf("--json: %+v", r)
 		}
 	}
 }
 
-// jsonIs checks that stdout is exactly want and a newline.
-func jsonIs(want string) func(*testing.T, string, map[string]string) {
-	return func(t *testing.T, stdout string, _ map[string]string) {
-		if stdout != want+"\n" {
+// jsonIs checks that stdout is exactly want, filled in, and a newline.
+func jsonIs(want string) func(*testing.T, string, vars) {
+	return func(t *testing.T, stdout string, v vars) {
+		if want := v.fill(want); stdout != want+"\n" {
 			t.Errorf("--json: stdout=%q, want %q", stdout, want)
 		}
 	}
