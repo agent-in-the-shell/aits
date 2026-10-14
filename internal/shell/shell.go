@@ -37,6 +37,7 @@ type Request struct {
 	Timeout time.Duration // must be positive
 	Environ []string      // the caller's environment, KEY=VALUE
 	Pass    []string      // variable names passed from Environ beyond the allowlist (P8)
+	Session string        // a session to continue; empty starts a new one
 }
 
 // Result describes a run that started.
@@ -95,7 +96,24 @@ func (r Request) validate() (agent, error) {
 			return agent{}, invalid("environment variable %s is not set", name)
 		}
 	}
+	if r.Session != "" && !validSession(r.Session) {
+		return agent{}, invalid("session id %q must be letters, digits, '-', '_' or '.', and not start with '-'", r.Session)
+	}
 	return ag, nil
+}
+
+// validSession reports whether id is safe to place in the agent's argv: it
+// cannot be read as a flag or split by anything (P6).
+func validSession(id string) bool {
+	if strings.HasPrefix(id, "-") {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("-_.", c)) {
+			return false
+		}
+	}
+	return true
 }
 
 // Submit validates req, runs the agent, and waits until it finishes, times

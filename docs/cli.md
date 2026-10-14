@@ -42,6 +42,7 @@ Flags:
   --cwd DIR           Run the agent in DIR (default: the current directory).
   --env NAME          Pass the variable NAME from this environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
+  --session ID        Continue the conversation ID: the session_id of an earlier result.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
 
 Output:
@@ -53,7 +54,7 @@ Output:
 Result fields:
   status       Always. One of the statuses below.
   agent        Always.
-  session_id   When the agent reported one, on every status; use it to resume.
+  session_id   When the agent reported one, on every status; pass it to --session.
   answer       Only for ok.
   exit_code    Always. The agent's exit code; -1 if a signal ended it.
   duration_ms  Always.

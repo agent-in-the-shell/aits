@@ -39,6 +39,7 @@ type dialect struct {
 	answer    func(text string) // a reply and the end of the run
 	fail      func(text string) // a reported error and the end of the run
 	noSession func(text string) // a reply and the end of the run, without any session id
+	missing   func(id string)   // the refusal to continue an unknown session id
 }
 
 var dialects = map[string]dialect{
@@ -50,6 +51,11 @@ var dialects = map[string]dialect{
 		answer:    func(text string) { emit(claudeResult(false, text, sessionID)) },
 		fail:      func(text string) { emit(claudeResult(true, text, sessionID)) },
 		noSession: func(text string) { emit(claudeResult(false, text, "")) },
+		missing: func(id string) {
+			msg := "No conversation found with session ID: " + id
+			emit(map[string]any{"type": "result", "subtype": "error_during_execution", "is_error": true, "session_id": id, "errors": []string{msg}})
+			os.Stderr.WriteString(msg + "\n")
+		},
 	},
 	"codex": {
 		start: func() {
@@ -67,6 +73,9 @@ var dialects = map[string]dialect{
 		noSession: func(text string) {
 			emit(map[string]any{"type": "turn.started"})
 			codexAnswer(text)
+		},
+		missing: func(id string) {
+			os.Stderr.WriteString("Error: thread/resume: thread/resume failed: no rollout found for thread id " + id + " (code -32600)\n")
 		},
 	},
 }
@@ -171,12 +180,27 @@ func play(d dialect, scenario, dir, exe string) {
 		emit(map[string]any{"type": "error", "message": "Reconnecting... 1/5"})
 		emit(map[string]any{"type": "error", "message": "Reconnecting... 2/5"})
 		d.answer("fake answer")
+	case "unknown_session":
+		d.missing(resumedID())
+		os.Exit(1)
 	case "not_git": // Codex only
 		os.Stderr.WriteString("Not inside a trusted directory and --skip-git-repo-check was not specified.\n")
 		os.Exit(1)
 	default:
 		fail(fmt.Errorf("unknown scenario %q", scenario))
 	}
+}
+
+// resumedID returns the session id the agent was asked to continue: the
+// argument after Claude's --resume or Codex's resume.
+func resumedID() string {
+	for i, a := range os.Args[:len(os.Args)-1] {
+		if a == "--resume" || a == "resume" {
+			return os.Args[i+1]
+		}
+	}
+	fail(fmt.Errorf("not started to resume a session: %q", os.Args[1:]))
+	return ""
 }
 
 func claudeResult(isError bool, text, session string) map[string]any {

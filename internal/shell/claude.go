@@ -1,6 +1,9 @@
 package shell
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // claudeHeader holds the fields aits reads from every Claude Code event.
 // Decoding into it skips all other fields without copying them, however large
@@ -11,8 +14,9 @@ type claudeHeader struct {
 }
 
 type claudeResult struct {
-	IsError bool   `json:"is_error"`
-	Result  string `json:"result"`
+	IsError bool            `json:"is_error"`
+	Result  string          `json:"result"`
+	Errors  json.RawMessage `json:"errors"` // where some errors are reported instead of result
 }
 
 // parseClaude reads one line of `claude -p --output-format stream-json`: any
@@ -37,6 +41,10 @@ func parseClaude(ev *events, line []byte) bool {
 	ev.done = true
 	if res.IsError {
 		ev.failed, ev.failure = true, res.Result
+		var errs []string
+		if ev.failure == "" && json.Unmarshal(res.Errors, &errs) == nil {
+			ev.failure = strings.Join(errs, "; ")
+		}
 	} else {
 		ev.answer = res.Result
 	}

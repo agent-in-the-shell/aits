@@ -30,7 +30,7 @@ const submitDetails = `Output:
 Result fields:
   status       Always. One of the statuses below.
   agent        Always.
-  session_id   When the agent reported one, on every status; use it to resume.
+  session_id   When the agent reported one, on every status; pass it to --session.
   answer       Only for ok.
   exit_code    Always. The agent's exit code; -1 if a signal ended it.
   duration_ms  Always.
@@ -71,6 +71,14 @@ func submitCommand() *Command {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required). One of: "+strings.Join(shell.Agents(), ", ")+".")
 			cwd := fs.String("cwd", "", "Run the agent in `DIR` (default: the current directory).")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
+			var session string
+			fs.Func("session", "Continue the conversation `ID`: the session_id of an earlier result.", func(v string) error {
+				if v == "" {
+					return errors.New("needs a session id")
+				}
+				session = v
+				return nil
+			})
 			var pass []string
 			fs.Func("env", "Pass the variable `NAME` from this environment to the agent. Repeatable.", func(v string) error {
 				pass = append(pass, v)
@@ -93,7 +101,7 @@ func submitCommand() *Command {
 				}
 				res, err := shell.Submit(ctx, shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: pass,
+					Environ: env.Environ, Pass: pass, Session: session,
 				})
 				if err != nil {
 					return 0, submitError(err)

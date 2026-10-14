@@ -21,7 +21,9 @@ prints
     {"status":"ok","agent":"claude","session_id":"…","answer":"…","exit_code":0,"duration_ms":12345}
 
 `--agent codex` runs Codex CLI the same way; Codex only runs inside a git
-repository.
+repository. To continue a conversation, pass its `session_id` back:
+
+    aits shell submit --agent claude --cwd ~/src/proj --session <session_id> --json "Now fix the first issue"
 
 The full reference is [docs/cli.md](docs/cli.md).
 
