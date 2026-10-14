@@ -69,7 +69,7 @@ func submitCommand() *Command {
 		Details: submitDetails,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required). One of: "+strings.Join(shell.Agents(), ", ")+".")
-			cwd := fs.String("cwd", "", "Run the agent in `DIR` (default: the current directory).")
+			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory).", "a directory")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
 			session := nonEmpty(fs, "session", "Continue the conversation `ID`: the session_id of an earlier result.", "a session id")
 			var pass []string
