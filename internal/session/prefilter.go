@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"unicode"
@@ -40,8 +41,9 @@ func needles(terms []string) [][]byte {
 
 // mayMatch reports whether every needle occurs in r, ignoring case. It reads r
 // chunk by chunk, keeping an overlap so a needle split between two chunks is
-// still seen; memory does not grow with the file (P8).
-func mayMatch(r io.Reader, needles [][]byte, b *buffers) (bool, error) {
+// still seen; memory does not grow with the file (P8). It returns ctx's error
+// as soon as ctx is cancelled, between chunks.
+func mayMatch(ctx context.Context, r io.Reader, needles [][]byte, b *buffers) (bool, error) {
 	if len(needles) == 0 {
 		return true, nil
 	}
@@ -56,6 +58,9 @@ func mayMatch(r io.Reader, needles [][]byte, b *buffers) (bool, error) {
 	left := len(needles)
 	b.window = b.window[:0]
 	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		n, err := io.ReadFull(r, b.chunk)
 		b.window = append(b.window, b.chunk[:n]...)
 		b.low = lowerInto(b.low[:0], b.window)

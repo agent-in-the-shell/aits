@@ -58,8 +58,10 @@ Invalid input → `invalid_input`, exit 2, nothing read.
 - `snippet`: up to 160 bytes of text around the first occurrence of the first
   term in the newest message that contains it, cut on rune boundaries, with
   newlines and runs of whitespace collapsed to one space, and `…` where cut.
-- `skipped.files`: transcript files that could not be opened, or that hold
-  messages but no session id or cwd; `skipped.lines`: lines in examined files
+- `skipped.files`: transcript paths that could not be opened or whose target
+  is not a regular file (a pipe, a device or a directory, which are never
+  opened: a pipe would block the search and a device would never end it), and
+  transcripts that hold messages but no session id or cwd; `skipped.lines`: lines in examined files
   that were not JSON or were longer than 64 MiB. Files that hold no
   conversation (a metadata file without messages or cwd, a Codex subagent's
   rollout) are left out without being counted.
@@ -115,6 +117,10 @@ contributes nothing.
    and skipped.
 4. **Filter** by `--cwd`, **sort** by `updated_at` descending, ties by
    session id, **cut** to `--limit`.
+
+A signal stops the search between chunks and between lines (one line is
+still read whole, up to the 64 MiB limit) and is reported as the `stopped`
+error, never as a partial result (P6, P10 by analogy).
 
 Search never writes under the vendor roots or `AITS_HOME`, and works with a
 read-only `HOME` (P7, P12).
