@@ -16,7 +16,7 @@ const DefaultLimit = 20
 type Query struct {
 	Terms   []string      // all must occur in the session's text, ignoring case
 	Agent   string        // one of Agents(), or "" for all
-	Cwd     string        // absolute; only sessions in or below it; "" for any
+	Cwd     []string      // absolute; only sessions in or below one of them; empty for any
 	Since   time.Duration // only files modified within it; 0 for any
 	Limit   int           // at most this many results; at least 1
 	Environ []string      // KEY=VALUE, for HOME, CLAUDE_CONFIG_DIR and CODEX_HOME
@@ -66,8 +66,10 @@ func (q Query) validate() error {
 	if _, ok := vendors[q.Agent]; q.Agent != "" && !ok {
 		return invalid("unknown agent %q (one of: %s)", q.Agent, strings.Join(Agents(), ", "))
 	}
-	if q.Cwd != "" && !filepath.IsAbs(q.Cwd) {
-		return invalid("directory %q is not absolute", q.Cwd)
+	for _, dir := range q.Cwd {
+		if !filepath.IsAbs(dir) {
+			return invalid("directory %q is not absolute", dir)
+		}
 	}
 	if q.Since < 0 {
 		return invalid("since must be positive, got %s", q.Since)

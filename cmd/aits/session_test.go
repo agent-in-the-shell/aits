@@ -225,3 +225,20 @@ func TestSessionSearchCwdThroughSymlink(t *testing.T) {
 		}
 	}
 }
+
+// Some sessions record the directory as the agent was given it, symlinks
+// unresolved, so --cwd matches either form.
+func TestSessionSearchCwdRecordedUnresolved(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	writeTranscript(t, home, ".claude/projects/-w/s.jsonl", time.Now(),
+		`{"type":"user","sessionId":"s","cwd":"`+link+`","message":{"content":"needle"}}`)
+	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "--cwd", link, "needle"}}.run(t)
+	if got := found(decodeSearch(t, out.stdout)); !slices.Equal(got, []string{"claude:s"}) {
+		t.Errorf("results %q", got)
+	}
+}

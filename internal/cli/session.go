@@ -31,7 +31,7 @@ const searchDetails = `Output:
 Result fields:
   agent        The agent whose transcript matched.
   session_id   Pass it to "aits shell submit --session" to continue.
-  cwd          The session's working directory, symlinks resolved.
+  cwd          The session's working directory, as the agent recorded it.
   updated_at   When the transcript file last changed, in UTC; newest first.
   snippet      Text around the first term in the newest message with it.
 
@@ -67,7 +67,7 @@ func searchCommand() *Command {
 		Details: searchDetails,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := fs.String("agent", "", "Search only `AGENT`'s transcripts. One of: "+strings.Join(session.Agents(), ", ")+".")
-			cwd := fs.String("cwd", "", "Only sessions whose working directory is `DIR` or below it.")
+			cwd := fs.String("cwd", "", "Only sessions whose working directory is `DIR` or below it, with or without symlinks resolved.")
 			var since time.Duration
 			fs.Func("since", "Only transcripts changed within `DURATION`, e.g. 72h.", func(v string) error {
 				d, err := time.ParseDuration(v)
@@ -86,22 +86,22 @@ func searchCommand() *Command {
 				for _, a := range args {
 					terms = append(terms, strings.Fields(a)...)
 				}
-				dir := *cwd
-				if dir != "" {
-					abs, err := filepath.Abs(dir)
+				var dirs []string
+				if *cwd != "" {
+					abs, err := filepath.Abs(*cwd)
 					if err != nil {
 						return 0, failure("internal", "resolve --cwd: %v", err)
 					}
-					// Agents record the directory with symlinks resolved (on
-					// macOS /tmp is /private/tmp); keep the path as given when
-					// it no longer exists.
-					if real, err := filepath.EvalSymlinks(abs); err == nil {
-						abs = real
+					// Agents usually record the directory with symlinks
+					// resolved (on macOS /tmp is /private/tmp), but not
+					// always: match either form.
+					dirs = append(dirs, abs)
+					if real, err := filepath.EvalSymlinks(abs); err == nil && real != abs {
+						dirs = append(dirs, real)
 					}
-					dir = abs
 				}
 				out, err := session.Search(ctx, session.Query{
-					Terms: terms, Agent: *agent, Cwd: dir, Since: since, Limit: *limit, Environ: env.Environ,
+					Terms: terms, Agent: *agent, Cwd: dirs, Since: since, Limit: *limit, Environ: env.Environ,
 				})
 				if err != nil {
 					return 0, searchError(err)

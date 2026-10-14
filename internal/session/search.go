@@ -187,14 +187,14 @@ func examine(j job, q Query, ns [][]byte) outcome {
 	switch {
 	case err != nil:
 		return outcome{lines: bad, badFile: true}
-	case t.notSession || (t.cwd == "" && t.texts == 0):
-		// A subagent's rollout, or a file that holds no conversation (a
-		// metadata file): nothing to find and nothing unreadable.
-		return outcome{}
+	case t.notSession:
+		return outcome{lines: bad} // a subagent's rollout: not a session to return
+	case t.cwd == "" && t.texts == 0 && bad == 0:
+		return outcome{} // a readable file that holds no conversation, such as metadata
 	case t.sessionID == "" || t.cwd == "":
 		return outcome{lines: bad, badFile: true}
 	}
-	if !t.matched() || !within(t.cwd, q.Cwd) {
+	if !t.matched() || !slices.ContainsFunc(cwds(q), func(base string) bool { return within(t.cwd, base) }) {
 		return outcome{lines: bad}
 	}
 	return outcome{lines: bad, result: &Result{
@@ -234,6 +234,14 @@ func eachLine(r io.Reader, fn func([]byte) bool) (int, error) {
 			return bad, err
 		}
 	}
+}
+
+// cwds returns the directories a session may be in: any, or one of q.Cwd.
+func cwds(q Query) []string {
+	if len(q.Cwd) == 0 {
+		return []string{""}
+	}
+	return q.Cwd
 }
 
 // within reports whether dir is base or below it; an empty base matches all.

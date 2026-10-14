@@ -108,7 +108,7 @@ Find conversations that contain every term, with an id to continue them.
 
 Flags:
   --agent AGENT     Search only AGENT's transcripts. One of: claude, codex.
-  --cwd DIR         Only sessions whose working directory is DIR or below it.
+  --cwd DIR         Only sessions whose working directory is DIR or below it, with or without symlinks resolved.
   --json            Print the result, or the error, as JSON on stdout.
   --limit N         Return at most N results. (default 20)
   --since DURATION  Only transcripts changed within DURATION, e.g. 72h.
@@ -123,7 +123,7 @@ Output:
 Result fields:
   agent        The agent whose transcript matched.
   session_id   Pass it to "aits shell submit --session" to continue.
-  cwd          The session's working directory, symlinks resolved.
+  cwd          The session's working directory, as the agent recorded it.
   updated_at   When the transcript file last changed, in UTC; newest first.
   snippet      Text around the first term in the newest message with it.
 

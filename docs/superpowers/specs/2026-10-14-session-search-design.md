@@ -33,9 +33,11 @@ aits session search [--agent AGENT] [--cwd DIR] [--since DURATION] [--limit N] [
   at least one non-empty term.
 - `--agent`: `claude` or `codex`; default both.
 - `--cwd DIR`: only sessions whose working directory is `DIR` or below it;
-  `DIR` is made absolute, its symlinks are resolved (agents record the
-  resolved path; on macOS `/tmp` is `/private/tmp`), and "below" means a
-  path-separator boundary (`/a/b` matches `/a/b` and `/a/b/c`, not `/a/bc`).
+  `DIR` is made absolute, and a session matches when its recorded directory
+  is in or below `DIR` as given or `DIR` with symlinks resolved (agents
+  usually record the resolved path, on macOS `/private/tmp` for `/tmp`, but
+  not always). "Below" means a path-separator boundary (`/a/b` matches `/a/b`
+  and `/a/b/c`, not `/a/bc`).
 - `--since DURATION`: only transcript files modified within `DURATION`; must
   be positive.
 - `--limit N`: at most `N` results, default 20, `N ≥ 1`.
@@ -76,7 +78,12 @@ read`. Exit 0.
 | Session id | `sessionId` of the first event that has one | `payload.id` of the `session_meta` line |
 | cwd | `cwd` of the first event that has one | `payload.cwd` of the `session_meta` line |
 | Searched text | events with `type` `user` or `assistant`: `message.content` if a string, else the `text` of its blocks of `type` `text`; and `attachment` events with `attachment.type` `queued_command`, `commandMode` `prompt`, not `isMeta`, `origin.kind` `human` or no origin: `attachment.prompt` (a prompt typed while the agent was working) | lines with `type` `response_item`, `payload.type` `message`, `payload.role` `user` or `assistant`; the `text` of `content` blocks of type `input_text` or `output_text` |
-| Not searched | events with `isSidechain`, `isMeta`, `isCompactSummary`, `isVisibleInTranscriptOnly` or `isApiErrorMessage` true, or `message.model` `<synthetic>`; `tool_use`, `tool_result`, `thinking` blocks; user text that starts with `<task-notification>`, `<local-command-`, `<command-`, `<system-reminder>`, `<bash-stdout>`, `<bash-stderr>` or `[Request interrupted` | rollouts whose `session_meta.payload.source` has a `subagent` key (the whole file); `developer` role, `reasoning`, `function_call`, `function_call_output`, `event_msg` lines; user text that starts with `<environment_context>`, `<user_instructions>`, `# AGENTS.md instructions`, `<subagent_notification>`, `<turn_aborted>`, `<user_action>`, `<image` or `</image>` |
+| Not searched | events with `isSidechain`, `isMeta`, `isCompactSummary`, `isVisibleInTranscriptOnly` or `isApiErrorMessage` true, or `message.model` `<synthetic>`; `tool_use`, `tool_result`, `thinking` blocks; user text that starts with `<task-notification>`, `<local-command-`, `<command-`, `<system-reminder>`, `<bash-stdout>`, `<bash-stderr>` or `[Request interrupted` | rollouts whose `session_meta.payload.source` has a `subagent` key (the whole file); `developer` role, `reasoning`, `function_call`, `function_call_output`, `event_msg` lines; user text that starts with `<environment_context>`, `<user_instructions>`, `# AGENTS.md instructions`, `<recommended_plugins>`, `<codex_internal_context>`, `<subagent_notification>`, `<turn_aborted>`, `<user_action>`, `<image` or `</image>` |
+
+"Starts with" ignores leading whitespace, and applies to Claude's queued
+prompts too. Kept on purpose: Claude's `<bash-input>` (the command the user
+typed after `!`) and `<pasted_content>` (text the user pasted), because their
+content is the user's own.
 
 Observed with Claude Code 2.1.296 and Codex CLI 0.159.2, and checked against
 older transcripts on disk (older Codex versions wrote AGENTS.md into the first

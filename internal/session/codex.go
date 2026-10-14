@@ -2,11 +2,12 @@ package session
 
 import "encoding/json"
 
-// codexInjected starts user text that Codex writes by itself: environment and
-// instruction blocks (AGENTS.md included), subagent notifications, turn
-// markers, and the tags around a pasted image.
+// codexInjected starts user text that Codex writes by itself: environment,
+// instruction and plugin blocks (AGENTS.md included), subagent notifications,
+// turn markers, and the tags around a pasted image.
 var codexInjected = []string{
 	"<environment_context>", "<user_instructions>", "# AGENTS.md instructions",
+	"<recommended_plugins>", "<codex_internal_context>",
 	"<subagent_notification>", "<turn_aborted>", "<user_action>", "<image", "</image>",
 }
 
