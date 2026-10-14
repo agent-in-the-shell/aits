@@ -80,6 +80,17 @@ func TestParseClaude(t *testing.T) {
 			`{"type":"attachment",` + head + `,"attachment":{"type":"file","content":"secret file"}}`,
 			`{"type":"attachment",` + head + `,"attachment":"a string"}`},
 			[]bool{true, true, true, true, true, true, true, true}, "s1", "/w", []string{"also check the docs", "no origin recorded"}},
+		{"a queued prompt given as blocks is searched by its text blocks", []string{
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"blockqueued see this"},{"type":"image","source":{"type":"base64","data":"iVBORw0KGgo="}}],"origin":{"kind":"human"}}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"<system-reminder>x"},{"type":"text","text":"my own words"}]}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"from an agent"}],"origin":{"kind":"agent"}}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":null}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt"}}`},
+			[]bool{true, true, true, true, true}, "s1", "/w", []string{"blockqueued see this", "my own words"}},
+		{"a queued prompt of another shape is not usable", []string{
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":7}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":{}}}`},
+			[]bool{false, false}, "s1", "/w", nil},
 		{"other event types", []string{
 			`{"type":"summary","summary":"x","leafUuid":"u"}`,
 			`{"type":"file-history-snapshot","snapshot":{}}`,

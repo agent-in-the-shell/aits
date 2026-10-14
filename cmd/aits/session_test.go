@@ -284,3 +284,40 @@ func TestSessionSearchEscapesControls(t *testing.T) {
 		t.Errorf("--json changed the text: %+v", o.Results)
 	}
 }
+
+// A prompt queued with a pasted image is searched by its words, never by the
+// image's data (#23).
+func TestSessionSearchQueuedBlocks(t *testing.T) {
+	home := t.TempDir()
+	writeTranscript(t, home, ".claude/projects/-w-proj/c1.jsonl", time.Now(),
+		`{"type":"user","sessionId":"claude-q","cwd":"/w/proj","message":{"role":"user","content":"start the refactor"}}`,
+		`{"type":"attachment","sessionId":"claude-q","cwd":"/w/proj","attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"blockqueued see this screenshot"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}],"origin":{"kind":"human"}}}`)
+	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "blockqueued"}}.run(t)
+	r := decodeSearch(t, out.stdout)
+	if out.code != 0 || len(r.Results) != 1 || r.Results[0].SessionID != "claude-q" || r.Results[0].Snippet != "blockqueued see this screenshot" ||
+		r.Skipped.Files != 0 || r.Skipped.Lines != 0 {
+		t.Errorf("blockqueued: code=%d stdout=%q", out.code, out.stdout)
+	}
+	out = call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "iVBORw0KGgo"}}.run(t)
+	if out.code != 0 || out.stdout != `{"results":[],"skipped":{"files":0,"lines":0}}`+"\n" {
+		t.Errorf("image data: code=%d stdout=%q", out.code, out.stdout)
+	}
+}
+
+// A Codex rollout whose first line cannot be read is reported, never returned
+// under the id of a later session_meta line (#23).
+func TestSessionSearchCodexUnreadableFirstLine(t *testing.T) {
+	home := t.TempDir()
+	writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-c.jsonl", time.Now(),
+		`{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w/proj","source":{"subagent":{"thread_sp`,
+		`{"type":"session_meta","payload":{"id":"parent-1","cwd":"/w/proj","source":"cli"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"subagentword review the diff"}]}}`)
+	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "subagentword"}}.run(t)
+	if out.code != 0 || out.stdout != `{"results":[],"skipped":{"files":1,"lines":1}}`+"\n" {
+		t.Errorf("--json: code=%d stdout=%q", out.code, out.stdout)
+	}
+	out = call{env: []string{"HOME=" + home}, args: []string{"session", "search", "subagentword"}}.run(t)
+	if out.code != 0 || out.stdout != "" || out.stderr != "aits: skipped 1 files and 1 lines that could not be read\n" {
+		t.Errorf("text: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+	}
+}

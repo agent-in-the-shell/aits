@@ -220,3 +220,24 @@ func TestSearchCountsSessionWithoutCwd(t *testing.T) {
 		t.Errorf("results %q, skipped %+v", ids(out), out.Skipped)
 	}
 }
+
+// A Codex rollout takes its identity from its first line only: when that line
+// cannot be read (here not JSON, or over maxLine), a later session_meta does
+// not name the file, which is reported and never returned (P6, #23).
+func TestSearchCodexIdentityFromFirstLine(t *testing.T) {
+	later := []string{
+		`{"type":"session_meta","payload":{"id":"parent-1","cwd":"/w","source":"cli"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"subagentword review"}]}}`,
+	}
+	huge := `{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"x":"` + strings.Repeat("a", maxLine) + `"}}}}`
+	for name, first := range map[string]string{"not JSON": `{"type":"session_meta","payload":{"id":"sub-1","cwd":"/w","source":{"subagent":{"thread_sp`, "too long": huge} {
+		t.Run(name, func(t *testing.T) {
+			h := newHome(t)
+			h.write(".codex/sessions/2026/10/14/rollout-c.jsonl", time.Now(), append([]string{first}, later...)...)
+			out := search(t, Query{Terms: []string{"subagentword"}, Environ: h.env()})
+			if len(out.Results) != 0 || out.Skipped != (Skipped{Files: 1, Lines: 1}) {
+				t.Errorf("results %q, skipped %+v", ids(out), out.Skipped)
+			}
+		})
+	}
+}
