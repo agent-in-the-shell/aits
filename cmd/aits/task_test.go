@@ -559,3 +559,17 @@ func TestTaskTimeoutWhileDirLocked(t *testing.T) {
 		t.Errorf("work: code=%d %+v", out.code, w)
 	}
 }
+
+// task create reads "-" through the same bound: over 16 MiB is invalid input
+// and nothing is queued (#7).
+func TestTaskCreatePromptFromStdinBound(t *testing.T) {
+	q := newQueue(t, "ok")
+	out := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, stdin: strings.Repeat("p", 16<<20+1),
+		args: []string{"task", "create", "--agent", "claude", "--cwd", t.TempDir(), "--json", "-"}}.run(t)
+	if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {
+		t.Errorf("create: code=%d stdout=%q", out.code, out.stdout)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(q.home, "task")); slices.ContainsFunc(entries, func(e os.DirEntry) bool { return strings.HasSuffix(e.Name(), ".json") }) {
+		t.Errorf("an oversized prompt was queued")
+	}
+}

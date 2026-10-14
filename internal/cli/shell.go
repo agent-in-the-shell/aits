@@ -21,7 +21,10 @@ func shellGroup() *Command {
 }
 
 // submitDetails documents the output of "aits shell submit" (P5).
-const submitDetails = `Output:
+const submitDetails = `Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
+invalid_input, and the agent is not started.
+
+Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
@@ -112,7 +115,13 @@ func promptArgs(ctx context.Context, env *Env, args []string, cwd string) (promp
 	return prompt, dir, nil
 }
 
-// readPrompt reads all of r, giving up as soon as ctx is done (P10).
+// maxPrompt bounds a prompt read from stdin (P8): far above any agent's
+// context window, so a larger one is a mistake, such as the wrong file piped
+// in. It matches the bound on one output event.
+const maxPrompt = 16 << 20
+
+// readPrompt reads all of r, at most maxPrompt bytes, giving up as soon as ctx
+// is done (P10). More is invalid input: reading stops one byte past the bound.
 func readPrompt(ctx context.Context, r io.Reader) (string, error) {
 	type read struct {
 		b   []byte
@@ -120,13 +129,16 @@ func readPrompt(ctx context.Context, r io.Reader) (string, error) {
 	}
 	ch := make(chan read, 1)
 	go func() {
-		b, err := io.ReadAll(r)
+		b, err := io.ReadAll(io.LimitReader(r, maxPrompt+1))
 		ch <- read{b, err}
 	}()
 	select {
 	case res := <-ch:
 		if res.err != nil {
 			return "", failure("stdin_failed", "read prompt from stdin: %v", res.err)
+		}
+		if len(res.b) > maxPrompt {
+			return "", usageError("invalid_input", "the prompt from stdin is over 16 MiB")
 		}
 		return string(res.b), nil
 	case <-ctx.Done():

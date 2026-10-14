@@ -496,3 +496,18 @@ func TestSubmitEmptyCwd(t *testing.T) {
 		t.Error("the agent was started")
 	}
 }
+
+// A prompt on stdin over 16 MiB is invalid input and starts nothing; exactly
+// 16 MiB is taken (#7).
+func TestSubmitPromptFromStdinBound(t *testing.T) {
+	bin := vendor(t, "ok")
+	out := call{path: bin, stdin: strings.Repeat("p", 16<<20+1), args: submitArgs("--json", "-")}.run(t)
+	if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" || ran(bin) {
+		t.Errorf("over the bound: code=%d stdout=%q ran=%v", out.code, out.stdout, ran(bin))
+	}
+	prompt := strings.Repeat("p", 16<<20)
+	out = call{path: bin, stdin: prompt, args: submitArgs("--json", "-")}.run(t)
+	if rec := readRecord(t, bin); out.code != 0 || len(rec.Stdin) != len(prompt) {
+		t.Errorf("at the bound: code=%d, agent got %d bytes", out.code, len(rec.Stdin))
+	}
+}
