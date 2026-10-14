@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +45,19 @@ type taskRecord struct {
 	} `json:"run"`
 }
 
+// taskList is the --json output of task list; decoding rejects any field not
+// listed here (P5).
+type taskList struct {
+	Tasks []struct {
+		ID        string `json:"id"`
+		Status    string `json:"status"`
+		Agent     string `json:"agent"`
+		Cwd       string `json:"cwd"`
+		CreatedAt string `json:"created_at"`
+	} `json:"tasks"`
+	Skipped []string `json:"skipped"`
+}
+
 // queue is a shared AITS_HOME and fake-agent PATH for one test.
 type queue struct {
 	t          *testing.T
@@ -63,6 +77,17 @@ func newQueue(t *testing.T, scenario string) queue {
 func (q queue) run(args ...string) output {
 	q.t.Helper()
 	return call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append([]string{"task"}, args...)}.run(q.t)
+}
+
+// writeTaskFile writes body as the task file of id, as something other than
+// aits would.
+func (q queue) writeTaskFile(id, body string, mode os.FileMode) string {
+	q.t.Helper()
+	file := filepath.Join(q.home, "task", id+".json")
+	if err := os.WriteFile(file, []byte(body), mode); err != nil {
+		q.t.Fatal(err)
+	}
+	return file
 }
 
 func (q queue) create(prompt string, flags ...string) string {
@@ -185,6 +210,8 @@ func TestTaskReclaim(t *testing.T) {
 	if err := os.WriteFile(file, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// An unreadable file next to it does not stop the reclaim.
+	q.writeTaskFile("20261014T000000-bad000", "garbage", 0o600)
 	if out := q.run("list"); out.code != 0 {
 		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
 	}
@@ -210,4 +237,113 @@ func TestTaskWorkStopped(t *testing.T) {
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run.Status != "stopped" || w.Run.SessionID != "sess-fake-1" {
 		t.Fatalf("code=%d %+v", out.code, w)
 	}
+}
+
+// Unreadable task files are skipped and reported by list and work, never
+// changed, and the rest of the queue keeps working (P10); show of one says
+// why (P6).
+func TestTaskUnreadableFiles(t *testing.T) {
+	const skip = "aits: skipped task %s that could not be read\n"
+
+	t.Run("garbage", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		a := q.create("hi")
+		file := q.writeTaskFile("20261014T000000-bad000", "garbage", 0o600)
+		out := q.run("list", "--json")
+		l := decodeOne[taskList](t, out.stdout)
+		if out.code != 0 || out.stderr != "" || len(l.Tasks) != 1 || l.Tasks[0].ID != a || !slices.Equal(l.Skipped, []string{"20261014T000000-bad000"}) {
+			t.Errorf("list --json: code=%d %+v stderr=%q", out.code, l, out.stderr)
+		}
+		if out := q.run("list"); out.code != 0 || !strings.HasPrefix(out.stdout, a+"  queued") || strings.Count(out.stdout, "\n") != 1 ||
+			out.stderr != fmt.Sprintf(skip, "20261014T000000-bad000") {
+			t.Errorf("list: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+		}
+		out = q.run("work", "--json")
+		if w := decodeOne[taskRecord](t, out.stdout); out.code != 0 || w.ID != a || w.Status != "done" || out.stderr != fmt.Sprintf(skip, "20261014T000000-bad000") {
+			t.Errorf("work --json: code=%d %+v stderr=%q", out.code, w, out.stderr)
+		}
+		if out := q.run("work", "--json"); out.code != 0 || out.stdout != `{"status":"empty"}`+"\n" {
+			t.Errorf("work, empty: code=%d stdout=%q", out.code, out.stdout)
+		}
+		if b, err := os.ReadFile(file); err != nil || string(b) != "garbage" {
+			t.Errorf("bad file changed: %q, %v", b, err)
+		}
+	})
+
+	t.Run("empty and unreadable", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		q.create("hi")
+		q.writeTaskFile("20261014T000000-bad001", "", 0o600)
+		want := []string{"20261014T000000-bad001"}
+		if os.Geteuid() != 0 {
+			q.writeTaskFile("20261014T000000-bad002", "{}", 0o000)
+			want = append(want, "20261014T000000-bad002")
+		}
+		if l := decodeOne[taskList](t, q.run("list", "--json").stdout); !slices.Equal(l.Skipped, want) {
+			t.Errorf("list --json skipped %q, want %q", l.Skipped, want)
+		}
+		var lines string
+		for _, id := range want {
+			lines += fmt.Sprintf(skip, id)
+		}
+		for _, args := range [][]string{{"list"}, {"work", "--json"}} {
+			if out := q.run(args...); out.stderr != lines {
+				t.Errorf("%v: stderr=%q, want %q", args, out.stderr, lines)
+			}
+		}
+	})
+
+	t.Run("newline in the name", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		q.run("list") // makes the task directory
+		q.writeTaskFile("20261014T000000-bad\naits: forged", "garbage", 0o600)
+		if out := q.run("list"); out.stderr != fmt.Sprintf(skip, `20261014T000000-bad\naits: forged`) {
+			t.Errorf("list: stderr=%q", out.stderr)
+		}
+	})
+
+	t.Run("empty object", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		q.run("list") // makes the task directory
+		q.writeTaskFile("20261014T000000-bad003", "{}", 0o600)
+		if l := decodeOne[taskList](t, q.run("list", "--json").stdout); len(l.Tasks) != 0 || !slices.Equal(l.Skipped, []string{"20261014T000000-bad003"}) {
+			t.Errorf("list --json: %+v", l)
+		}
+	})
+
+	t.Run("copied record", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		a := q.create("hi")
+		b, err := os.ReadFile(filepath.Join(q.home, "task", a+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		q.writeTaskFile("20261014T000000-c0ffee", string(b), 0o600)
+		if w := decodeOne[taskRecord](t, q.run("work", "--json").stdout); w.ID != a || w.Status != "done" {
+			t.Errorf("first work: %+v", w)
+		}
+		if out := q.run("work", "--json"); out.stdout != `{"status":"empty"}`+"\n" {
+			t.Errorf("second work ran the copy: %q", out.stdout)
+		}
+		l := decodeOne[taskList](t, q.run("list", "--json").stdout)
+		if len(l.Tasks) != 1 || l.Tasks[0].ID != a || l.Tasks[0].Status != "done" || !slices.Equal(l.Skipped, []string{"20261014T000000-c0ffee"}) {
+			t.Errorf("list --json: %+v", l)
+		}
+	})
+
+	t.Run("show", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		q.create("hi") // makes the task directory
+		for _, body := range []string{"garbage", "{}"} {
+			q.writeTaskFile("20261014T000000-bad004", body, 0o600)
+			prefix := "task 20261014T000000-bad004 could not be read: "
+			out := q.run("show", "20261014T000000-bad004", "--json")
+			if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || !strings.HasPrefix(e.Message, prefix) {
+				t.Errorf("show --json %s: code=%d stdout=%q", body, out.code, out.stdout)
+			}
+			if out := q.run("show", "20261014T000000-bad004"); out.code != 1 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: "+prefix) {
+				t.Errorf("show %s: code=%d stdout=%q stderr=%q", body, out.code, out.stdout, out.stderr)
+			}
+		}
+	})
 }

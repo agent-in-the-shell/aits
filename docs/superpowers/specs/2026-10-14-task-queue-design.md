@@ -84,8 +84,15 @@ invalid input (P5).
 
 `aits task list`
 - Reclaims expired leases (§6), then lists tasks oldest first.
-- `--json`: `{"tasks":[{"id","status","agent","cwd","created_at"}]}`; text: one
-  line per task, `ID  STATUS  AGENT  CREATED_AT`. Exit 0.
+- `--json`: `{"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}`;
+  text: one line per task, `ID  STATUS  AGENT  CREATED_AT`. Exit 0.
+- A task file that cannot be read (not a regular file named by a task id,
+  not JSON, not the record of that id, an unknown status, or `running`
+  without a lease) is skipped and left
+  as it is (P10): its id is in `skipped` (always present, sorted) or, in text
+  mode, on stderr as `aits: skipped task ID that could not be read`. `work`
+  prints the same stderr line in both modes; `show` of such an id is
+  `internal`, exit 1, `task ID could not be read: REASON` (#35).
 
 `aits task show ID`
 - `--json`: the task record (§4); text: `ID  STATUS  AGENT  CWD`, then the
@@ -127,7 +134,8 @@ task whose `expires_at` has passed and whose worker is no longer alive
 becomes `failed` with run status `lease_expired`; after unlocking, the
 recorded `pgid`s are passed to `shell.Stop` (§3; P10). Known limits: a worker
 that dies between claim and agent start leaves no pgid; a pgid can be reused
-by an unrelated process group in the meantime.
+by an unrelated process group in the meantime; a running task whose file
+cannot be read is not reclaimed and its agent is not stopped (§5).
 
 **Signals**: a signal before the claim gives the `stopped` error envelope,
 exit 1, and touches no task. A signal while the agent runs: `shell.Submit`
