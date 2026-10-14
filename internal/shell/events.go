@@ -33,15 +33,16 @@ type resultEvent struct {
 }
 
 // readEvents reads r until EOF, a read error, or the first line longer than
-// maxEventSize. It holds at most one line in memory.
+// maxEventSize. It holds at most one line in memory. A line that is not JSON
+// is recorded but does not stop parsing, so a later session id is still kept.
 func readEvents(r io.Reader) events {
 	var ev events
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), maxEventSize+1)
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
-		if len(line) == 0 || ev.notJSON {
-			continue // after a bad line keep draining, so the agent is not blocked
+		if len(line) == 0 {
+			continue
 		}
 		if !ev.add(line) {
 			ev.notJSON = true

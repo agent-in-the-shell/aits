@@ -321,12 +321,17 @@ func TestSubmitAgentReportsError(t *testing.T) {
 }
 
 func TestSubmitBadOutput(t *testing.T) {
-	for _, scenario := range []string{"not_json", "no_result", "empty_result", "no_session"} {
+	for scenario, session := range map[string]string{
+		"not_json":     "sess-fake-1", // the session id arrives after the bad line
+		"no_result":    "sess-fake-1",
+		"empty_result": "sess-fake-1",
+		"no_session":   "",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			out := call{path: vendor(t, scenario), args: submitArgs("--json", "hi")}.run(t)
 			r := decode(t, out.stdout)
-			if out.code != 1 || r.Status != "bad_agent_output" || r.Answer != "" || r.Message == "" {
-				t.Fatalf("code=%d result=%+v", out.code, r)
+			if out.code != 1 || r.Status != "bad_agent_output" || r.SessionID != session || r.Answer != "" || r.Message == "" {
+				t.Fatalf("code=%d result=%+v, want session_id %q", out.code, r, session)
 			}
 		})
 	}
