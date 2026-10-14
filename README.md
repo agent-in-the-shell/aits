@@ -20,6 +20,9 @@ prints
 
     {"status":"ok","agent":"claude","session_id":"…","answer":"…","exit_code":0,"duration_ms":12345}
 
+`--agent codex` runs Codex CLI the same way; Codex only runs inside a git
+repository.
+
 The full reference is [docs/cli.md](docs/cli.md).
 
 ## Planned command groups

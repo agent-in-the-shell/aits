@@ -38,7 +38,7 @@ Usage: aits shell submit [flags] (PROMPT | -)
 Run one prompt through an agent CLI and return the answer and session id.
 
 Flags:
-  --agent AGENT       AGENT CLI to run (required). One of: claude.
+  --agent AGENT       AGENT CLI to run (required). One of: claude, codex.
   --cwd DIR           Run the agent in DIR (default: the current directory).
   --env NAME          Pass the variable NAME from this environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
@@ -63,7 +63,7 @@ Result fields:
 Statuses:
   ok                The agent answered.
   agent_failed      The agent exited non-zero or reported an error.
-  bad_agent_output  The agent's output was not usable stream-json.
+  bad_agent_output  The agent's JSON events were not usable.
   output_too_large  One output event exceeded 16 MiB; the agent was stopped.
   timeout           --timeout elapsed; the agent was stopped.
   stopped           aits got SIGTERM, SIGINT or SIGHUP; the agent was stopped.

@@ -52,90 +52,102 @@ func assertGone(t *testing.T, pid int) {
 }
 
 func TestSubmitTimeout(t *testing.T) {
-	bin := vendor(t, "sleep")
-	out := call{path: bin, args: submitArgs("--timeout", "1s", "--json", "hi")}.run(t)
-	r := decode(t, out.stdout)
-	if out.code != 1 || r.Status != "timeout" || r.SessionID != "sess-fake-1" || r.Message == "" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
-	assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
-	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := vendorAs(t, agent, "sleep")
+		out := call{path: bin, args: agentArgs(agent, "--timeout", "1s", "--json", "hi")}.run(t)
+		r := decode(t, out.stdout)
+		if out.code != 1 || r.Status != "timeout" || r.SessionID != "sess-fake-1" || r.Message == "" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+		assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+	})
 }
 
 func TestSubmitTimeoutEscalatesToKill(t *testing.T) {
-	bin := vendor(t, "ignore_term")
-	start := time.Now()
-	out := call{path: bin, args: submitArgs("--timeout", "1s", "--json", "hi")}.run(t)
-	if r := decode(t, out.stdout); out.code != 1 || r.Status != "timeout" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
-	if elapsed := time.Since(start); elapsed < 5*time.Second {
-		t.Errorf("finished after %s; SIGKILL must wait for the 5s grace period", elapsed)
-	}
-	assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := vendorAs(t, agent, "ignore_term")
+		start := time.Now()
+		out := call{path: bin, args: agentArgs(agent, "--timeout", "1s", "--json", "hi")}.run(t)
+		if r := decode(t, out.stdout); out.code != 1 || r.Status != "timeout" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		if elapsed := time.Since(start); elapsed < 5*time.Second {
+			t.Errorf("finished after %s; SIGKILL must wait for the 5s grace period", elapsed)
+		}
+		assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+	})
 }
 
 func TestSubmitStopped(t *testing.T) {
-	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
-		t.Run(sig.String(), func(t *testing.T) {
-			bin := vendor(t, "sleep")
-			cmd, stdout, stderr := call{path: bin, args: submitArgs("--json", "hi")}.command(t)
-			if err := cmd.Start(); err != nil {
-				t.Fatal(err)
-			}
-			waitFile(t, filepath.Join(bin, "child.pid"))
-			if err := cmd.Process.Signal(sig); err != nil {
-				t.Fatal(err)
-			}
-			out := finish(t, cmd.Wait(), stdout, stderr)
-			r := decode(t, out.stdout)
-			if out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" {
-				t.Fatalf("code=%d result=%+v", out.code, r)
-			}
-			assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
-			assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
-		})
-	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
+			t.Run(sig.String(), func(t *testing.T) {
+				bin := vendorAs(t, agent, "sleep")
+				cmd, stdout, stderr := call{path: bin, args: agentArgs(agent, "--json", "hi")}.command(t)
+				if err := cmd.Start(); err != nil {
+					t.Fatal(err)
+				}
+				waitFile(t, filepath.Join(bin, "child.pid"))
+				if err := cmd.Process.Signal(sig); err != nil {
+					t.Fatal(err)
+				}
+				out := finish(t, cmd.Wait(), stdout, stderr)
+				r := decode(t, out.stdout)
+				if out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" {
+					t.Fatalf("code=%d result=%+v", out.code, r)
+				}
+				assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+				assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+			})
+		}
+	})
 }
 
 func TestSubmitOutputTooLarge(t *testing.T) {
-	start := time.Now()
-	out := call{path: vendor(t, "huge_line"), args: submitArgs("--json", "hi")}.run(t)
-	r := decode(t, out.stdout)
-	if out.code != 1 || r.Status != "output_too_large" || r.SessionID != "sess-fake-1" || r.Answer != "" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
-	if elapsed := time.Since(start); elapsed > 15*time.Second {
-		t.Errorf("took %s; the agent must be terminated as soon as the limit is hit", elapsed)
-	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		start := time.Now()
+		out := call{path: vendorAs(t, agent, "huge_line"), args: agentArgs(agent, "--json", "hi")}.run(t)
+		r := decode(t, out.stdout)
+		if out.code != 1 || r.Status != "output_too_large" || r.SessionID != "sess-fake-1" || r.Answer != "" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		if elapsed := time.Since(start); elapsed > 15*time.Second {
+			t.Errorf("took %s; the agent must be terminated as soon as the limit is hit", elapsed)
+		}
+	})
 }
 
 func TestSubmitLingeringGrandchild(t *testing.T) {
-	bin := vendor(t, "linger")
-	start := time.Now()
-	out := call{path: bin, args: submitArgs("--json", "hi")}.run(t)
-	if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
-	if elapsed := time.Since(start); elapsed > 10*time.Second {
-		t.Errorf("took %s; a grandchild holding stdout must not keep aits waiting", elapsed)
-	}
-	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := vendorAs(t, agent, "linger")
+		start := time.Now()
+		out := call{path: bin, args: agentArgs(agent, "--json", "hi")}.run(t)
+		if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		if elapsed := time.Since(start); elapsed > 10*time.Second {
+			t.Errorf("took %s; a grandchild holding stdout must not keep aits waiting", elapsed)
+		}
+		assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+	})
 }
 
 // An agent that never reads its prompt, with a grandchild holding stdin, must
 // not keep aits waiting: the timeout and the agent's exit both still bound it.
 func TestSubmitUnreadPrompt(t *testing.T) {
-	bin := vendor(t, "ignore_stdin")
-	start := time.Now()
-	out := call{path: bin, stdin: strings.Repeat("p", 1<<20), args: submitArgs("--timeout", "60s", "--json", "-")}.run(t)
-	if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
-	if elapsed := time.Since(start); elapsed > 15*time.Second {
-		t.Errorf("took %s; an unread prompt must not hold aits open", elapsed)
-	}
-	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := vendorAs(t, agent, "ignore_stdin")
+		start := time.Now()
+		out := call{path: bin, stdin: strings.Repeat("p", 1<<20), args: agentArgs(agent, "--timeout", "60s", "--json", "-")}.run(t)
+		if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		if elapsed := time.Since(start); elapsed > 15*time.Second {
+			t.Errorf("took %s; an unread prompt must not hold aits open", elapsed)
+		}
+		assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+	})
 }
 
 // Ctrl-C while aits is still reading the prompt from stdin stops it before any

@@ -12,11 +12,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/agent-in-the-shell/aits/internal/shell"
 )
 
 var (
 	aitsBin string // the aits binary under test (P12)
-	fakeBin string // the fake claude executable
+	fakeBin string // the fake vendor executable
 )
 
 func TestMain(m *testing.M) {
@@ -26,8 +28,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	aitsBin = filepath.Join(dir, "aits")
-	fakeBin = filepath.Join(dir, "fakeclaude")
-	for pkg, out := range map[string]string{".": aitsBin, "../../internal/shell/testdata/fakeclaude": fakeBin} {
+	fakeBin = filepath.Join(dir, "fakevendor")
+	for pkg, out := range map[string]string{".": aitsBin, "../../internal/shell/testdata/fakevendor": fakeBin} {
 		build := exec.Command("go", "build", "-o", out, pkg)
 		build.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if b, err := build.CombinedOutput(); err != nil {
@@ -41,14 +43,43 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// vendor installs the fake claude, set to scenario, in a fresh directory and
-// returns the directory, for use as PATH.
+// agentNames are the agents every shared scenario runs against: all of them,
+// so a new agent fails here until the fake vendor speaks its dialect.
+var agentNames = shell.Agents()
+
+// eachAgent runs f as a parallel subtest for every agent.
+func eachAgent(t *testing.T, f func(t *testing.T, agent string)) {
+	t.Helper()
+	for _, agent := range agentNames {
+		t.Run(agent, func(t *testing.T) {
+			t.Parallel()
+			f(t, agent)
+		})
+	}
+}
+
+// agentArgv is the argv each agent must be started with; the prompt is never
+// in it (P8).
+var agentArgv = map[string][]string{
+	"claude": {"-p", "--output-format", "stream-json", "--verbose"},
+	"codex":  {"exec", "--json", "-"},
+}
+
+// vendor installs the fake vendor as claude, set to scenario.
 func vendor(t *testing.T, scenario string) string {
+	t.Helper()
+	return vendorAs(t, "claude", scenario)
+}
+
+// vendorAs installs the fake vendor under the name agent, set to scenario,
+// in a fresh directory and returns the directory, for use as PATH. The fake
+// speaks the dialect its executable name says.
+func vendorAs(t *testing.T, agent, scenario string) string {
 	t.Helper()
 	dir := t.TempDir()
 	// A hard link, not a symlink: os.Executable resolves symlinks, and the fake
-	// must find its scenario file in this directory.
-	if err := os.Link(fakeBin, filepath.Join(dir, "claude")); err != nil {
+	// must find its scenario file and its name in this directory.
+	if err := os.Link(fakeBin, filepath.Join(dir, agent)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "scenario"), []byte(scenario), 0o600); err != nil {
@@ -106,8 +137,10 @@ func finish(t *testing.T, err error, stdout, stderr *bytes.Buffer) output {
 	return output{stdout: stdout.String(), stderr: stderr.String(), code: code}
 }
 
-func submitArgs(extra ...string) []string {
-	return append([]string{"shell", "submit", "--agent", "claude"}, extra...)
+func submitArgs(extra ...string) []string { return agentArgs("claude", extra...) }
+
+func agentArgs(agent string, extra ...string) []string {
+	return append([]string{"shell", "submit", "--agent", agent}, extra...)
 }
 
 type errorBody struct {
@@ -169,27 +202,29 @@ func ran(dir string) bool {
 }
 
 func TestSubmitSuccess(t *testing.T) {
-	bin, work := vendor(t, "ok"), t.TempDir()
-	out := call{path: bin, args: submitArgs("--cwd", work, "--json", "Summarize this repo")}.run(t)
-	if out.code != 0 {
-		t.Fatalf("exit %d, stdout %q, stderr %q", out.code, out.stdout, out.stderr)
-	}
-	r := decode(t, out.stdout)
-	if r.Status != "ok" || r.Agent != "claude" || r.SessionID != "sess-fake-1" || r.Answer != "fake answer" ||
-		r.ExitCode == nil || *r.ExitCode != 0 || r.DurationMS == nil || r.Message != "" || r.Error != nil {
-		t.Fatalf("result = %+v", r)
-	}
-	rec := readRecord(t, bin)
-	if rec.Stdin != "Summarize this repo" {
-		t.Errorf("agent stdin = %q", rec.Stdin)
-	}
-	if want := []string{"-p", "--output-format", "stream-json", "--verbose"}; !slices.Equal(rec.Args, want) {
-		t.Errorf("agent argv = %q, want %q (the prompt must not be in argv)", rec.Args, want)
-	}
-	wantDir, _ := filepath.EvalSymlinks(work)
-	if gotDir, _ := filepath.EvalSymlinks(rec.Dir); gotDir != wantDir {
-		t.Errorf("agent dir = %q, want %q", gotDir, wantDir)
-	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin, work := vendorAs(t, agent, "ok"), t.TempDir()
+		out := call{path: bin, args: agentArgs(agent, "--cwd", work, "--json", "Summarize this repo")}.run(t)
+		if out.code != 0 {
+			t.Fatalf("exit %d, stdout %q, stderr %q", out.code, out.stdout, out.stderr)
+		}
+		r := decode(t, out.stdout)
+		if r.Status != "ok" || r.Agent != agent || r.SessionID != "sess-fake-1" || r.Answer != "fake answer" ||
+			r.ExitCode == nil || *r.ExitCode != 0 || r.DurationMS == nil || r.Message != "" || r.Error != nil {
+			t.Fatalf("result = %+v", r)
+		}
+		rec := readRecord(t, bin)
+		if rec.Stdin != "Summarize this repo" {
+			t.Errorf("agent stdin = %q", rec.Stdin)
+		}
+		if want := agentArgv[agent]; !slices.Equal(rec.Args, want) {
+			t.Errorf("agent argv = %q, want %q (the prompt must not be in argv)", rec.Args, want)
+		}
+		wantDir, _ := filepath.EvalSymlinks(work)
+		if gotDir, _ := filepath.EvalSymlinks(rec.Dir); gotDir != wantDir {
+			t.Errorf("agent dir = %q, want %q", gotDir, wantDir)
+		}
+	})
 }
 
 func TestSubmitTextOutput(t *testing.T) {
@@ -238,10 +273,12 @@ func TestSubmitRelativeCwd(t *testing.T) {
 }
 
 func TestSubmitAgentNotFound(t *testing.T) {
-	out := call{args: submitArgs("--json", "hi")}.run(t)
-	if r := decode(t, out.stdout); out.code != 1 || r.Error == nil || r.Error.Code != "agent_not_found" {
-		t.Fatalf("code=%d stdout=%q", out.code, out.stdout)
-	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		out := call{args: agentArgs(agent, "--json", "hi")}.run(t)
+		if r := decode(t, out.stdout); out.code != 1 || r.Error == nil || r.Error.Code != "agent_not_found" {
+			t.Fatalf("code=%d stdout=%q", out.code, out.stdout)
+		}
+	})
 }
 
 func TestSubmitInvalidInputStartsNothing(t *testing.T) {
@@ -277,62 +314,88 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 }
 
 func TestSubmitEnvironment(t *testing.T) {
-	bin := vendor(t, "ok")
-	out := call{
-		path: bin,
-		env:  []string{"AITS_TEST_CANARY=secret-canary", "AITS_TEST_PASSED=passed-value"},
-		args: submitArgs("--env", "AITS_TEST_PASSED", "--json", "hi"),
-	}.run(t)
-	if out.code != 0 {
-		t.Fatalf("exit %d: %s", out.code, out.stdout)
+	own := map[string][]string{
+		"claude": {"ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"},
+		"codex":  {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "CODEX_HOME"},
 	}
-	env := readRecord(t, bin).Env
-	if !slices.Contains(env, "AITS_TEST_PASSED=passed-value") {
-		t.Errorf("--env variable missing from %q", env)
-	}
-	for _, kv := range env {
-		if strings.HasPrefix(kv, "AITS_TEST_CANARY=") || strings.HasPrefix(kv, "AITS_HOME=") {
-			t.Errorf("variable outside the allowlist reached the agent: %s", kv)
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := vendorAs(t, agent, "ok")
+		env := []string{"AITS_TEST_CANARY=secret-canary", "AITS_TEST_PASSED=passed-value"}
+		for _, names := range own {
+			for _, n := range names {
+				env = append(env, n+"=v-"+n)
+			}
 		}
-	}
-	if !slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, "HOME=") }) {
-		t.Errorf("allowlisted HOME missing from %q", env)
-	}
+		out := call{path: bin, env: env, args: agentArgs(agent, "--env", "AITS_TEST_PASSED", "--json", "hi")}.run(t)
+		if out.code != 0 {
+			t.Fatalf("exit %d: %s", out.code, out.stdout)
+		}
+		got := readRecord(t, bin).Env
+		if !slices.Contains(got, "AITS_TEST_PASSED=passed-value") {
+			t.Errorf("--env variable missing from %q", got)
+		}
+		for _, kv := range got {
+			if strings.HasPrefix(kv, "AITS_TEST_CANARY=") || strings.HasPrefix(kv, "AITS_HOME=") {
+				t.Errorf("variable outside the allowlist reached the agent: %s", kv)
+			}
+		}
+		if !slices.ContainsFunc(got, func(kv string) bool { return strings.HasPrefix(kv, "HOME=") }) {
+			t.Errorf("allowlisted HOME missing from %q", got)
+		}
+		for owner, names := range own {
+			for _, n := range names {
+				if has := slices.Contains(got, n+"=v-"+n); has != (owner == agent) {
+					t.Errorf("%s passed to %s: %v, want %v", n, agent, has, owner == agent)
+				}
+			}
+		}
+	})
 }
 
 func TestSubmitAgentFailed(t *testing.T) {
-	out := call{path: vendor(t, "exit_nonzero"), args: submitArgs("--json", "hi")}.run(t)
-	r := decode(t, out.stdout)
-	if out.code != 1 || r.Status != "agent_failed" || r.ExitCode == nil || *r.ExitCode != 3 ||
-		r.SessionID != "sess-fake-1" || r.Answer != "" || r.Message == "" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
-	if !strings.HasSuffix(r.StderrTail, "boom\n") || len(r.StderrTail) > 4096 {
-		t.Errorf("stderr_tail: %d bytes ending %q", len(r.StderrTail), r.StderrTail[max(0, len(r.StderrTail)-10):])
-	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		out := call{path: vendorAs(t, agent, "exit_nonzero"), args: agentArgs(agent, "--json", "hi")}.run(t)
+		r := decode(t, out.stdout)
+		if out.code != 1 || r.Status != "agent_failed" || r.ExitCode == nil || *r.ExitCode != 3 ||
+			r.SessionID != "sess-fake-1" || r.Answer != "" || r.Message != "the agent exited with code 3" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		if !strings.HasSuffix(r.StderrTail, "boom\n") || len(r.StderrTail) > 4096 {
+			t.Errorf("stderr_tail: %d bytes ending %q", len(r.StderrTail), r.StderrTail[max(0, len(r.StderrTail)-10):])
+		}
+	})
 }
 
 func TestSubmitAgentReportsError(t *testing.T) {
-	out := call{path: vendor(t, "is_error"), args: submitArgs("--json", "hi")}.run(t)
-	r := decode(t, out.stdout)
-	if out.code != 1 || r.Status != "agent_failed" || *r.ExitCode != 0 || !strings.Contains(r.Message, "fake failure") || r.Answer != "" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		for scenario, exit := range map[string]int{"agent_error": 1, "agent_error_exit0": 0} {
+			t.Run(scenario, func(t *testing.T) {
+				out := call{path: vendorAs(t, agent, scenario), args: agentArgs(agent, "--json", "hi")}.run(t)
+				r := decode(t, out.stdout)
+				if out.code != 1 || r.Status != "agent_failed" || r.ExitCode == nil || *r.ExitCode != exit ||
+					r.SessionID != "sess-fake-1" || r.Answer != "" || r.Message != "the agent reported an error: fake failure" {
+					t.Fatalf("code=%d result=%+v", out.code, r)
+				}
+			})
+		}
+	})
 }
 
 func TestSubmitBadOutput(t *testing.T) {
-	for scenario, session := range map[string]string{
-		"not_json":     "sess-fake-1", // the session id arrives after the bad line
-		"no_result":    "sess-fake-1",
-		"empty_result": "sess-fake-1",
-		"no_session":   "",
-	} {
-		t.Run(scenario, func(t *testing.T) {
-			out := call{path: vendor(t, scenario), args: submitArgs("--json", "hi")}.run(t)
-			r := decode(t, out.stdout)
-			if out.code != 1 || r.Status != "bad_agent_output" || r.SessionID != session || r.Answer != "" || r.Message == "" {
-				t.Fatalf("code=%d result=%+v, want session_id %q", out.code, r, session)
-			}
-		})
-	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		for scenario, session := range map[string]string{
+			"not_json":     "sess-fake-1", // the session id arrives after the bad line
+			"no_result":    "sess-fake-1",
+			"empty_result": "sess-fake-1",
+			"no_session":   "",
+		} {
+			t.Run(scenario, func(t *testing.T) {
+				out := call{path: vendorAs(t, agent, scenario), args: agentArgs(agent, "--json", "hi")}.run(t)
+				r := decode(t, out.stdout)
+				if out.code != 1 || r.Status != "bad_agent_output" || r.SessionID != session || r.Answer != "" || r.Message == "" {
+					t.Fatalf("code=%d result=%+v, want session_id %q", out.code, r, session)
+				}
+			})
+		}
+	})
 }

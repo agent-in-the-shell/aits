@@ -18,6 +18,11 @@ func TestRequestValidate(t *testing.T) {
 	if _, err := good.validate(); err != nil {
 		t.Fatalf("valid request rejected: %v", err)
 	}
+	codex := good
+	codex.Agent = "codex"
+	if _, err := codex.validate(); err != nil {
+		t.Fatalf("valid codex request rejected: %v", err)
+	}
 	tests := []struct {
 		name string
 		edit func(*Request)
