@@ -9,37 +9,36 @@ var claudeInjected = []string{"<task-notification>", "<local-command-", "<comman
 // carry sessionId and cwd; user and assistant events carry the message text.
 // Events of other types are ignored, whatever their shape.
 func parseClaude(line []byte) (id, cwd string, texts []string, ok bool) {
-	var h struct {
-		Type      string          `json:"type"`
-		SessionID json.RawMessage `json:"sessionId"`
-		Cwd       json.RawMessage `json:"cwd"`
-	}
-	if json.Unmarshal(line, &h) != nil {
-		return "", "", nil, false
-	}
-	id, cwd = rawString(h.SessionID), rawString(h.Cwd)
-	if h.Type != "user" && h.Type != "assistant" {
-		return id, cwd, nil, true
-	}
+	// One decode per line: Unmarshal validates the whole line first, and
+	// lines carrying tool output can be megabytes. Fields are raw so that
+	// events of other shapes are not errors.
 	var e struct {
-		IsSidechain bool `json:"isSidechain"`
-		IsMeta      bool `json:"isMeta"`
-		Message     struct {
-			Content json.RawMessage `json:"content"`
-		} `json:"message"`
+		Type        string          `json:"type"`
+		SessionID   json.RawMessage `json:"sessionId"`
+		Cwd         json.RawMessage `json:"cwd"`
+		IsSidechain json.RawMessage `json:"isSidechain"`
+		IsMeta      json.RawMessage `json:"isMeta"`
+		Message     json.RawMessage `json:"message"`
 	}
 	if json.Unmarshal(line, &e) != nil {
-		return id, cwd, nil, false
+		return "", "", nil, false
 	}
-	if e.IsSidechain || e.IsMeta {
+	id, cwd = rawString(e.SessionID), rawString(e.Cwd)
+	if e.Type != "user" && e.Type != "assistant" || string(e.IsSidechain) == "true" || string(e.IsMeta) == "true" {
 		return id, cwd, nil, true
 	}
-	all, ok := claudeTexts(e.Message.Content)
+	var m struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if len(e.Message) > 0 && json.Unmarshal(e.Message, &m) != nil {
+		return id, cwd, nil, false
+	}
+	all, ok := claudeTexts(m.Content)
 	if !ok {
 		return id, cwd, nil, false
 	}
 	for _, s := range all {
-		if h.Type == "user" && injected(s, claudeInjected) {
+		if e.Type == "user" && injected(s, claudeInjected) {
 			continue
 		}
 		texts = append(texts, s)
