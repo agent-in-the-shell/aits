@@ -194,15 +194,17 @@ Functional, `cmd/aits` (built binary, fake vendor):
     stays `queued` with `lease` null.
 - `taskRecord.Lease` has only `token` and `pgid`, so strict decoding fails if
   the old fields come back.
-- From #44, with a fixture whose claim stops a dead worker's group that
-  ignores SIGTERM, so the test can take D between claim and agent start:
+- From #44, with a fixture whose claim must stop a dead worker's group that
+  ignores SIGTERM: the test takes D between claim and agent start, then kills
+  that group itself so the agent starts while it holds D:
   - `TestTaskWorkerKilledBeforePgid`: while the test holds D, the agent's
     pgid is still recorded; the worker is then SIGKILLed, and one `list`
     makes the task `worker_died` and stops the agent and its child;
   - `TestTaskTimeoutWhileDirLocked`: a 1 s timeout ends the agent while the
     test still holds D.
-- Unit, from #44: `TestSetPGID`, `TestSetPGIDForeignToken` (writes nothing)
-  and `TestSetPGIDWithoutDirLock` (returns while D is held).
+- Unit, from #44: `TestModifyWithoutDirLock` (the worker's pgid write
+  returns while D is held); its token check is `update`'s, pinned by
+  `TestUpdateForeignToken`.
 - Not covered by a test: the reclaim re-read itself (a write between `load`
   and the try-lock cannot be forced without a test seam, P2).
 
