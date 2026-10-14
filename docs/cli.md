@@ -48,7 +48,7 @@ Flags:
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
 
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
-invalid_input, and the agent is not started.
+invalid_input.
 
 Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
@@ -189,7 +189,7 @@ Flags:
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
 
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
-invalid_input, and nothing is queued.
+invalid_input.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 

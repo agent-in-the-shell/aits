@@ -43,10 +43,7 @@ func taskCreate() *Command {
 		Name:    "create",
 		Args:    "(PROMPT | -)",
 		Summary: "Queue a prompt for an agent; prints the task id.",
-		Details: `Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
-invalid_input, and nothing is queued.
-
-Output: the task id; with --json {"id":"…","status":"queued"}.
+		Details: promptDetails + `Output: the task id; with --json {"id":"…","status":"queued"}.
 
 Exit codes:
   0  Queued.

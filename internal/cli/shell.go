@@ -21,10 +21,13 @@ func shellGroup() *Command {
 }
 
 // submitDetails documents the output of "aits shell submit" (P5).
-const submitDetails = `Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
-invalid_input, and the agent is not started.
+// promptDetails documents the prompt argument of shell submit and task create.
+const promptDetails = `Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
+invalid_input.
 
-Output:
+`
+
+const submitDetails = promptDetails + `Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
