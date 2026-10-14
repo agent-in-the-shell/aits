@@ -165,14 +165,15 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 		return nil, err
 	}
 	token := t.Lease.Token
-	started := time.Now().UTC()
+	var started time.Time // stays zero unless the agent starts
 	req := t.request(environ)
 	req.Started = func(pgid int) {
+		started = time.Now().UTC()
 		_, _ = update(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid })
 	}
 	res, err := shell.Submit(ctx, req)
 	if err != nil {
-		res, started = shell.Result{Status: NotStarted, Agent: t.Agent, Message: err.Error()}, time.Time{}
+		res = shell.Result{Status: NotStarted, Agent: t.Agent, Message: err.Error()}
 	}
 	status := Failed
 	if res.Status == shell.StatusOK {

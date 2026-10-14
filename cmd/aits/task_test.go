@@ -59,9 +59,9 @@ func (q queue) run(args ...string) output {
 	return call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append([]string{"task"}, args...)}.run(q.t)
 }
 
-func (q queue) create(prompt string) string {
+func (q queue) create(prompt string, flags ...string) string {
 	q.t.Helper()
-	out := q.run("create", "--agent", "claude", "--cwd", q.t.TempDir(), "--json", prompt)
+	out := q.run(append(append([]string{"create", "--agent", "claude", "--cwd", q.t.TempDir(), "--json"}, flags...), prompt)...)
 	var r struct{ ID, Status string }
 	if err := json.Unmarshal([]byte(out.stdout), &r); out.code != 0 || err != nil || r.Status != "queued" {
 		q.t.Fatalf("create: code=%d stdout=%q", out.code, out.stdout)
@@ -78,7 +78,7 @@ func TestTaskFlow(t *testing.T) {
 	out := q.run("work", "--json")
 	w := decodeOne[taskRecord](t, out.stdout)
 	if out.code != 0 || w.ID != id || w.Status != "done" || w.Run == nil || w.Run.Answer != "fake answer" ||
-		w.Run.SessionID != "sess-fake-1" || w.Lease != nil {
+		w.Run.SessionID != "sess-fake-1" || w.Run.StartedAt == "" || w.Lease != nil {
 		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
 	if rec := readRecord(t, q.path); rec.Stdin != "Review the code" || slices.Contains(rec.Args, "Review the code") {
@@ -114,29 +114,13 @@ func TestTaskInvalidInput(t *testing.T) {
 	}
 }
 
-// started_at is present only when the agent was started (help, spec §4).
-func TestTaskStartedAt(t *testing.T) {
+// A run whose agent never started has no started_at (help, spec §4).
+func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	q := newQueue(t, "ok")
-	notStarted := q.run("create", "--agent", "claude", "--cwd", t.TempDir(), "--env", "AITS_TEST_UNSET", "--json", "hi")
-	if out := q.run("work", "--json"); out.code != 1 {
-		t.Fatalf("work (not started): code=%d stdout=%q", out.code, out.stdout)
-	}
-	done := q.create("hi")
-	if out := q.run("work", "--json"); out.code != 0 {
-		t.Fatalf("work (done): code=%d stdout=%q", out.code, out.stdout)
-	}
-	var created struct{ ID string }
-	if err := json.Unmarshal([]byte(notStarted.stdout), &created); err != nil {
-		t.Fatal(err)
-	}
-	for id, want := range map[string]bool{created.ID: false, done: true} {
-		var rec struct{ Run map[string]any }
-		if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &rec); err != nil || rec.Run == nil {
-			t.Fatalf("show %s: %v %+v", id, err, rec)
-		}
-		if _, ok := rec.Run["started_at"]; ok != want {
-			t.Errorf("show %s: run %v, want started_at present = %v", id, rec.Run, want)
-		}
+	q.create("hi", "--env", "AITS_TEST_UNSET")
+	out := q.run("work", "--json")
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" || w.Run.StartedAt != "" {
+		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
 }
 
