@@ -234,30 +234,22 @@ func TestSessionSearchCwdRecordedUnresolved(t *testing.T) {
 // An explicitly empty --agent or --cwd is refused, never read as "all" (P6:
 // a filter is not silently widened).
 func TestSessionSearchEmptyFilterFlags(t *testing.T) {
-	for _, tt := range []struct {
-		args []string
-		want []string // in the error message
-	}{
-		{[]string{"--agent=", "x"}, []string{"agent", "needs an agent", "claude, codex"}},
-		{[]string{"--agent", "", "x"}, []string{"agent", "needs an agent", "claude, codex"}},
-		{[]string{"--cwd=", "x"}, []string{"cwd", "needs a directory"}},
-		{[]string{"--cwd", "", "x"}, []string{"cwd", "needs a directory"}},
+	for flag, want := range map[string]string{
+		"agent": "needs an agent (one of: claude, codex)",
+		"cwd":   "needs a directory",
 	} {
-		name := strings.Join(tt.args, " ")
-		out := call{args: append([]string{"session", "search", "--json"}, tt.args...)}.run(t)
-		r := decode(t, out.stdout)
-		if out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {
-			t.Errorf("%q --json: code=%d stdout=%q", name, out.code, out.stdout)
-			continue
-		}
-		for _, w := range tt.want {
-			if !strings.Contains(r.Error.Message, w) {
-				t.Errorf("%q: message %q lacks %q", name, r.Error.Message, w)
+		for _, args := range [][]string{{"--" + flag + "=", "x"}, {"--" + flag, "", "x"}} {
+			name := strings.Join(args, " ")
+			out := call{args: append([]string{"session", "search", "--json"}, args...)}.run(t)
+			r := decode(t, out.stdout)
+			if out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" ||
+				r.Error.Message != `invalid value "" for flag -`+flag+": "+want {
+				t.Errorf("%q --json: code=%d stdout=%q", name, out.code, out.stdout)
 			}
-		}
-		out = call{args: append([]string{"session", "search"}, tt.args...)}.run(t)
-		if out.code != 2 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") || strings.Count(out.stderr, "\n") != 1 {
-			t.Errorf("%q text: code=%d stdout=%q stderr=%q", name, out.code, out.stdout, out.stderr)
+			out = call{args: append([]string{"session", "search"}, args...)}.run(t)
+			if out.code != 2 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") || strings.Count(out.stderr, "\n") != 1 {
+				t.Errorf("%q text: code=%d stdout=%q stderr=%q", name, out.code, out.stdout, out.stderr)
+			}
 		}
 	}
 }
