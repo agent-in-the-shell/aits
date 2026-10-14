@@ -31,17 +31,19 @@ func runWithin(t *testing.T, c call, d time.Duration) output {
 	}
 }
 
-// oneSession builds a HOME with one Claude and one Codex session that both
-// contain "needle".
-func oneSession(t *testing.T) string {
+// oneSession builds a HOME with one session of agent that contains "needle"
+// and returns the HOME and the session's "agent:id".
+func oneSession(t *testing.T, agent string) (string, string) {
 	home := t.TempDir()
-	now := time.Now()
-	writeTranscript(t, home, ".claude/projects/-w/s1.jsonl", now,
+	if agent == "codex" {
+		writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-x-c1.jsonl", time.Now(),
+			`{"type":"session_meta","payload":{"id":"c1","cwd":"/w"}}`,
+			`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello needle"}]}}`)
+		return home, "codex:c1"
+	}
+	writeTranscript(t, home, ".claude/projects/-w/s1.jsonl", time.Now(),
 		`{"type":"user","sessionId":"s1","cwd":"/w","message":{"content":"hello needle"}}`)
-	writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-x-c1.jsonl", now,
-		`{"type":"session_meta","payload":{"id":"c1","cwd":"/w"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello needle"}]}}`)
-	return home
+	return home, "claude:s1"
 }
 
 // A path that matches the transcript pattern but is not a regular file is
@@ -49,24 +51,25 @@ func oneSession(t *testing.T) string {
 // would never end it.
 func TestSessionSearchSkipsNonRegularFiles(t *testing.T) {
 	tests := []struct {
-		name string
-		make func(t *testing.T, home string) string // returns the special path
+		name  string
+		agent string
+		make  func(t *testing.T, home string) string // returns the special path
 	}{
-		{"claude fifo", func(t *testing.T, home string) string {
+		{"claude fifo", "claude", func(t *testing.T, home string) string {
 			p := filepath.Join(home, ".claude/projects/-w/pipe.jsonl")
 			if err := syscall.Mkfifo(p, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			return p
 		}},
-		{"codex fifo", func(t *testing.T, home string) string {
+		{"codex fifo", "codex", func(t *testing.T, home string) string {
 			p := filepath.Join(home, ".codex/sessions/2026/10/14/rollout-x.jsonl")
 			if err := syscall.Mkfifo(p, 0o600); err != nil {
 				t.Fatal(err)
 			}
 			return p
 		}},
-		{"symlink to a device", func(t *testing.T, home string) string {
+		{"symlink to a device", "claude", func(t *testing.T, home string) string {
 			p := filepath.Join(home, ".claude/projects/-w/dev.jsonl")
 			if err := os.Symlink("/dev/zero", p); err != nil {
 				t.Fatal(err)
@@ -76,17 +79,19 @@ func TestSessionSearchSkipsNonRegularFiles(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			home := oneSession(t)
+			home, want := oneSession(t, tt.agent)
 			special := tt.make(t, home)
 			env := []string{"HOME=" + home}
 			out := runWithin(t, call{env: env, args: []string{"session", "search", "--json", "needle"}}, 5*time.Second)
 			o := decodeSearch(t, out.stdout)
-			if out.code != 0 || !slices.Equal(found(o), []string{"codex:c1", "claude:s1"}) /* same mtime: ties go by session id */ || o.Skipped.Files != 1 || o.Skipped.Lines != 0 {
+			if out.code != 0 || !slices.Equal(found(o), []string{want}) || o.Skipped.Files != 1 || o.Skipped.Lines != 0 {
 				t.Fatalf("code=%d results=%q skipped=%+v", out.code, found(o), o.Skipped)
 			}
 			out = runWithin(t, call{env: env, args: []string{"session", "search", "needle"}}, 5*time.Second)
-			if out.code != 0 || out.stderr != "aits: skipped 1 files and 0 lines that could not be read\n" {
-				t.Errorf("text mode: code=%d stderr=%q", out.code, out.stderr)
+			id := want[strings.Index(want, ":")+1:]
+			if out.code != 0 || !strings.Contains(out.stdout, "  "+id+"  ") ||
+				out.stderr != "aits: skipped 1 files and 0 lines that could not be read\n" {
+				t.Errorf("text mode: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 			}
 			if fi, err := os.Lstat(special); err == nil && fi.Mode()&os.ModeNamedPipe != 0 {
 				assertFifoUnread(t, special, env)
@@ -137,7 +142,7 @@ func TestSessionSearchFollowsSymlinkToTranscript(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "needle"}}.run(t)
-	if o := decodeSearch(t, out.stdout); !slices.Equal(found(o), []string{"claude:l1"}) || o.Skipped.Files != 0 {
+	if o := decodeSearch(t, out.stdout); out.code != 0 || !slices.Equal(found(o), []string{"claude:l1"}) || o.Skipped.Files != 0 {
 		t.Fatalf("code=%d results=%q skipped=%+v", out.code, found(o), o.Skipped)
 	}
 }
@@ -179,6 +184,11 @@ func bigTranscript(t *testing.T, size int) string {
 // partial result (P6).
 func TestSessionSearchStopsPromptly(t *testing.T) {
 	home := bigTranscript(t, 256<<20)
+	// The first run of a freshly built binary can take longer than the 200 ms
+	// the test waits (macOS assesses new executables), and a signal sent
+	// before main installs its handler kills the process instead of stopping
+	// the search. Run it once first.
+	call{args: []string{"--help"}}.run(t)
 	for _, tt := range []struct {
 		sig    syscall.Signal
 		json   bool
