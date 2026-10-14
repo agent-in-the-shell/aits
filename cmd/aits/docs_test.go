@@ -50,26 +50,34 @@ func TestCLIDocs(t *testing.T) {
 // produce has a row in "aits shell submit --help", and each error code's row
 // names the exit code it causes.
 func TestSubmitHelpDocumentsOutput(t *testing.T) {
-	rows := map[string]string{} // first word of each indented help line -> line
+	// rows maps "Section name" to the help line documenting name, where
+	// Section is the first word of the heading above it, e.g. "Statuses".
+	rows := map[string]string{}
+	var section string
 	for _, line := range strings.Split(call{args: []string{"shell", "submit", "--help"}}.run(t).stdout, "\n") {
-		if f := strings.Fields(line); strings.HasPrefix(line, "  ") && len(f) > 0 {
-			rows[f[0]] += line + "\n"
+		f := strings.Fields(strings.ReplaceAll(line, ":", " "))
+		switch {
+		case len(f) == 0:
+		case !strings.HasPrefix(line, " "):
+			section = f[0]
+		default:
+			rows[section+" "+f[0]] = line
 		}
 	}
 	rt := reflect.TypeFor[shell.Result]()
 	for i := range rt.NumField() {
-		if name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ","); rows[name] == "" {
+		if name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ","); rows["Result "+name] == "" {
 			t.Errorf("result field %q is not documented in help", name)
 		}
 	}
 	for _, m := range sourceMatches(t, "../../internal/shell", `\bStatus\s*=\s*"(\w+)"`) {
-		if rows[m[1]] == "" {
+		if rows["Statuses "+m[1]] == "" {
 			t.Errorf("status %q is not documented in help", m[1])
 		}
 	}
 	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
 	for _, m := range sourceMatches(t, "../../internal/cli", `\b(usageError|failure)\(\s*"(\w+)"`) {
-		if !strings.Contains(rows[m[2]], exit[m[1]]) {
+		if !strings.Contains(rows["Errors "+m[2]], exit[m[1]]) {
 			t.Errorf("error code %q is not documented in help with %s", m[2], exit[m[1]])
 		}
 	}
