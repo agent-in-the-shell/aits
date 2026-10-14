@@ -186,7 +186,7 @@ func examine(ctx context.Context, j job, terms []string, source string, ns [][]b
 	bad, err := eachLine(ctx, f, b, func(line []byte) bool {
 		p, ok := parse(line, first)
 		first = false
-		t.identify(p.id, p.cwd, p.source)
+		t.identify(p)
 		notSession = notSession || p.notSession
 		sawMessage = sawMessage || p.message || len(p.texts) > 0
 		for _, s := range p.texts {

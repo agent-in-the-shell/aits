@@ -99,8 +99,8 @@ func searchCommand() *Command {
 				return nil
 			})
 			limit := fs.Int("limit", session.DefaultLimit, "Return at most `N` results.")
-			sources := strings.Join(session.Sources, " or ")
-			source := nonEmpty(fs, "source", "Only sessions started `KIND`: "+sources+" (see Source below).", sources)
+			sources := strings.Join(session.Sources, ", ")
+			source := nonEmpty(fs, "source", "Only sessions started `KIND`. One of: "+sources+" (see Source below).", "a source (one of: "+sources+")")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				var terms []string
 				for _, a := range args {

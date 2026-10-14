@@ -45,17 +45,17 @@ func newTranscript(terms []string) *transcript {
 	return t
 }
 
-// identify records the session id, working directory and source unless
-// already known.
-func (t *transcript) identify(id, cwd, source string) {
-	if t.source == "" {
-		t.source = source
-	}
+// identify records the session id, working directory and source a line
+// names, each unless already known: the first value wins.
+func (t *transcript) identify(p parsed) {
 	if t.sessionID == "" {
-		t.sessionID = id
+		t.sessionID = p.id
 	}
 	if t.cwd == "" {
-		t.cwd = cwd
+		t.cwd = p.cwd
+	}
+	if t.source == "" {
+		t.source = p.source
 	}
 }
 

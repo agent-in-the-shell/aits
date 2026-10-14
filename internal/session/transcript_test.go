@@ -19,8 +19,8 @@ func TestTranscript(t *testing.T) {
 	if tr.snippetText != "process again, later" {
 		t.Errorf("snippet source = %q, want the newest text with the first term", tr.snippetText)
 	}
-	tr.identify("s1", "/a", "cli")
-	tr.identify("s2", "/b", "exec")
+	tr.identify(parsed{id: "s1", cwd: "/a", source: "cli"})
+	tr.identify(parsed{id: "s2", cwd: "/b", source: "exec"})
 	if tr.sessionID != "s1" || tr.cwd != "/a" || tr.source != "cli" {
 		t.Errorf("identify kept %q %q, want the first ones", tr.sessionID, tr.cwd)
 	}

@@ -151,12 +151,13 @@ func TestSessionSearchReadOnlyHome(t *testing.T) {
 
 func TestSessionSearchInvalidInput(t *testing.T) {
 	for name, args := range map[string][]string{
-		"no terms":      {},
-		"blank term":    {"  "},
-		"unknown agent": {"--agent", "nope", "x"},
-		"bad since":     {"--since", "soon", "x"},
-		"zero since":    {"--since", "0s", "x"},
-		"zero limit":    {"--limit", "0", "x"},
+		"no terms":       {},
+		"blank term":     {"  "},
+		"unknown agent":  {"--agent", "nope", "x"},
+		"bad since":      {"--since", "soon", "x"},
+		"zero since":     {"--since", "0s", "x"},
+		"zero limit":     {"--limit", "0", "x"},
+		"unknown source": {"--source", "both", "x"},
 	} {
 		out := call{args: append([]string{"session", "search", "--json"}, args...)}.run(t)
 		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {
@@ -235,8 +236,9 @@ func TestSessionSearchCwdRecordedUnresolved(t *testing.T) {
 // a filter is not silently widened).
 func TestSessionSearchEmptyFilterFlags(t *testing.T) {
 	for flag, want := range map[string]string{
-		"agent": "needs an agent (one of: claude, codex)",
-		"cwd":   "needs a directory",
+		"agent":  "needs an agent (one of: claude, codex)",
+		"cwd":    "needs a directory",
+		"source": "needs a source (one of: interactive, scripted)",
 	} {
 		for _, args := range [][]string{{"--" + flag + "=", "x"}, {"--" + flag, "", "x"}} {
 			name := strings.Join(args, " ")
@@ -322,6 +324,16 @@ func TestSessionSearchCodexUnreadableFirstLine(t *testing.T) {
 	}
 }
 
+// codexRollout writes a Codex rollout whose first line is a session_meta
+// with the raw source JSON (`,"source":"exec"`, or "" for none), and one user
+// message.
+func codexRollout(t *testing.T, home, id, cwd, source, text string, mtime time.Time) {
+	t.Helper()
+	writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-"+id+".jsonl", mtime,
+		`{"type":"session_meta","payload":{"id":"`+id+`","cwd":"`+cwd+`"`+source+`}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"`+text+`"}]}}`)
+}
+
 // sourceTranscripts writes one session per source kind under a temporary
 // HOME, each mentioning "migration": Codex rollouts whose session_meta source
 // is cli, vscode, exec, mcp and missing, and Claude transcripts whose
@@ -330,9 +342,7 @@ func sourceTranscripts(t *testing.T) string {
 	home := t.TempDir()
 	at := time.Now().Add(-time.Hour)
 	codex := func(id, cwd, source string) {
-		meta := `{"type":"session_meta","payload":{"id":"` + id + `","cwd":"` + cwd + `"` + source + `}}`
-		writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-"+id+".jsonl", at, meta,
-			`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"the migration fails"}]}}`)
+		codexRollout(t, home, id, cwd, source, "the migration fails", at)
 		at = at.Add(time.Minute)
 	}
 	claude := func(id, entrypoint string) {
@@ -358,20 +368,17 @@ func TestSessionSearchSource(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{"no filter", nil, []string{"claude-cli", "claude-none", "claude-sdk", "codex-cli", "codex-exec", "codex-mcp", "codex-none", "codex-vscode"}},
-		{"interactive", []string{"--source", "interactive"}, []string{"claude-cli", "codex-cli", "codex-vscode"}},
-		{"scripted", []string{"--source", "scripted"}, []string{"claude-sdk", "codex-exec"}},
-		{"with --agent", []string{"--source", "interactive", "--agent", "codex"}, []string{"codex-cli", "codex-vscode"}},
-		{"with --cwd", []string{"--source", "interactive", "--cwd", "/w/app"}, []string{"claude-cli", "codex-cli"}},
-		{"last value wins", []string{"--source", "scripted", "--source", "interactive"}, []string{"claude-cli", "codex-cli", "codex-vscode"}},
+		{"no filter", nil, []string{"claude:claude-cli", "claude:claude-none", "claude:claude-sdk", "codex:codex-cli", "codex:codex-exec", "codex:codex-mcp", "codex:codex-none", "codex:codex-vscode"}},
+		{"interactive", []string{"--source", "interactive"}, []string{"claude:claude-cli", "codex:codex-cli", "codex:codex-vscode"}},
+		{"scripted", []string{"--source", "scripted"}, []string{"claude:claude-sdk", "codex:codex-exec"}},
+		{"with --agent", []string{"--source", "interactive", "--agent", "codex"}, []string{"codex:codex-cli", "codex:codex-vscode"}},
+		{"with --cwd", []string{"--source", "interactive", "--cwd", "/w/app"}, []string{"claude:claude-cli", "codex:codex-cli"}},
+		{"last value wins", []string{"--source", "scripted", "--source", "interactive"}, []string{"claude:claude-cli", "codex:codex-cli", "codex:codex-vscode"}},
 	} {
 		args := append(append([]string{"session", "search", "--json"}, c.args...), "migration")
 		out := call{env: []string{"HOME=" + home}, args: args}.run(t)
 		r := decodeSearch(t, out.stdout)
-		var got []string
-		for _, res := range r.Results {
-			got = append(got, res.SessionID)
-		}
+		got := found(r)
 		slices.Sort(got)
 		if out.code != 0 || !slices.Equal(got, c.want) || r.Skipped.Files != 0 || r.Skipped.Lines != 0 {
 			t.Errorf("%s: code=%d got %q, want %q (skipped %+v)", c.name, out.code, got, c.want, r.Skipped)
@@ -384,25 +391,11 @@ func TestSessionSearchSourceBeforeLimit(t *testing.T) {
 	home := t.TempDir()
 	at := time.Now().Add(-time.Hour)
 	for _, s := range []struct{ id, source string }{{"old-cli", "cli"}, {"exec-1", "exec"}, {"exec-2", "exec"}, {"exec-3", "exec"}} {
-		writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-"+s.id+".jsonl", at,
-			`{"type":"session_meta","payload":{"id":"`+s.id+`","cwd":"/w","source":"`+s.source+`"}}`,
-			`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"migration"}]}}`)
+		codexRollout(t, home, s.id, "/w", `,"source":"`+s.source+`"`, "migration", at)
 		at = at.Add(time.Minute)
 	}
 	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "--source", "interactive", "--limit", "1", "migration"}}.run(t)
 	if r := decodeSearch(t, out.stdout); out.code != 0 || len(r.Results) != 1 || r.Results[0].SessionID != "old-cli" {
 		t.Errorf("code=%d stdout=%q", out.code, out.stdout)
-	}
-}
-
-// --source takes interactive or scripted only, empty included, and the query
-// is refused before anything is read (P6, #24).
-func TestSessionSearchSourceInvalid(t *testing.T) {
-	for _, v := range []string{"both", ""} {
-		out := call{args: []string{"session", "search", "--json", "--source", v, "migration"}}.run(t)
-		e := decode(t, out.stdout).Error
-		if out.code != 2 || e == nil || e.Code != "invalid_input" || !strings.Contains(e.Message, "interactive") || !strings.Contains(e.Message, "scripted") {
-			t.Errorf("--source %q: code=%d stdout=%q", v, out.code, out.stdout)
-		}
 	}
 }

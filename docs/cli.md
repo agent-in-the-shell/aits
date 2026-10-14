@@ -116,7 +116,7 @@ Flags:
   --json            Print the result, or the error, as JSON on stdout.
   --limit N         Return at most N results. (default 20)
   --since DURATION  Only transcripts changed within DURATION, e.g. 72h.
-  --source KIND     Only sessions started KIND: interactive or scripted (see Source below).
+  --source KIND     Only sessions started KIND. One of: interactive, scripted (see Source below).
 
 Output:
   With --json, stdout is one JSON object:
