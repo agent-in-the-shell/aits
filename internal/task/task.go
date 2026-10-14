@@ -78,22 +78,24 @@ type Spec struct {
 	Env                []string
 }
 
-// InvalidError means an unknown task id or agent filter; invalid create input
-// is a *shell.InvalidRequestError.
-type InvalidError struct{ Reason string }
-
-func (e *InvalidError) Error() string { return e.Reason }
-
-func invalid(format string, a ...any) error { return &InvalidError{fmt.Sprintf(format, a...)} }
+// invalid rejects input as shell does, so every invalid input of the group is
+// a *shell.InvalidRequestError.
+func invalid(format string, a ...any) error {
+	return &shell.InvalidRequestError{Reason: fmt.Sprintf(format, a...)}
+}
 
 // errReclaimed means the worker's lease expired and another caller failed the
 // task before the worker could record its run.
 var errReclaimed = errors.New("reclaimed after its lease expired")
 
-// Create validates s and queues it.
+// Create validates s as the request it will be run as, and queues it.
 func Create(environ []string, s Spec) (Task, error) {
-	req := shell.Request{Agent: s.Agent, Prompt: s.Prompt, Dir: s.Cwd, Timeout: s.Timeout, Pass: s.Env}
-	if err := req.Validate(); err != nil {
+	now := time.Now().UTC()
+	t := Task{
+		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, CreatedAt: now,
+	}
+	if err := t.request(nil).Validate(); err != nil {
 		return Task{}, err
 	}
 	dir, err := store.Dir(environ, "task")
@@ -105,11 +107,6 @@ func Create(environ []string, s Spec) (Task, error) {
 		return Task{}, err
 	}
 	defer unlock()
-	now := time.Now().UTC()
-	t := Task{
-		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, CreatedAt: now,
-	}
 	for {
 		t.ID = fmt.Sprintf("%s-%06x", now.Format("20060102T150405"), rand.Uint32()&0xffffff)
 		if _, err := os.Stat(path(dir, t.ID)); errors.Is(err, os.ErrNotExist) {
@@ -135,7 +132,7 @@ func List(environ []string) ([]Task, error) {
 	return tasks, err
 }
 
-// Show returns one task; an unknown id is an *InvalidError.
+// Show returns one task; an unknown id is a *shell.InvalidRequestError.
 func Show(environ []string, id string) (Task, error) {
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
@@ -169,13 +166,11 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	}
 	token := t.Lease.Token
 	started := time.Now().UTC()
-	res, err := shell.Submit(ctx, shell.Request{
-		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
-		Environ: environ, Pass: t.Env,
-		Started: func(pgid int) {
-			_, _ = update(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid })
-		},
-	})
+	req := t.request(environ)
+	req.Started = func(pgid int) {
+		_, _ = update(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid })
+	}
+	res, err := shell.Submit(ctx, req)
 	if err != nil {
 		res = shell.Result{Status: NotStarted, Agent: t.Agent, Message: err.Error()}
 	}
@@ -228,9 +223,10 @@ func claim(ctx context.Context, dir, agent string) (*Task, error) {
 
 // reclaim, under the lock, loads every task and fails each running one whose
 // lease has expired and whose worker is gone. It returns the tasks and the
-// agent process groups to stop once the lock is free. A live worker keeps its task even past the
-// lease: the lease is wall-clock time, and after the machine sleeps it can
-// expire while the worker's own timeout (monotonic) still has time left.
+// agent process groups to stop once the lock is free. A live worker keeps its
+// task even past the lease: the lease is wall-clock time, and after the
+// machine sleeps it can expire while the worker's own timeout (monotonic)
+// still has time left.
 func reclaim(dir string) ([]Task, []int, error) {
 	tasks, err := load(dir)
 	if err != nil {
@@ -307,6 +303,14 @@ func load(dir string) ([]Task, error) {
 		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
 	})
 	return tasks, nil
+}
+
+// request is the shell request that runs t in environ.
+func (t Task) request(environ []string) shell.Request {
+	return shell.Request{
+		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
+		Environ: environ, Pass: t.Env,
+	}
 }
 
 func path(dir, id string) string { return filepath.Join(dir, id+".json") }

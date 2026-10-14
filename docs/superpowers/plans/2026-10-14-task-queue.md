@@ -1,5 +1,8 @@
 # `aits task` Implementation Plan
 
+> Executed. Since then, `create` validates through `shell.Request.Validate`
+> and reclaim stops groups through `shell.Stop`; the code is the reference.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `aits task create|list|show|work`: a local queue of agent runs, stored as one JSON file per task, claimed under a `flock`, run through `shell`, with leases that the next caller reclaims.

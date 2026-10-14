@@ -124,10 +124,10 @@ the task was reclaimed: write nothing, print
 
 **Reclaim** (before every `work` and `list`): under the lock, every `running`
 task whose `expires_at` has passed and whose worker is no longer alive
-becomes `failed` with run status `lease_expired`; after unlocking, for each such task with a non-zero `pgid`
-whose process group still exists (and is not the caller's own): SIGTERM,
-wait up to 5 seconds, SIGKILL (P10). Known limits: a worker that dies between claim and agent start leaves
-no pgid; a pgid can be reused by an unrelated process group in the meantime.
+becomes `failed` with run status `lease_expired`; after unlocking, the
+recorded `pgid`s are passed to `shell.Stop` (§3; P10). Known limits: a worker
+that dies between claim and agent start leaves no pgid; a pgid can be reused
+by an unrelated process group in the meantime.
 
 **Signals**: a signal before the claim gives the `stopped` error envelope,
 exit 1, and touches no task. A signal while the agent runs: `shell.Submit`

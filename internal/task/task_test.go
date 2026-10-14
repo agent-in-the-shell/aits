@@ -17,8 +17,9 @@ import (
 // env is a fresh environment with no agent on PATH. shell looks agents up on
 // the process's own PATH, so that is emptied too.
 func env(t *testing.T) []string {
-	t.Setenv("PATH", t.TempDir())
-	return []string{"HOME=" + t.TempDir(), "AITS_HOME=" + t.TempDir(), "PATH=" + t.TempDir()}
+	empty := t.TempDir()
+	t.Setenv("PATH", empty)
+	return []string{"HOME=" + t.TempDir(), "AITS_HOME=" + t.TempDir(), "PATH=" + empty}
 }
 
 func create(t *testing.T, environ []string, agent string) Task {
@@ -40,6 +41,7 @@ func TestCreateValidates(t *testing.T) {
 		"relative cwd":  {Agent: "claude", Cwd: "rel", Prompt: "hi", Timeout: time.Minute},
 		"missing cwd":   {Agent: "claude", Cwd: filepath.Join(dir, "x"), Prompt: "hi", Timeout: time.Minute},
 		"zero timeout":  {Agent: "claude", Cwd: dir, Prompt: "hi"},
+		"timeout < 1ms": {Agent: "claude", Cwd: dir, Prompt: "hi", Timeout: time.Microsecond},
 		"bad env name":  {Agent: "claude", Cwd: dir, Prompt: "hi", Timeout: time.Minute, Env: []string{"A=B"}},
 	} {
 		var invalid *shell.InvalidRequestError
@@ -124,7 +126,7 @@ func TestUpdateForeignToken(t *testing.T) {
 }
 
 func TestShowUnknown(t *testing.T) {
-	var invalid *InvalidError
+	var invalid *shell.InvalidRequestError
 	for _, id := range []string{"nope", "../../etc/passwd"} {
 		if _, err := Show(env(t), id); !errors.As(err, &invalid) {
 			t.Errorf("Show(%q) err = %v", id, err)
