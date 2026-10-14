@@ -98,7 +98,8 @@ envelope `stopped`, exit 1, and nothing is started.
 aits keeps only the `session_id` (first one seen) and, from the event with
 `"type":"result"`, its `is_error`, `result` and `session_id`. Every other
 event is discarded after parsing. A line that is not JSON is
-`bad_agent_output`. A line above the limit is `output_too_large`, and the
+`bad_agent_output`; parsing continues after it, so a session id on a later
+line is still reported (#4). A line above the limit is `output_too_large`, and the
 group is terminated as for a timeout.
 
 **Reading stderr.** Only the last 4 KiB is kept, and it is reported only for

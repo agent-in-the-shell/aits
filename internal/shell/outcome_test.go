@@ -15,6 +15,7 @@ func TestDecide(t *testing.T) {
 		{"too large before exit code", observation{exitCode: -1, events: events{tooLarge: true}}, StatusTooLarge},
 		{"exit code before bad output", observation{exitCode: 3, events: events{notJSON: true}}, StatusAgentFailed},
 		{"not json", observation{events: events{notJSON: true}}, StatusBadOutput},
+		{"not json despite a good result", observation{events: events{sessionID: "s1", result: &resultEvent{Result: "a"}, notJSON: true}}, StatusBadOutput},
 		{"no result", observation{events: events{sessionID: "s1"}}, StatusBadOutput},
 		{"error result", observation{events: events{sessionID: "s1", result: &resultEvent{IsError: true, Result: "boom"}}}, StatusAgentFailed},
 		{"empty result", observation{events: events{sessionID: "s1", result: &resultEvent{}}}, StatusBadOutput},
