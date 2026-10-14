@@ -4,12 +4,12 @@
 package task
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -327,7 +327,7 @@ func (t Task) request(environ []string) shell.Request {
 }
 
 // validID reports whether id is a task id as Create makes them,
-// YYYYMMDDTHHMMSS-xxxxxx with lower-case hex: the only names show opens, so
+// YYYYMMDDTHHMMSS-xxxxxx with lower-case hex: the only names read opens, so
 // that a case-insensitive file system cannot open a task by another spelling.
 func validID(id string) bool {
 	return len(id) == 22 && id[8] == 'T' && id[15] == '-' &&
@@ -360,17 +360,20 @@ func readFile(dir, id string) (Task, error) {
 		return Task{}, err
 	}
 	defer f.Close()
-	if fi, err := f.Stat(); err != nil {
-		return Task{}, err
-	} else if !fi.Mode().IsRegular() {
-		return Task{}, errors.New("not a regular file")
-	}
-	b, err := io.ReadAll(f)
+	fi, err := f.Stat()
 	if err != nil {
 		return Task{}, err
 	}
+	if !fi.Mode().IsRegular() {
+		return Task{}, errors.New("not a regular file")
+	}
+	var b bytes.Buffer
+	b.Grow(int(fi.Size()) + 1)
+	if _, err := b.ReadFrom(f); err != nil {
+		return Task{}, err
+	}
 	var t Task
-	if err := json.Unmarshal(b, &t); err != nil {
+	if err := json.Unmarshal(b.Bytes(), &t); err != nil {
 		return Task{}, err
 	}
 	switch {
