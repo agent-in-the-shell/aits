@@ -50,8 +50,14 @@ type queue struct {
 	home, path string
 }
 
+// newQueue makes a queue whose PATH holds the fake agent set to scenario, or
+// no agent when scenario is "".
 func newQueue(t *testing.T, scenario string) queue {
-	return queue{t: t, home: t.TempDir(), path: vendor(t, scenario)}
+	q := queue{t: t, home: t.TempDir()}
+	if scenario != "" {
+		q.path = vendor(t, scenario)
+	}
+	return q
 }
 
 func (q queue) run(args ...string) output {
