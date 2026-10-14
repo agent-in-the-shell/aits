@@ -325,10 +325,12 @@ func TestSessionSearchCodexUnreadableFirstLine(t *testing.T) {
 }
 
 // codexRollout writes a Codex rollout whose first line is a session_meta
-// with the raw source JSON (`,"source":"exec"`, or "" for none), and one user
-// message.
+// with source ("" for none), and one user message.
 func codexRollout(t *testing.T, home, id, cwd, source, text string, mtime time.Time) {
 	t.Helper()
+	if source != "" {
+		source = `,"source":"` + source + `"`
+	}
 	writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-"+id+".jsonl", mtime,
 		`{"type":"session_meta","payload":{"id":"`+id+`","cwd":"`+cwd+`"`+source+`}}`,
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"`+text+`"}]}}`)
@@ -350,11 +352,11 @@ func sourceTranscripts(t *testing.T) string {
 			`{"type":"user","sessionId":"`+id+`","cwd":"/w/app"`+entrypoint+`,"message":{"role":"user","content":"the migration fails"}}`)
 		at = at.Add(time.Minute)
 	}
-	codex("codex-cli", "/w/app", `,"source":"cli"`)
-	codex("codex-vscode", "/w/other", `,"source":"vscode"`)
-	codex("codex-exec", "/w/app", `,"source":"exec"`)
-	codex("codex-mcp", "/w/app", `,"source":"mcp"`)
-	codex("codex-none", "/w/app", ``)
+	codex("codex-cli", "/w/app", "cli")
+	codex("codex-vscode", "/w/other", "vscode")
+	codex("codex-exec", "/w/app", "exec")
+	codex("codex-mcp", "/w/app", "mcp")
+	codex("codex-none", "/w/app", "")
 	claude("claude-cli", `,"entrypoint":"cli"`)
 	claude("claude-sdk", `,"entrypoint":"sdk-cli"`)
 	claude("claude-none", ``)
@@ -391,7 +393,7 @@ func TestSessionSearchSourceBeforeLimit(t *testing.T) {
 	home := t.TempDir()
 	at := time.Now().Add(-time.Hour)
 	for _, s := range []struct{ id, source string }{{"old-cli", "cli"}, {"exec-1", "exec"}, {"exec-2", "exec"}, {"exec-3", "exec"}} {
-		codexRollout(t, home, s.id, "/w", `,"source":"`+s.source+`"`, "migration", at)
+		codexRollout(t, home, s.id, "/w", s.source, "migration", at)
 		at = at.Add(time.Minute)
 	}
 	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "--source", "interactive", "--limit", "1", "migration"}}.run(t)

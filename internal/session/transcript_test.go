@@ -22,7 +22,7 @@ func TestTranscript(t *testing.T) {
 	tr.identify(parsed{id: "s1", cwd: "/a", source: "cli"})
 	tr.identify(parsed{id: "s2", cwd: "/b", source: "exec"})
 	if tr.sessionID != "s1" || tr.cwd != "/a" || tr.source != "cli" {
-		t.Errorf("identify kept %q %q, want the first ones", tr.sessionID, tr.cwd)
+		t.Errorf("identify kept %q %q %q, want the first ones", tr.sessionID, tr.cwd, tr.source)
 	}
 }
 
