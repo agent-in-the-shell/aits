@@ -36,7 +36,9 @@ Result fields:
   snippet      Text around the first term in the newest message with it.
 
 Skipped:
-  files        Transcripts that could not be read or name no session or cwd.
+  files        Transcript paths that could not be read or are not regular files
+               (pipes, devices, directories; never opened), and transcripts
+               that hold messages but name no session or cwd.
   lines        Lines that were not JSON or were longer than 64 MiB.
 
 Searched:

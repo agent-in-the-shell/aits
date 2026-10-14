@@ -100,12 +100,18 @@ func Search(ctx context.Context, q Query) (Output, error) {
 		}
 		v := vendors[name]
 		for _, p := range v.files(q.Environ) {
-			fi, err := os.Stat(p)
+			fi, err := os.Stat(p) // follows symlinks: the target is what would be read
 			if err != nil {
 				out.Skipped.Files++
 				continue
 			}
 			if fi.ModTime().Before(cutoff) {
+				continue
+			}
+			if !fi.Mode().IsRegular() {
+				// Never opened: a pipe would block the search and a device
+				// would never end it (P6: counted, not dropped).
+				out.Skipped.Files++
 				continue
 			}
 			jobs = append(jobs, job{agent: name, path: p, mtime: fi.ModTime()})
@@ -121,7 +127,7 @@ func Search(ctx context.Context, q Query) (Output, error) {
 		wg.Go(func() {
 			b := newBuffers()
 			for i := range next {
-				outcomes[i] = examine(jobs[i], q.Terms, ns, dirs, b)
+				outcomes[i] = examine(ctx, jobs[i], q.Terms, ns, dirs, b)
 			}
 		})
 	}
@@ -160,14 +166,16 @@ feed:
 	return out, nil
 }
 
-// examine prefilters one file and, if every term may occur, parses it.
-func examine(j job, terms []string, ns [][]byte, dirs []string, b *buffers) outcome {
+// examine prefilters one file and, if every term may occur, parses it. It
+// stops between chunks and lines once ctx is cancelled; Search then reports
+// the cancellation instead of any outcome.
+func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []string, b *buffers) outcome {
 	f, err := os.Open(j.path)
 	if err != nil {
 		return outcome{badFile: true}
 	}
 	defer f.Close()
-	if ok, err := mayMatch(f, ns, b); err != nil {
+	if ok, err := mayMatch(ctx, f, ns, b); err != nil {
 		return outcome{badFile: true}
 	} else if !ok {
 		return outcome{}
@@ -178,7 +186,7 @@ func examine(j job, terms []string, ns [][]byte, dirs []string, b *buffers) outc
 	t := newTranscript(terms)
 	parse := vendors[j.agent].parse
 	notSession, sawMessage := false, false
-	bad, err := eachLine(f, b, func(line []byte) bool {
+	bad, err := eachLine(ctx, f, b, func(line []byte) bool {
 		p, ok := parse(line)
 		t.identify(p.id, p.cwd)
 		notSession = notSession || p.notSession
@@ -212,8 +220,9 @@ func examine(j job, terms []string, ns [][]byte, dirs []string, b *buffers) outc
 }
 
 // eachLine calls fn for every non-blank line of r and returns how many lines
-// were unusable: fn returned false, or the line exceeded maxLine.
-func eachLine(r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
+// were unusable: fn returned false, or the line exceeded maxLine. It returns
+// ctx's error as soon as ctx is cancelled, between lines.
+func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
 	b.reader.Reset(r)
 	line := b.line[:0]
 	defer func() {
@@ -225,6 +234,9 @@ func eachLine(r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
 	bad := 0
 	tooLong := false
 	for {
+		if err := ctx.Err(); err != nil {
+			return bad, err
+		}
 		part, err := b.reader.ReadSlice('\n')
 		if tooLong || len(line)+len(part) > maxLine {
 			tooLong = true
