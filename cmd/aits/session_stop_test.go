@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,24 +13,52 @@ import (
 	"time"
 )
 
-// runWithin runs c and fails the test if aits has not exited after d.
-func runWithin(t *testing.T, c call, d time.Duration) output {
+// started is an aits process a test is watching.
+type started struct {
+	cmd            *exec.Cmd
+	stdout, stderr *bytes.Buffer
+	done           chan error
+}
+
+func (c call) start(t *testing.T) *started {
 	t.Helper()
 	cmd, stdout, stderr := c.command(t)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	s := &started{cmd: cmd, stdout: stdout, stderr: stderr, done: make(chan error, 1)}
+	go func() { s.done <- cmd.Wait() }()
+	return s
+}
+
+// wait waits up to d for aits to exit; ok is false if it is still running.
+func (s *started) wait(t *testing.T, d time.Duration) (out output, ok bool) {
+	t.Helper()
 	select {
-	case err := <-done:
-		return finish(t, err, stdout, stderr)
+	case err := <-s.done:
+		return finish(t, err, s.stdout, s.stderr), true
 	case <-time.After(d):
-		_ = cmd.Process.Kill()
-		<-done
-		t.Fatalf("aits %s did not exit within %s", strings.Join(c.args, " "), d)
-		return output{}
+		return output{}, false
 	}
+}
+
+// waitOrKill is wait that kills aits and fails the test when it is still
+// running after d.
+func (s *started) waitOrKill(t *testing.T, d time.Duration, what string) output {
+	t.Helper()
+	out, ok := s.wait(t, d)
+	if !ok {
+		_ = s.cmd.Process.Kill()
+		<-s.done
+		t.Fatalf("%s: aits did not exit within %s", what, d)
+	}
+	return out
+}
+
+// runWithin runs c and fails the test if aits has not exited after d.
+func runWithin(t *testing.T, c call, d time.Duration) output {
+	t.Helper()
+	return c.start(t).waitOrKill(t, d, "aits "+strings.Join(c.args, " "))
 }
 
 // oneSession builds a HOME with one session of agent that contains "needle"
@@ -51,36 +81,25 @@ func oneSession(t *testing.T, agent string) (string, string) {
 // would never end it.
 func TestSessionSearchSkipsNonRegularFiles(t *testing.T) {
 	tests := []struct {
-		name  string
-		agent string
-		make  func(t *testing.T, home string) string // returns the special path
+		name, agent string
+		rel         string // the special path under HOME
+		target      string // a symlink to this, or a FIFO when empty
 	}{
-		{"claude fifo", "claude", func(t *testing.T, home string) string {
-			p := filepath.Join(home, ".claude/projects/-w/pipe.jsonl")
-			if err := syscall.Mkfifo(p, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			return p
-		}},
-		{"codex fifo", "codex", func(t *testing.T, home string) string {
-			p := filepath.Join(home, ".codex/sessions/2026/10/14/rollout-x.jsonl")
-			if err := syscall.Mkfifo(p, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			return p
-		}},
-		{"symlink to a device", "claude", func(t *testing.T, home string) string {
-			p := filepath.Join(home, ".claude/projects/-w/dev.jsonl")
-			if err := os.Symlink("/dev/zero", p); err != nil {
-				t.Fatal(err)
-			}
-			return p
-		}},
+		{"claude fifo", "claude", ".claude/projects/-w/pipe.jsonl", ""},
+		{"codex fifo", "codex", ".codex/sessions/2026/10/14/rollout-x.jsonl", ""},
+		{"symlink to a device", "claude", ".claude/projects/-w/dev.jsonl", "/dev/zero"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			home, want := oneSession(t, tt.agent)
-			special := tt.make(t, home)
+			special := filepath.Join(home, tt.rel)
+			if tt.target == "" {
+				if err := syscall.Mkfifo(special, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Symlink(tt.target, special); err != nil {
+				t.Fatal(err)
+			}
 			env := []string{"HOME=" + home}
 			out := runWithin(t, call{env: env, args: []string{"session", "search", "--json", "needle"}}, 5*time.Second)
 			o := decodeSearch(t, out.stdout)
@@ -88,12 +107,12 @@ func TestSessionSearchSkipsNonRegularFiles(t *testing.T) {
 				t.Fatalf("code=%d results=%q skipped=%+v", out.code, found(o), o.Skipped)
 			}
 			out = runWithin(t, call{env: env, args: []string{"session", "search", "needle"}}, 5*time.Second)
-			id := want[strings.Index(want, ":")+1:]
+			_, id, _ := strings.Cut(want, ":")
 			if out.code != 0 || !strings.Contains(out.stdout, "  "+id+"  ") ||
 				out.stderr != "aits: skipped 1 files and 0 lines that could not be read\n" {
 				t.Errorf("text mode: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 			}
-			if fi, err := os.Lstat(special); err == nil && fi.Mode()&os.ModeNamedPipe != 0 {
+			if tt.target == "" {
 				assertFifoUnread(t, special, env)
 			}
 		})
@@ -130,11 +149,9 @@ func assertFifoUnread(t *testing.T, fifo string, env []string) {
 }
 
 func TestSessionSearchFollowsSymlinkToTranscript(t *testing.T) {
-	home := t.TempDir()
-	elsewhere := filepath.Join(t.TempDir(), "kept.jsonl")
-	if err := os.WriteFile(elsewhere, []byte(`{"type":"user","sessionId":"l1","cwd":"/w","message":{"content":"needle"}}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	home, dir := t.TempDir(), t.TempDir()
+	writeTranscript(t, dir, "kept.jsonl", time.Now(), `{"type":"user","sessionId":"l1","cwd":"/w","message":{"content":"needle"}}`)
+	elsewhere := filepath.Join(dir, "kept.jsonl")
 	if err := os.MkdirAll(filepath.Join(home, ".claude/projects/-w"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -184,11 +201,6 @@ func bigTranscript(t *testing.T, size int) string {
 // partial result (P6).
 func TestSessionSearchStopsPromptly(t *testing.T) {
 	home := bigTranscript(t, 256<<20)
-	// The first run of a freshly built binary can take longer than the 200 ms
-	// the test waits (macOS assesses new executables), and a signal sent
-	// before main installs its handler kills the process instead of stopping
-	// the search. Run it once first.
-	call{args: []string{"--help"}}.run(t)
 	for _, tt := range []struct {
 		sig    syscall.Signal
 		json   bool
@@ -203,29 +215,14 @@ func TestSessionSearchStopsPromptly(t *testing.T) {
 			if tt.json {
 				args = append(args, "--json")
 			}
-			cmd, stdout, stderr := call{env: []string{"HOME=" + home}, args: args}.command(t)
-			if err := cmd.Start(); err != nil {
-				t.Fatal(err)
-			}
-			done := make(chan error, 1)
-			go func() { done <- cmd.Wait() }()
-			select {
-			case <-done:
+			s := call{env: []string{"HOME=" + home}, args: args}.start(t)
+			if _, ok := s.wait(t, 200*time.Millisecond); ok {
 				t.Fatal("the search finished before the signal; the fixture is too small to test stopping")
-			case <-time.After(200 * time.Millisecond):
 			}
-			if err := cmd.Process.Signal(tt.sig); err != nil {
+			if err := s.cmd.Process.Signal(tt.sig); err != nil {
 				t.Fatal(err)
 			}
-			var err error
-			select {
-			case err = <-done:
-			case <-time.After(time.Second):
-				_ = cmd.Process.Kill()
-				<-done
-				t.Fatalf("aits did not stop within 1s of %s", tt.sig)
-			}
-			out := finish(t, err, stdout, stderr)
+			out := s.waitOrKill(t, time.Second, "after "+tt.sig.String())
 			if out.code != 1 || out.stdout != tt.stdout || out.stderr != tt.stderr {
 				t.Errorf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 			}

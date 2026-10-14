@@ -38,6 +38,10 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
+	// Run aits once: the first run of a freshly built executable can be slow
+	// (macOS assesses it), and a test that signals aits must not race that
+	// first start against main installing its handler.
+	_ = exec.Command(aitsBin, "--help").Run()
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
