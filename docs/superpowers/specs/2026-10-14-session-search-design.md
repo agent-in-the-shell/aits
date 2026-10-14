@@ -1,6 +1,6 @@
 # `aits session search` — Design
 
-- Status: draft
+- Status: approved
 - Issue: #17
 - Principles: P1, P2, P3, P4, P5, P6, P7, P8, P10, P12, P13 (see `docs/principles.md`)
 
