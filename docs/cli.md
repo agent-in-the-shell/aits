@@ -11,8 +11,9 @@ Usage: aits COMMAND
 Run coding agents from the command line.
 
 Commands:
-  shell  Run prompts through vendor agent CLIs.
-  help   Show help for aits or one of its commands.
+  shell    Run prompts through vendor agent CLIs.
+  session  Search the coding agents' own conversation transcripts.
+  help     Show help for aits or one of its commands.
 
 Run 'aits COMMAND --help' for details.
 ```
@@ -83,6 +84,71 @@ Exit codes:
   0  The status is ok.
   1  Any other status, or an error marked exit 1 above.
   2  Usage error or invalid input; nothing was started.
+```
+
+## aits session
+
+```text
+Usage: aits session COMMAND
+
+Search the coding agents' own conversation transcripts.
+
+Commands:
+  search  Find conversations that contain every term, with an id to continue them.
+
+Run 'aits session COMMAND --help' for details.
+```
+
+## aits session search
+
+```text
+Usage: aits session search [flags] TERM...
+
+Find conversations that contain every term, with an id to continue them.
+
+Flags:
+  --agent AGENT     Search only AGENT's transcripts. One of: claude, codex.
+  --cwd DIR         Only sessions whose working directory is DIR or below it, with or without symlinks resolved.
+  --json            Print the result, or the error, as JSON on stdout.
+  --limit N         Return at most N results. (default 20)
+  --since DURATION  Only transcripts changed within DURATION, e.g. 72h.
+
+Output:
+  With --json, stdout is one JSON object:
+  {"results":[...],"skipped":{"files":N,"lines":N}}. Without --json, each
+  result is a line "UPDATED_AT  AGENT  SESSION_ID  CWD" and an indented
+  snippet, and anything skipped is reported on stderr. No match is not an
+  error.
+
+Result fields:
+  agent        The agent whose transcript matched.
+  session_id   Pass it to "aits shell submit --session" to continue.
+  cwd          The session's working directory, as the agent recorded it.
+  updated_at   When the transcript file last changed, in UTC; newest first.
+  snippet      Text around the first term in the newest message with it.
+
+Skipped:
+  files        Transcripts that could not be read or name no session or cwd.
+  lines        Lines that were not JSON or were longer than 64 MiB.
+
+Searched:
+  User and assistant message text, and prompts queued while the agent was
+  working; every term somewhere in the session, ignoring case. Not tool calls
+  or their output, model thinking, subagent transcripts (Claude's or Codex's),
+  compaction summaries, or text the agent CLI adds to a turn by itself
+  (instructions such as AGENTS.md, reminders, notifications, "!" shell
+  output, interruption and API-error notices).
+
+Transcripts:
+  claude  $CLAUDE_CONFIG_DIR/projects/*/*.jsonl (default ~/.claude)
+  codex   $CODEX_HOME/sessions/*/*/*/rollout-*.jsonl (default ~/.codex)
+  Subdirectories that cannot be read are passed over without a count; if a
+  vendor changes this layout, its sessions are not found.
+
+Exit codes:
+  0  The search ran, with or without results.
+  1  Stopped by a signal, or an unexpected failure.
+  2  Usage error or invalid input.
 ```
 
 ## aits help

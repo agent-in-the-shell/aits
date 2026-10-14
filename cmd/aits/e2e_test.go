@@ -160,19 +160,24 @@ type submitResult struct {
 	Error      *errorBody `json:"error"`
 }
 
-// decode parses stdout as exactly one JSON object with known fields (P5).
-func decode(t *testing.T, stdout string) submitResult {
+// decodeOne parses stdout as exactly one JSON object with known fields (P5).
+func decodeOne[T any](t *testing.T, stdout string) T {
 	t.Helper()
 	dec := json.NewDecoder(strings.NewReader(stdout))
 	dec.DisallowUnknownFields()
-	var r submitResult
-	if err := dec.Decode(&r); err != nil {
+	var v T
+	if err := dec.Decode(&v); err != nil {
 		t.Fatalf("stdout is not one JSON object: %v\n%s", err, stdout)
 	}
 	if _, err := dec.Token(); err != io.EOF {
 		t.Fatalf("stdout holds more than one JSON value: %q", stdout)
 	}
-	return r
+	return v
+}
+
+func decode(t *testing.T, stdout string) submitResult {
+	t.Helper()
+	return decodeOne[submitResult](t, stdout)
 }
 
 type record struct {
