@@ -28,7 +28,9 @@ behaviour the earlier implementation had, say so and why.
 
 Run `go test ./...`. CI runs it on Linux and macOS with `HOME` read-only, plus
 `gofmt -l .`, `go vet ./...` and staticcheck, which also reports unused code
-(P2). Run the same staticcheck locally with:
+(P2), and checks that the release binary stays within
+`.github/binary-size-budget` (P14); a change that needs more raises the
+budget in the same pull request and says why. Run the same staticcheck locally with:
 
     go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 -tags live ./...
 
