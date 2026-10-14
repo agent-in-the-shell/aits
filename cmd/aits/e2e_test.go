@@ -313,10 +313,15 @@ func TestSubmitAgentFailed(t *testing.T) {
 }
 
 func TestSubmitAgentReportsError(t *testing.T) {
-	out := call{path: vendor(t, "is_error"), args: submitArgs("--json", "hi")}.run(t)
-	r := decode(t, out.stdout)
-	if out.code != 1 || r.Status != "agent_failed" || *r.ExitCode != 0 || !strings.Contains(r.Message, "fake failure") || r.Answer != "" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
+	for scenario, exit := range map[string]int{"agent_error": 1, "agent_error_exit0": 0} {
+		t.Run(scenario, func(t *testing.T) {
+			out := call{path: vendor(t, scenario), args: submitArgs("--json", "hi")}.run(t)
+			r := decode(t, out.stdout)
+			if out.code != 1 || r.Status != "agent_failed" || r.ExitCode == nil || *r.ExitCode != exit || r.Answer != "" ||
+				r.Message != "the agent reported an error: fake failure" {
+				t.Fatalf("code=%d result=%+v", out.code, r)
+			}
+		})
 	}
 }
 

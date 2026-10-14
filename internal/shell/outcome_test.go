@@ -3,7 +3,7 @@ package shell
 import "testing"
 
 func TestDecide(t *testing.T) {
-	okEvents := events{sessionID: "s1", result: &resultEvent{Result: "answer"}}
+	okEvents := events{sessionID: "s1", answer: "answer", done: true}
 	tests := []struct {
 		name string
 		obs  observation
@@ -15,11 +15,11 @@ func TestDecide(t *testing.T) {
 		{"too large before exit code", observation{exitCode: -1, events: events{tooLarge: true}}, StatusTooLarge},
 		{"exit code before bad output", observation{exitCode: 3, events: events{notJSON: true}}, StatusAgentFailed},
 		{"not json", observation{events: events{notJSON: true}}, StatusBadOutput},
-		{"not json despite a good result", observation{events: events{sessionID: "s1", result: &resultEvent{Result: "a"}, notJSON: true}}, StatusBadOutput},
-		{"no result", observation{events: events{sessionID: "s1"}}, StatusBadOutput},
-		{"error result", observation{events: events{sessionID: "s1", result: &resultEvent{IsError: true, Result: "boom"}}}, StatusAgentFailed},
-		{"empty result", observation{events: events{sessionID: "s1", result: &resultEvent{}}}, StatusBadOutput},
-		{"no session id", observation{events: events{result: &resultEvent{Result: "answer"}}}, StatusBadOutput},
+		{"not json despite a good result", observation{events: events{sessionID: "s1", answer: "a", done: true, notJSON: true}}, StatusBadOutput},
+		{"reported failure", observation{events: events{sessionID: "s1", done: true, failed: true, failure: "boom"}}, StatusAgentFailed},
+		{"no final event", observation{events: events{sessionID: "s1", answer: "a"}}, StatusBadOutput},
+		{"empty answer", observation{events: events{sessionID: "s1", done: true}}, StatusBadOutput},
+		{"no session id", observation{events: events{answer: "answer", done: true}}, StatusBadOutput},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -29,6 +29,32 @@ func TestDecide(t *testing.T) {
 			}
 			if (got == StatusOK) != (msg == "") {
 				t.Errorf("status %s with message %q", got, msg)
+			}
+		})
+	}
+}
+
+// TestFailureMessage: the agent's own error beats its exit code, which hides
+// the reason (Claude not logged in exits 1 with an empty stderr).
+func TestFailureMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		obs  observation
+		want string
+	}{
+		{"reported error with non-zero exit",
+			observation{exitCode: 1, events: events{sessionID: "s1", done: true, failed: true, failure: "Not logged in\nmore"}},
+			"the agent reported an error: Not logged in"},
+		{"reported error with exit 0",
+			observation{events: events{sessionID: "s1", done: true, failed: true, failure: "boom"}},
+			"the agent reported an error: boom"},
+		{"exit code only", observation{exitCode: 3}, "the agent exited with code 3"},
+		{"reported error without text", observation{events: events{done: true, failed: true}}, "the agent reported an error"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if status, got := decide(tt.obs); status != StatusAgentFailed || got != tt.want {
+				t.Errorf("decide = %s, %q; want agent_failed, %q", status, got, tt.want)
 			}
 		})
 	}

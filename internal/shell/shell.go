@@ -128,7 +128,7 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	}
 	switch status {
 	case StatusOK:
-		res.Answer = obs.events.result.Result
+		res.Answer = obs.events.answer
 	case StatusAgentFailed:
 		res.StderrTail = obs.stderrTail
 	}

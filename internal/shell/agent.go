@@ -13,6 +13,7 @@ type agent struct {
 	args       []string // never carries the prompt (P8)
 	env        []string // variables passed through when set
 	envPrefix  []string // variables with one of these prefixes are passed through
+	parse      parser   // turns one line of the agent's output into events
 }
 
 var agents = map[string]agent{
@@ -26,6 +27,7 @@ var agents = map[string]agent{
 			"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY",
 		},
 		envPrefix: []string{"LC_"},
+		parse:     parseClaude,
 	},
 }
 

@@ -1,0 +1,44 @@
+package shell
+
+import "encoding/json"
+
+// claudeHeader holds the fields aits reads from every Claude Code event.
+// Decoding into it skips all other fields without copying them, however large
+// they are.
+type claudeHeader struct {
+	Type      json.RawMessage `json:"type"`
+	SessionID json.RawMessage `json:"session_id"`
+}
+
+type claudeResult struct {
+	IsError bool   `json:"is_error"`
+	Result  string `json:"result"`
+}
+
+// parseClaude reads one line of `claude -p --output-format stream-json`: any
+// event may carry session_id, and the "result" event ends the run.
+func parseClaude(ev *events, line []byte) bool {
+	var h *claudeHeader // stays nil for the JSON literal null
+	if err := json.Unmarshal(line, &h); err != nil || h == nil {
+		return false
+	}
+	var id string
+	if json.Unmarshal(h.SessionID, &id) == nil {
+		ev.setSession(id)
+	}
+	var typ string
+	if json.Unmarshal(h.Type, &typ) != nil || typ != "result" {
+		return true
+	}
+	var res claudeResult
+	if err := json.Unmarshal(line, &res); err != nil {
+		return false
+	}
+	ev.done = true
+	if res.IsError {
+		ev.failed, ev.failure = true, res.Result
+	} else {
+		ev.answer = res.Result
+	}
+	return true
+}

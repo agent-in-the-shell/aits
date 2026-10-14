@@ -56,20 +56,20 @@ func run(ctx context.Context, ag agent, path string, req Request) (observation, 
 	if err != nil {
 		return observation{}, fmt.Errorf("start %s: %w", ag.name, err)
 	}
-	return supervise(ctx, cmd, outR, errR, req.Timeout), nil
+	return supervise(ctx, cmd, outR, errR, req.Timeout, ag.parse), nil
 }
 
 // supervise waits for three things: the agent to exit, its stdout to reach
 // EOF, and its stderr to reach EOF. A timeout, a cancelled ctx, an oversized
 // event, or the agent's own exit terminates the whole group, so nothing the
 // agent started outlives it (P10).
-func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration) observation {
+func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, parse parser) observation {
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errTimedOut)
 	defer cancel()
 	g := &group{pgid: cmd.Process.Pid, pipes: []*os.File{out, errOut}}
 
 	evCh := make(chan events, 1)
-	go func() { evCh <- readEvents(out) }()
+	go func() { evCh <- readEvents(out, parse) }()
 	tail := &tailBuffer{max: stderrTailSize}
 	tailCh := make(chan struct{}, 1)
 	go func() { _, _ = io.Copy(tail, errOut); tailCh <- struct{}{} }()

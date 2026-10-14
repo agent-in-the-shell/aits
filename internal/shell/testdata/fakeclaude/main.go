@@ -77,7 +77,12 @@ func play(scenario, dir, exe string) {
 		os.Stderr.Write(bytes.Repeat([]byte("x"), 100<<10))
 		os.Stderr.WriteString("\nboom\n")
 		os.Exit(3)
-	case "is_error":
+	case "agent_error":
+		// Claude Code not logged in: an error result, exit 1, nothing on stderr.
+		emit(initEvent())
+		emit(result(true, "fake failure\nsecond line"))
+		os.Exit(1)
+	case "agent_error_exit0":
 		emit(initEvent())
 		emit(result(true, "fake failure\nsecond line"))
 	case "not_json":
