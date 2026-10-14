@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -266,5 +267,65 @@ func TestLoadDirError(t *testing.T) {
 	}
 	if _, err := load(file); err == nil {
 		t.Fatal("load of a regular file succeeded")
+	}
+}
+
+// A file that is not a regular file, or not named by a task id, is not a
+// readable task, and reading it never blocks (a FIFO would, P10).
+func TestReadRejectsOddFiles(t *testing.T) {
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "20261014T000000-f1f000.json")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := read(fifo); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("read of a FIFO succeeded")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("read of a FIFO blocked")
+	}
+	odd := filepath.Join(dir, "foo.json")
+	if err := os.WriteFile(odd, []byte(`{"id":"foo","status":"queued"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := read(odd); err == nil {
+		t.Errorf("read of %s = %+v, want an error", odd, got)
+	}
+}
+
+// Show takes only task ids: another spelling of one (a capital hex digit,
+// which a case-insensitive file system would open), an empty id or a dot
+// file is no task.
+func TestShowMalformedID(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	if err := os.WriteFile(filepath.Join(dir, ".x.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var invalid *shell.InvalidRequestError
+	for _, id := range []string{strings.ToUpper(tk.ID), "", ".x"} {
+		if got, err := Show(environ, id); !errors.As(err, &invalid) {
+			t.Errorf("Show(%q) = %+v, %v; want no task", id, got, err)
+		}
+	}
+}
+
+// A task file that exists but cannot be opened, such as a dangling symlink,
+// is unreadable, as list reports it, not missing.
+func TestShowDanglingSymlink(t *testing.T) {
+	environ := env(t)
+	dir, _ := store.Dir(environ, "task")
+	id := "20261014T000000-da0000"
+	if err := os.Symlink(filepath.Join(dir, "missing.json"), path(dir, id)); err != nil {
+		t.Fatal(err)
+	}
+	var invalid *shell.InvalidRequestError
+	if _, err := Show(environ, id); err == nil || errors.As(err, &invalid) || !strings.Contains(err.Error(), "could not be read") {
+		t.Errorf("Show = %v, want could not be read", err)
 	}
 }

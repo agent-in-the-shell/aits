@@ -290,6 +290,15 @@ func TestTaskUnreadableFiles(t *testing.T) {
 		}
 	})
 
+	t.Run("newline in the name", func(t *testing.T) {
+		q := newQueue(t, "ok")
+		q.run("list") // makes the task directory
+		bad(q, "20261014T000000-bad\naits: forged", "garbage", 0o600)
+		if out := q.run("list"); out.stderr != fmt.Sprintf(skip, `20261014T000000-bad\naits: forged`) {
+			t.Errorf("list: stderr=%q", out.stderr)
+		}
+	})
+
 	t.Run("empty object", func(t *testing.T) {
 		q := newQueue(t, "ok")
 		q.run("list") // makes the task directory
@@ -306,7 +315,7 @@ func TestTaskUnreadableFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		bad(q, "20261014T000000-copy00", string(b), 0o600)
+		bad(q, "20261014T000000-c0ffee", string(b), 0o600)
 		if w := decodeOne[taskRecord](t, q.run("work", "--json").stdout); w.ID != a || w.Status != "done" {
 			t.Errorf("first work: %+v", w)
 		}
@@ -314,7 +323,7 @@ func TestTaskUnreadableFiles(t *testing.T) {
 			t.Errorf("second work ran the copy: %q", out.stdout)
 		}
 		l := decodeOne[listing](t, q.run("list", "--json").stdout)
-		if len(l.Tasks) != 1 || l.Tasks[0].ID != a || l.Tasks[0].Status != "done" || !slices.Equal(l.Skipped, []string{"20261014T000000-copy00"}) {
+		if len(l.Tasks) != 1 || l.Tasks[0].ID != a || l.Tasks[0].Status != "done" || !slices.Equal(l.Skipped, []string{"20261014T000000-c0ffee"}) {
 			t.Errorf("list --json: %+v", l)
 		}
 	})

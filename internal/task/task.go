@@ -139,12 +139,14 @@ func Show(environ []string, id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	if strings.ContainsAny(id, `/\`) {
+	if !validID(id) {
 		return Task{}, invalid("no task %s", id)
 	}
 	t, err := read(path(dir, id))
 	if errors.Is(err, os.ErrNotExist) {
-		return Task{}, invalid("no task %s", id)
+		if _, lerr := os.Lstat(path(dir, id)); lerr != nil {
+			return Task{}, invalid("no task %s", id)
+		}
 	}
 	if err != nil {
 		return Task{}, fmt.Errorf("task %s could not be read: %w", id, err)
@@ -331,12 +333,42 @@ func (t Task) request(environ []string) shell.Request {
 	}
 }
 
+// validID reports whether id is a task id as Create makes them,
+// YYYYMMDDTHHMMSS-xxxxxx with lower-case hex: the only names show opens, so
+// that a case-insensitive file system cannot open a task by another spelling.
+func validID(id string) bool {
+	if len(id) != 22 {
+		return false
+	}
+	for i, c := range id {
+		ok := '0' <= c && c <= '9'
+		switch {
+		case i == 8:
+			ok = c == 'T'
+		case i == 15:
+			ok = c == '-'
+		case i > 15:
+			ok = ok || 'a' <= c && c <= 'f'
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func path(dir, id string) string { return filepath.Join(dir, id+".json") }
 
-// read reads the task in file. It is readable only as a record of the id in
-// its file name, with a known status, and with a lease while running (P6):
-// anything else, such as a copy of another task's file, is an error.
+// read reads the task in file. It is readable only as a regular file named
+// by a task id, holding the record of that id, with a known status, and with
+// a lease while running (P6): anything else, such as a copy of another task's
+// file, is an error. It never blocks on a FIFO or reads a device (P10).
 func read(file string) (Task, error) {
+	if fi, err := os.Stat(file); err != nil {
+		return Task{}, err
+	} else if !fi.Mode().IsRegular() {
+		return Task{}, errors.New("not a regular file")
+	}
 	b, err := os.ReadFile(file)
 	if err != nil {
 		return Task{}, err
@@ -346,6 +378,8 @@ func read(file string) (Task, error) {
 		return Task{}, err
 	}
 	switch id := strings.TrimSuffix(filepath.Base(file), ".json"); {
+	case !validID(id):
+		return Task{}, fmt.Errorf("%q is not a task id", id)
 	case t.ID != id:
 		return Task{}, fmt.Errorf("its id is %q, not %q", t.ID, id)
 	case !slices.Contains([]Status{Queued, Running, Done, Failed}, t.Status):

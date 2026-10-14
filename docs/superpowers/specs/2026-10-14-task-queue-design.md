@@ -86,8 +86,9 @@ invalid input (P5).
 - Reclaims expired leases (§6), then lists tasks oldest first.
 - `--json`: `{"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}`;
   text: one line per task, `ID  STATUS  AGENT  CREATED_AT`. Exit 0.
-- A task file that cannot be read (not JSON, not a record of the id in its
-  name, an unknown status, or `running` without a lease) is skipped and left
+- A task file that cannot be read (not a regular file named by a task id,
+  not JSON, not the record of that id, an unknown status, or `running`
+  without a lease) is skipped and left
   as it is (P10): its id is in `skipped` (always present, sorted) or, in text
   mode, on stderr as `aits: skipped task ID that could not be read`. `work`
   prints the same stderr line in both modes; `show` of such an id is

@@ -209,8 +209,9 @@ Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
 {"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}.
 Expired leases of dead workers are reclaimed first.
 
-A task file that cannot be read (not JSON, not a record of its own id, an
-unknown status, or running without a lease) is skipped and left as it is:
+A task file that cannot be read (not a regular file named by a task id, not
+JSON, not the record of that id, an unknown status, or running without a
+lease) is skipped and left as it is:
 its id is in "skipped" (always present, sorted) or, without --json, on
 stderr as "aits: skipped task ID that could not be read". A running task
 whose file cannot be read is not reclaimed, and its agent is not stopped.
