@@ -43,7 +43,7 @@ func taskCreate() *Command {
 		Name:    "create",
 		Args:    "(PROMPT | -)",
 		Summary: "Queue a prompt for an agent; prints the task id.",
-		Details: `Output: the task id; with --json {"id":"…","status":"queued"}.
+		Details: promptDetails + `Output: the task id; with --json {"id":"…","status":"queued"}.
 
 Exit codes:
   0  Queued.

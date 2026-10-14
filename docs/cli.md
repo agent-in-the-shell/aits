@@ -47,6 +47,9 @@ Flags:
   --session ID        Continue the conversation ID: the session_id of an earlier result.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
 
+Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
+invalid_input.
+
 Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
@@ -184,6 +187,9 @@ Flags:
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
+
+Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
+invalid_input.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
