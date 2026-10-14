@@ -59,9 +59,9 @@ func (q queue) run(args ...string) output {
 	return call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append([]string{"task"}, args...)}.run(q.t)
 }
 
-func (q queue) create(prompt string) string {
+func (q queue) create(prompt string, flags ...string) string {
 	q.t.Helper()
-	out := q.run("create", "--agent", "claude", "--cwd", q.t.TempDir(), "--json", prompt)
+	out := q.run(append(append([]string{"create", "--agent", "claude", "--cwd", q.t.TempDir(), "--json"}, flags...), prompt)...)
 	var r struct{ ID, Status string }
 	if err := json.Unmarshal([]byte(out.stdout), &r); out.code != 0 || err != nil || r.Status != "queued" {
 		q.t.Fatalf("create: code=%d stdout=%q", out.code, out.stdout)
@@ -78,7 +78,7 @@ func TestTaskFlow(t *testing.T) {
 	out := q.run("work", "--json")
 	w := decodeOne[taskRecord](t, out.stdout)
 	if out.code != 0 || w.ID != id || w.Status != "done" || w.Run == nil || w.Run.Answer != "fake answer" ||
-		w.Run.SessionID != "sess-fake-1" || w.Lease != nil {
+		w.Run.SessionID != "sess-fake-1" || w.Run.StartedAt == "" || w.Lease != nil {
 		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
 	if rec := readRecord(t, q.path); rec.Stdin != "Review the code" || slices.Contains(rec.Args, "Review the code") {
@@ -111,6 +111,16 @@ func TestTaskInvalidInput(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(filepath.Join(q.home, "task")); slices.ContainsFunc(entries, func(e os.DirEntry) bool { return strings.HasSuffix(e.Name(), ".json") }) {
 		t.Errorf("invalid input wrote a task")
+	}
+}
+
+// A run whose agent never started has no started_at (help, spec §4).
+func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
+	q := newQueue(t, "ok")
+	q.create("hi", "--env", "AITS_TEST_UNSET")
+	out := q.run("work", "--json")
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" || w.Run.StartedAt != "" {
+		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
 }
 

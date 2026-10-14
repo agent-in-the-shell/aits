@@ -77,7 +77,7 @@ func TestWorkNotStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := Work(context.Background(), environ, "")
-	if err != nil || got.ID != tk.ID || got.Status != Failed || got.Run == nil || got.Run.Status != NotStarted || got.Run.Message == "" || got.Lease != nil {
+	if err != nil || got.ID != tk.ID || got.Status != Failed || got.Run == nil || got.Run.Status != NotStarted || got.Run.Message == "" || !got.Run.StartedAt.IsZero() || got.Lease != nil {
 		t.Fatalf("Work = %+v, %v", got, err)
 	}
 }
