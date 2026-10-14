@@ -1,6 +1,6 @@
 # `aits shell submit --agent codex` — Design
 
-- Status: draft
+- Status: approved
 - Issue: #13
 - Builds on: `2026-10-13-shell-submit-design.md` (#2). Everything that spec
   says about the grammar, process group, timeout, stop, output limit, result
