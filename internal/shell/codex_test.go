@@ -37,10 +37,10 @@ func TestParseCodex(t *testing.T) {
 		{"no turn.completed", lines(started, turn, message), events{sessionID: "t1", answer: "the answer"}},
 		{"no thread id", lines(turn, message, completed), events{answer: "the answer", done: true}},
 		{"not json first", lines("hello", started, turn, message, completed),
-			events{sessionID: "t1", answer: "the answer", done: true, notJSON: true}},
-		{"json null", "null\n", events{notJSON: true}},
-		{"message text of wrong type", `{"type":"item.completed","item":{"type":"agent_message","text":42}}`, events{notJSON: true}},
-		{"thread id of wrong type", `{"type":"thread.started","thread_id":7}`, events{notJSON: true}},
+			events{sessionID: "t1", answer: "the answer", done: true, badLine: true}},
+		{"json null", "null\n", events{badLine: true}},
+		{"message text of wrong type", `{"type":"item.completed","item":{"type":"agent_message","text":42}}`, events{badLine: true}},
+		{"thread id of wrong type", `{"type":"thread.started","thread_id":7}`, events{badLine: true}},
 		{"other item with odd fields", `{"type":"item.completed","item":{"type":"reasoning","text":42}}`, events{}},
 	}
 	for _, tt := range tests {

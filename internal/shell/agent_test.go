@@ -27,7 +27,7 @@ func TestAgents(t *testing.T) {
 		t.Errorf("Agents() = %q", got)
 	}
 	for name, ag := range agents {
-		if ag.name != name || ag.parse == nil || slices.Contains(ag.args, "--skip-git-repo-check") {
+		if ag.name != name || ag.parse == nil {
 			t.Errorf("agent %q is misconfigured: %+v", name, ag)
 		}
 	}

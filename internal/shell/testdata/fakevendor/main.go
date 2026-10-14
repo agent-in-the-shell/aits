@@ -155,12 +155,9 @@ func play(d dialect, scenario, dir, exe string) {
 		d.start()
 		writePID(filepath.Join(dir, "child.pid"))
 		time.Sleep(10 * time.Minute)
-	case "ignore_stdin":
-		// Never reads the prompt; a grandchild keeps stdin (and stdout) open.
-		d.start()
-		d.answer("fake answer")
-		spawnGrandchild(dir, exe)
-	case "linger":
+	case "ignore_stdin", "linger":
+		// A grandchild keeps stdout open, and stdin too: for ignore_stdin the
+		// prompt was never read (see main).
 		d.start()
 		d.answer("fake answer")
 		spawnGrandchild(dir, exe)

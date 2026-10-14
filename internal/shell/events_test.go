@@ -22,11 +22,11 @@ func TestParseClaude(t *testing.T) {
 		{"blank lines ignored", "\n\n" + resultLine + "\n\n", events{sessionID: "s1", answer: "the answer", done: true}},
 		{"error result", `{"type":"result","is_error":true,"result":"bad","session_id":"s1"}`,
 			events{sessionID: "s1", failure: "bad", done: true, failed: true}},
-		{"not json", "hello\n" + resultLine, events{sessionID: "s1", answer: "the answer", done: true, notJSON: true}},
-		{"session id after a bad line", "hello\n" + initLine, events{sessionID: "s1", notJSON: true}},
-		{"json array", "[1,2]\n", events{notJSON: true}},
-		{"json null", "null\n", events{notJSON: true}},
-		{"result of wrong type", `{"type":"result","result":42}`, events{notJSON: true}},
+		{"not json", "hello\n" + resultLine, events{sessionID: "s1", answer: "the answer", done: true, badLine: true}},
+		{"session id after a bad line", "hello\n" + initLine, events{sessionID: "s1", badLine: true}},
+		{"json array", "[1,2]\n", events{badLine: true}},
+		{"json null", "null\n", events{badLine: true}},
+		{"result of wrong type", `{"type":"result","result":42}`, events{badLine: true}},
 		{"no result event", initLine, events{sessionID: "s1"}},
 	}
 	for _, tt := range tests {
@@ -44,8 +44,8 @@ func TestReadEventsSizeLimit(t *testing.T) {
 		const head, tail = `{"type":"assistant","pad":"`, `"}`
 		return head + strings.Repeat("x", n-len(head)-len(tail)) + tail
 	}
-	if ev := readEvents(strings.NewReader(line(maxEventSize)+"\n"), parseClaude); ev.tooLarge || ev.notJSON {
-		t.Errorf("a %d-byte event was rejected: tooLarge=%v notJSON=%v", maxEventSize, ev.tooLarge, ev.notJSON)
+	if ev := readEvents(strings.NewReader(line(maxEventSize)+"\n"), parseClaude); ev.tooLarge || ev.badLine {
+		t.Errorf("a %d-byte event was rejected: tooLarge=%v badLine=%v", maxEventSize, ev.tooLarge, ev.badLine)
 	}
 	if ev := readEvents(strings.NewReader(line(maxEventSize+1)+"\n"), parseClaude); !ev.tooLarge {
 		t.Errorf("a %d-byte event was accepted", maxEventSize+1)

@@ -28,8 +28,7 @@ func TestLiveCodex(t *testing.T) {
 
 func liveSubmit(t *testing.T, agent, dir string) {
 	t.Helper()
-	cmd := exec.Command(aitsBin, "shell", "submit", "--agent", agent, "--cwd", dir,
-		"--timeout", "5m", "--json", "Reply with exactly: OK")
+	cmd := exec.Command(aitsBin, agentArgs(agent, "--cwd", dir, "--timeout", "5m", "--json", "Reply with exactly: OK")...)
 	cmd.Env = append(os.Environ(), "AITS_HOME="+t.TempDir())
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

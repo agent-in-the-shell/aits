@@ -19,7 +19,7 @@ type events struct {
 	failure   string // the error the agent reported
 	done      bool   // the agent's final event was seen
 	failed    bool   // the agent reported that the run failed
-	notJSON   bool   // a line was not a usable event
+	badLine   bool   // a line was not a usable event
 	tooLarge  bool   // a line exceeded maxEventSize
 }
 
@@ -47,7 +47,7 @@ func readEvents(r io.Reader, parse parser) events {
 			continue
 		}
 		if !parse(&ev, line) {
-			ev.notJSON = true
+			ev.badLine = true
 		}
 	}
 	ev.tooLarge = errors.Is(sc.Err(), bufio.ErrTooLong)

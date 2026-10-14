@@ -6,19 +6,16 @@ import (
 	"testing"
 )
 
-// The answer is the last agent_message of the turn; earlier ones are progress.
-func TestCodexAnswerIsLastMessage(t *testing.T) {
-	out := call{path: vendorAs(t, "codex", "several_messages"), args: agentArgs("codex", "--json", "hi")}.run(t)
-	if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" || r.Answer != "fake answer" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
-	}
-}
-
-// Codex sends "error" events while it retries; they fail nothing on their own.
-func TestCodexRetryNoticesAreNotFailures(t *testing.T) {
-	out := call{path: vendorAs(t, "codex", "retry_errors"), args: agentArgs("codex", "--json", "hi")}.run(t)
-	if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" || r.Answer != "fake answer" {
-		t.Fatalf("code=%d result=%+v", out.code, r)
+// Codex-specific streams that must still end ok with the last message as the
+// answer: progress messages before it, and "error" retry notices.
+func TestCodexOkStreams(t *testing.T) {
+	for _, scenario := range []string{"several_messages", "retry_errors"} {
+		t.Run(scenario, func(t *testing.T) {
+			out := call{path: vendorAs(t, "codex", scenario), args: agentArgs("codex", "--json", "hi")}.run(t)
+			if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" || r.Answer != "fake answer" {
+				t.Fatalf("code=%d result=%+v", out.code, r)
+			}
+		})
 	}
 }
 

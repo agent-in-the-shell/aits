@@ -27,7 +27,7 @@ func decide(o observation) (Status, string) {
 		return StatusTooLarge, fmt.Sprintf("an agent output event exceeded %d MiB", maxEventSize>>20)
 	case o.exitCode != 0:
 		return StatusAgentFailed, failureMessage(ev, o.exitCode)
-	case ev.notJSON:
+	case ev.badLine:
 		return StatusBadOutput, "the agent printed a line that is not a usable JSON event"
 	case ev.failed:
 		return StatusAgentFailed, failureMessage(ev, o.exitCode)
