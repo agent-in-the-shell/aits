@@ -130,11 +130,12 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	for _, name := range req.Pass {
-		if !isSet(req.Environ, name) {
+		if _, ok := lookupEnv(req.Environ, name); !ok {
 			return Result{}, invalid("environment variable %s is not set", name)
 		}
 	}
-	path, err := lookPath(req.Environ, ag.executable)
+	env := ag.environ(req.Environ, req.Pass)
+	path, err := lookPath(env, ag.executable)
 	if err != nil {
 		return Result{}, err
 	}
@@ -142,7 +143,7 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		return Result{}, ErrStopped
 	}
 	start := time.Now()
-	obs, err := run(ctx, ag, path, req)
+	obs, err := run(ctx, ag, path, env, req)
 	if err != nil {
 		return Result{}, err
 	}
@@ -164,32 +165,26 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	return res, nil
 }
 
-// lookPath finds name on the PATH the agent is given: the last PATH in
-// environ (P8), never aits's own. A first match in an empty or relative entry
-// is refused, as exec.LookPath does: it would resolve against aits's working
-// directory, not the agent's (P6).
-func lookPath(environ []string, name string) (string, error) {
-	path, set := "", false
-	for _, kv := range environ {
-		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
-			path, set = v, true
-		}
-	}
-	if !set {
+// lookPath finds name on the PATH in env, the agent's own environment (P8),
+// never on aits's. A first match in an empty or relative entry is refused, as
+// exec.LookPath does: it would resolve against aits's working directory, not
+// the agent's (P6).
+func lookPath(env []string, name string) (string, error) {
+	path, ok := lookupEnv(env, "PATH")
+	if !ok {
 		return "", fmt.Errorf("%w: %s is not on PATH (PATH is not set)", ErrAgentNotFound, name)
 	}
 	for _, dir := range filepath.SplitList(path) {
-		file := filepath.Join(dir, name)
-		if !filepath.IsAbs(file) {
+		file, abs := filepath.Join(dir, name), filepath.IsAbs(dir)
+		if !abs {
 			file = "." + string(filepath.Separator) + file // never a bare name: that searches aits's PATH
 		}
-		if _, err := exec.LookPath(file); err != nil {
-			continue
-		}
-		if !filepath.IsAbs(dir) {
+		if _, err := exec.LookPath(file); err == nil {
+			if abs {
+				return file, nil
+			}
 			break
 		}
-		return file, nil
 	}
 	return "", fmt.Errorf("%w: %s is not on PATH", ErrAgentNotFound, name)
 }

@@ -77,7 +77,13 @@ func (a agent) environ(parent, pass []string) []string {
 	return out
 }
 
-// isSet reports whether environ has an entry for name.
-func isSet(environ []string, name string) bool {
-	return slices.ContainsFunc(environ, func(kv string) bool { return strings.HasPrefix(kv, name+"=") })
+// lookupEnv returns the value of name in environ, the last one as the child
+// gets it, and whether name is set at all.
+func lookupEnv(environ []string, name string) (val string, ok bool) {
+	for _, kv := range environ {
+		if v, found := strings.CutPrefix(kv, name+"="); found {
+			val, ok = v, true
+		}
+	}
+	return val, ok
 }
