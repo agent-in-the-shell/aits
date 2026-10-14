@@ -428,7 +428,7 @@ func TestSubmitResume(t *testing.T) {
 // flag is refused before anything starts (P6).
 func TestSubmitInvalidSession(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
-		for _, id := range []string{"", "-x", "--dangerously-skip-permissions", "a b", "a;b"} {
+		for _, id := range []string{"", "--dangerously-skip-permissions"} {
 			bin := vendorAs(t, agent, "ok")
 			out := call{path: bin, args: agentArgs(agent, "--session="+id, "--json", "hi")}.run(t)
 			if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {

@@ -10,40 +10,31 @@ import (
 	"testing"
 )
 
-// The live tests run the real vendor CLIs (P12: opt-in, never in CI). They
-// need a logged-in CLI on PATH and the real HOME, where its credentials live;
-// AITS_HOME stays temporary. TestLiveClaude and TestLiveCodex spend one model
-// call each.
+// TestLive runs the real vendor CLIs (P12: opt-in, never in CI). It needs a
+// logged-in CLI on PATH and the real HOME, where its credentials live;
+// AITS_HOME stays temporary. Per agent it starts a conversation and continues
+// it with the returned session id: two model calls each.
 //
-//	go test -tags live ./cmd/aits -run TestLive
-
-func TestLiveClaude(t *testing.T) { liveSubmit(t, "claude", t.TempDir(), "Reply with exactly: OK") }
-
-// Codex refuses to run outside a git repository, and aits keeps that check.
-func TestLiveCodex(t *testing.T) {
-	work := t.TempDir()
-	if b, err := exec.Command("git", "init", "-q", work).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v\n%s", err, b)
-	}
-	liveSubmit(t, "codex", work, "Reply with exactly: OK")
+//	go test -tags live ./cmd/aits -run TestLive          # both agents
+//	go test -tags live ./cmd/aits -run TestLive/codex    # one
+func TestLive(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		work := gitRepo(t) // Codex refuses to run outside one, and aits keeps that check
+		first := liveSubmit(t, agent, work, "Remember the word PELICAN. Reply with exactly: OK")
+		second := liveSubmit(t, agent, work, "Which word did I ask you to remember? Reply with that word only.", "--session", first.SessionID)
+		if second.SessionID != first.SessionID || !strings.Contains(strings.ToUpper(second.Answer), "PELICAN") {
+			t.Fatalf("first %+v, second %+v", first, second)
+		}
+	})
 }
 
-// TestLiveResume continues a conversation with the session id the first run
-// returned. It spends two model calls per agent.
-func TestLiveResume(t *testing.T) {
-	for _, agent := range agentNames {
-		t.Run(agent, func(t *testing.T) {
-			work := t.TempDir()
-			if b, err := exec.Command("git", "init", "-q", work).CombinedOutput(); err != nil {
-				t.Fatalf("git init: %v\n%s", err, b)
-			}
-			first := liveSubmit(t, agent, work, "Remember the word PELICAN. Reply with exactly: OK")
-			second := liveSubmit(t, agent, work, "Which word did I ask you to remember? Reply with that word only.", "--session", first.SessionID)
-			if second.SessionID != first.SessionID || !strings.Contains(strings.ToUpper(second.Answer), "PELICAN") {
-				t.Fatalf("first %+v, second %+v", first, second)
-			}
-		})
+func gitRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if b, err := exec.Command("git", "init", "-q", dir).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, b)
 	}
+	return dir
 }
 
 func liveSubmit(t *testing.T, agent, dir, prompt string, extra ...string) submitResult {

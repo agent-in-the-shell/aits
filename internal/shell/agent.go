@@ -23,16 +23,16 @@ var baseEnv = []string{
 	"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
 }
 
+var claudeArgs = []string{"-p", "--output-format", "stream-json", "--verbose"}
+
 var agents = map[string]agent{
 	"claude": {
 		name:       "claude",
 		executable: "claude",
-		args:       []string{"-p", "--output-format", "stream-json", "--verbose"},
-		resume: func(id string) []string {
-			return []string{"-p", "--output-format", "stream-json", "--verbose", "--resume", id}
-		},
-		env:   []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
-		parse: parseClaude,
+		args:       claudeArgs,
+		resume:     func(id string) []string { return append(slices.Clip(claudeArgs), "--resume", id) },
+		env:        []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
+		parse:      parseClaude,
 	},
 	"codex": {
 		name:       "codex",

@@ -71,9 +71,12 @@ func submitCommand() *Command {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required). One of: "+strings.Join(shell.Agents(), ", ")+".")
 			cwd := fs.String("cwd", "", "Run the agent in `DIR` (default: the current directory).")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
-			var session *string
+			var session string
 			fs.Func("session", "Continue the conversation `ID`: the session_id of an earlier result.", func(v string) error {
-				session = &v
+				if v == "" {
+					return errors.New("needs a session id")
+				}
+				session = v
 				return nil
 			})
 			var pass []string
@@ -84,9 +87,6 @@ func submitCommand() *Command {
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
 					return 0, usageError("invalid_input", "expected one prompt argument, or - to read it from stdin; got %d", len(args))
-				}
-				if session != nil && *session == "" {
-					return 0, usageError("invalid_input", "--session needs a session id")
 				}
 				prompt := args[0]
 				if prompt == "-" {
@@ -101,7 +101,7 @@ func submitCommand() *Command {
 				}
 				res, err := shell.Submit(ctx, shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: pass, Session: deref(session),
+					Environ: env.Environ, Pass: pass, Session: session,
 				})
 				if err != nil {
 					return 0, submitError(err)
@@ -165,11 +165,4 @@ func writeResult(env *Env, res shell.Result) int {
 		return exitOK
 	}
 	return exitFailure
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

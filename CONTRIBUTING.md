@@ -38,9 +38,9 @@ Run `go test ./...`. CI runs it on Linux and macOS with `HOME` read-only, plus
   default CI.
 - The CLI reference is generated from help: after changing a command, run
   `go test ./cmd/aits -run TestCLIDocs -update` (P13).
-- `go test -tags live ./cmd/aits -run TestLive` runs real calls against each
-  agent (Claude Code, Codex) with your own logins: six model calls in all,
-  four of them in `TestLiveResume`; `-run TestLiveCodex` runs one.
+- `go test -tags live ./cmd/aits -run TestLive` starts and then continues one
+  real conversation per agent (Claude Code, Codex) with your own logins: two
+  model calls each; `-run TestLive/codex` runs one agent.
 
 The pull-request check script has its own test:
 
