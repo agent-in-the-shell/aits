@@ -18,6 +18,7 @@ type Command struct {
 	Name     string
 	Args     string // positional synopsis for help, e.g. "(PROMPT | -)"
 	Summary  string
+	Details  string // printed verbatim after a leaf's flags in help
 	Children []*Command
 	// Setup declares the leaf's flags on fs and returns its Runner. It must do
 	// nothing else: help calls it to list the flags.
@@ -139,6 +140,9 @@ func writeHelp(w io.Writer, path []string, cmd *Command) {
 		})
 	}
 	_ = tw.Flush()
+	if cmd.Details != "" {
+		fmt.Fprintf(w, "\n%s", cmd.Details)
+	}
 }
 
 func defaultNote(f *flag.Flag) string {

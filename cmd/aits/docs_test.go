@@ -4,11 +4,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/agent-in-the-shell/aits/internal/cli"
+	"github.com/agent-in-the-shell/aits/internal/shell"
 )
 
 var update = flag.Bool("update", false, "rewrite docs/cli.md from the binary's help output")
@@ -39,4 +43,68 @@ func TestCLIDocs(t *testing.T) {
 	if string(want) != b.String() {
 		t.Fatalf("docs/cli.md is out of date; run: go test ./cmd/aits -run TestCLIDocs -update")
 	}
+}
+
+// TestSubmitHelpDocumentsOutput enforces the P5 rule that output shapes are
+// documented in help: every result field, status and error code the code can
+// produce has a row in "aits shell submit --help", and each error code's row
+// names the exit code it causes.
+func TestSubmitHelpDocumentsOutput(t *testing.T) {
+	// rows maps "Section name" to the help line documenting name, where
+	// Section is the first word of the heading above it, e.g. "Statuses".
+	rows := map[string]string{}
+	var section string
+	for _, line := range strings.Split(call{args: []string{"shell", "submit", "--help"}}.run(t).stdout, "\n") {
+		f := strings.Fields(strings.ReplaceAll(line, ":", " "))
+		switch {
+		case len(f) == 0:
+		case !strings.HasPrefix(line, " "):
+			section = f[0]
+		default:
+			rows[section+" "+f[0]] = line
+		}
+	}
+	rt := reflect.TypeFor[shell.Result]()
+	for i := range rt.NumField() {
+		if name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ","); rows["Result "+name] == "" {
+			t.Errorf("result field %q is not documented in help", name)
+		}
+	}
+	for _, m := range sourceMatches(t, "../../internal/shell", `\bStatus\s*=\s*"(\w+)"`) {
+		if rows["Statuses "+m[1]] == "" {
+			t.Errorf("status %q is not documented in help", m[1])
+		}
+	}
+	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
+	for _, m := range sourceMatches(t, "../../internal/cli", `\b(usageError|failure)\(\s*"(\w+)"`) {
+		if !strings.Contains(rows["Errors "+m[2]], exit[m[1]]) {
+			t.Errorf("error code %q is not documented in help with %s", m[2], exit[m[1]])
+		}
+	}
+}
+
+// sourceMatches returns the submatches of pattern in the non-test Go files of
+// dir, failing the test if there are none.
+func sourceMatches(t *testing.T, dir, pattern string) [][]string {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(pattern)
+	var all [][]string
+	for _, p := range paths {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, re.FindAllStringSubmatch(string(src), -1)...)
+	}
+	if len(all) == 0 {
+		t.Fatalf("no match for %s in %s", pattern, dir)
+	}
+	return all
 }
