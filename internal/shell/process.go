@@ -40,7 +40,7 @@ func run(ctx context.Context, ag agent, path string, req Request) (observation, 
 	}
 	defer outR.Close()
 	defer errR.Close()
-	cmd := exec.Command(path, ag.args...)
+	cmd := exec.Command(path, ag.argv(req.Session)...)
 	cmd.Dir = req.Dir
 	cmd.Env = ag.environ(req.Environ, req.Pass)
 	cmd.Stdin = strings.NewReader(req.Prompt)

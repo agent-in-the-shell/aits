@@ -399,3 +399,59 @@ func TestSubmitBadOutput(t *testing.T) {
 		}
 	})
 }
+
+// resumeArgv is the argv each agent must be started with to continue session
+// sess-fake-1.
+var resumeArgv = map[string][]string{
+	"claude": {"-p", "--output-format", "stream-json", "--verbose", "--resume", "sess-fake-1"},
+	"codex":  {"exec", "--json", "resume", "sess-fake-1", "-"},
+}
+
+func TestSubmitResume(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := vendorAs(t, agent, "ok")
+		out := call{path: bin, args: agentArgs(agent, "--session", "sess-fake-1", "--json", "next step")}.run(t)
+		if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" || r.SessionID != "sess-fake-1" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		rec := readRecord(t, bin)
+		if want := resumeArgv[agent]; !slices.Equal(rec.Args, want) {
+			t.Errorf("agent argv = %q, want %q (the prompt must not be in argv)", rec.Args, want)
+		}
+		if rec.Stdin != "next step" {
+			t.Errorf("agent stdin = %q", rec.Stdin)
+		}
+	})
+}
+
+// A session id goes into the agent's argv, so one that could be read as a
+// flag is refused before anything starts (P6).
+func TestSubmitInvalidSession(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		for _, id := range []string{"", "-x", "--dangerously-skip-permissions", "a b", "a;b"} {
+			bin := vendorAs(t, agent, "ok")
+			out := call{path: bin, args: agentArgs(agent, "--session="+id, "--json", "hi")}.run(t)
+			if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {
+				t.Errorf("--session=%q: code=%d stdout=%q", id, out.code, out.stdout)
+			}
+			if ran(bin) {
+				t.Errorf("--session=%q: the agent was started", id)
+			}
+		}
+	})
+}
+
+func TestSubmitUnknownSession(t *testing.T) {
+	reason := map[string]string{
+		"claude": "No conversation found with session ID: sess-fake-1",
+		"codex":  "no rollout found for thread id sess-fake-1",
+	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		out := call{path: vendorAs(t, agent, "unknown_session"), args: agentArgs(agent, "--session", "sess-fake-1", "--json", "hi")}.run(t)
+		r := decode(t, out.stdout)
+		if out.code != 1 || r.Status != "agent_failed" || r.ExitCode == nil || *r.ExitCode != 1 ||
+			!strings.Contains(r.Message+"\n"+r.StderrTail, reason[agent]) {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+	})
+}

@@ -18,6 +18,13 @@ func TestRequestValidate(t *testing.T) {
 	if _, err := good.validate(); err != nil {
 		t.Fatalf("valid request rejected: %v", err)
 	}
+	for _, id := range []string{"eab7bb86-4763-40f2-ae77-15cb6e443485", "01a13843-b160-7d40-9d06-02c6749fa5ed", "a.b_c-1"} {
+		r := good
+		r.Session = id
+		if _, err := r.validate(); err != nil {
+			t.Errorf("session %q rejected: %v", id, err)
+		}
+	}
 	codex := good
 	codex.Agent = "codex"
 	if _, err := codex.validate(); err != nil {
@@ -37,6 +44,11 @@ func TestRequestValidate(t *testing.T) {
 		{"unset pass variable", func(r *Request) { r.Pass = []string{"UNSET"} }},
 		{"bad pass name", func(r *Request) { r.Pass = []string{"A=B"} }},
 		{"empty pass name", func(r *Request) { r.Pass = []string{""} }},
+		{"session starting with a dash", func(r *Request) { r.Session = "-x" }},
+		{"session that is a flag", func(r *Request) { r.Session = "--dangerously-skip-permissions" }},
+		{"session with a space", func(r *Request) { r.Session = "a b" }},
+		{"session with a semicolon", func(r *Request) { r.Session = "a;b" }},
+		{"blank session", func(r *Request) { r.Session = " " }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
