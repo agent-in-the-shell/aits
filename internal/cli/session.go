@@ -68,8 +68,24 @@ func searchCommand() *Command {
 		Summary: "Find conversations that contain every term, with an id to continue them.",
 		Details: searchDetails,
 		Setup: func(fs *flag.FlagSet) Runner {
-			agent := fs.String("agent", "", "Search only `AGENT`'s transcripts. One of: "+strings.Join(session.Agents(), ", ")+".")
-			cwd := fs.String("cwd", "", "Only sessions whose working directory is `DIR` or below it, with or without symlinks resolved.")
+			// An explicitly empty --agent or --cwd is refused: it would
+			// otherwise widen the filter to everything (P6).
+			agents := strings.Join(session.Agents(), ", ")
+			var agent, cwd string
+			fs.Func("agent", "Search only `AGENT`'s transcripts. One of: "+agents+".", func(v string) error {
+				if v == "" {
+					return fmt.Errorf("needs an agent (one of: %s)", agents)
+				}
+				agent = v
+				return nil
+			})
+			fs.Func("cwd", "Only sessions whose working directory is `DIR` or below it, with or without symlinks resolved.", func(v string) error {
+				if v == "" {
+					return errors.New("needs a directory")
+				}
+				cwd = v
+				return nil
+			})
 			var since time.Duration
 			fs.Func("since", "Only transcripts changed within `DURATION`, e.g. 72h.", func(v string) error {
 				d, err := time.ParseDuration(v)
@@ -88,7 +104,7 @@ func searchCommand() *Command {
 				for _, a := range args {
 					terms = append(terms, strings.Fields(a)...)
 				}
-				dir := *cwd
+				dir := cwd
 				if dir != "" {
 					abs, err := filepath.Abs(dir)
 					if err != nil {
@@ -97,7 +113,7 @@ func searchCommand() *Command {
 					dir = abs
 				}
 				out, err := session.Search(ctx, session.Query{
-					Terms: terms, Agent: *agent, Cwd: dir, Since: since, Limit: *limit, Environ: env.Environ,
+					Terms: terms, Agent: agent, Cwd: dir, Since: since, Limit: *limit, Environ: env.Environ,
 				})
 				if err != nil {
 					return 0, searchError(err)

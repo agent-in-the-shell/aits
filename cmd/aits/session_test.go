@@ -230,3 +230,34 @@ func TestSessionSearchCwdRecordedUnresolved(t *testing.T) {
 		t.Errorf("results %q", got)
 	}
 }
+
+// An explicitly empty --agent or --cwd is refused, never read as "all" (P6:
+// a filter is not silently widened).
+func TestSessionSearchEmptyFilterFlags(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want []string // in the error message
+	}{
+		{[]string{"--agent=", "x"}, []string{"agent", "needs an agent", "claude, codex"}},
+		{[]string{"--agent", "", "x"}, []string{"agent", "needs an agent", "claude, codex"}},
+		{[]string{"--cwd=", "x"}, []string{"cwd", "needs a directory"}},
+		{[]string{"--cwd", "", "x"}, []string{"cwd", "needs a directory"}},
+	} {
+		name := strings.Join(tt.args, " ")
+		out := call{args: append([]string{"session", "search", "--json"}, tt.args...)}.run(t)
+		r := decode(t, out.stdout)
+		if out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" || r.Status != "" {
+			t.Errorf("%q --json: code=%d stdout=%q", name, out.code, out.stdout)
+			continue
+		}
+		for _, w := range tt.want {
+			if !strings.Contains(r.Error.Message, w) {
+				t.Errorf("%q: message %q lacks %q", name, r.Error.Message, w)
+			}
+		}
+		out = call{args: append([]string{"session", "search"}, tt.args...)}.run(t)
+		if out.code != 2 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") || strings.Count(out.stderr, "\n") != 1 {
+			t.Errorf("%q text: code=%d stdout=%q stderr=%q", name, out.code, out.stdout, out.stderr)
+		}
+	}
+}
