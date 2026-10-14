@@ -26,11 +26,17 @@ type vendor struct {
 	rootHome string // the root under HOME otherwise
 	pattern  string // transcript files under the root, for filepath.Glob
 	parse    parser
+	kinds    map[string]string // a recorded source value: "interactive" or "scripted"
 }
 
 var vendors = map[string]vendor{
-	"claude": {rootVar: "CLAUDE_CONFIG_DIR", rootHome: ".claude", pattern: "projects/*/*.jsonl", parse: parseClaude},
-	"codex":  {rootVar: "CODEX_HOME", rootHome: ".codex", pattern: "sessions/*/*/*/rollout-*.jsonl", parse: parseCodex},
+	"claude": {rootVar: "CLAUDE_CONFIG_DIR", rootHome: ".claude", pattern: "projects/*/*.jsonl", parse: parseClaude,
+		kinds: map[string]string{
+			"cli": "interactive", "claude-vscode": "interactive", "claude-desktop": "interactive",
+			"sdk-cli": "scripted", "sdk-ts": "scripted", "sdk-py": "scripted",
+		}},
+	"codex": {rootVar: "CODEX_HOME", rootHome: ".codex", pattern: "sessions/*/*/*/rollout-*.jsonl", parse: parseCodex,
+		kinds: map[string]string{"cli": "interactive", "vscode": "interactive", "exec": "scripted"}},
 }
 
 // files lists the vendor's transcript files. A missing root lists nothing.
@@ -118,7 +124,7 @@ func Search(ctx context.Context, q Query) (Output, error) {
 		wg.Go(func() {
 			b := newBuffers()
 			for i := range next {
-				outcomes[i] = examine(ctx, jobs[i], q.Terms, ns, dirs, b)
+				outcomes[i] = examine(ctx, jobs[i], q.Terms, q.Source, ns, dirs, b)
 			}
 		})
 	}
@@ -160,7 +166,7 @@ feed:
 // examine prefilters one file and, if every term may occur, parses it. It
 // stops between chunks and lines once ctx is cancelled; Search then reports
 // the cancellation instead of any outcome.
-func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []string, b *buffers) outcome {
+func examine(ctx context.Context, j job, terms []string, source string, ns [][]byte, dirs []string, b *buffers) outcome {
 	f, err := os.Open(j.path)
 	if err != nil {
 		return outcome{badFile: true}
@@ -180,7 +186,7 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 	bad, err := eachLine(ctx, f, b, func(line []byte) bool {
 		p, ok := parse(line, first)
 		first = false
-		t.identify(p.id, p.cwd)
+		t.identify(p)
 		notSession = notSession || p.notSession
 		sawMessage = sawMessage || p.message || len(p.texts) > 0
 		for _, s := range p.texts {
@@ -199,7 +205,9 @@ func examine(ctx context.Context, j job, terms []string, ns [][]byte, dirs []str
 		return outcome{lines: bad, badFile: true}
 	}
 	inDir := len(dirs) == 0 || slices.ContainsFunc(dirs, func(d string) bool { return within(t.cwd, d) })
-	if !t.matched() || !inDir {
+	// A session of unknown source (no value, or one not in kinds) passes no
+	// source filter: its kind cannot be told (P6).
+	if !t.matched() || !inDir || (source != "" && vendors[j.agent].kinds[t.source] != source) {
 		return outcome{lines: bad}
 	}
 	return outcome{lines: bad, result: &Result{

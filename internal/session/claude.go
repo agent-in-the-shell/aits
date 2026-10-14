@@ -27,13 +27,14 @@ func parseClaude(line []byte, _ bool) (parsed, bool) {
 		IsCompactSummary  json.RawMessage `json:"isCompactSummary"`
 		TranscriptOnly    json.RawMessage `json:"isVisibleInTranscriptOnly"`
 		IsAPIErrorMessage json.RawMessage `json:"isApiErrorMessage"`
+		Entrypoint        json.RawMessage `json:"entrypoint"`
 		Message           json.RawMessage `json:"message"`
 		Attachment        json.RawMessage `json:"attachment"`
 	}
 	if json.Unmarshal(line, &e) != nil {
 		return parsed{}, false
 	}
-	p := parsed{id: rawString(e.SessionID), cwd: rawString(e.Cwd), message: e.Type == "user" || e.Type == "assistant"}
+	p := parsed{id: rawString(e.SessionID), cwd: rawString(e.Cwd), source: rawString(e.Entrypoint), message: e.Type == "user" || e.Type == "assistant"}
 	// Text the CLI writes itself: subagent turns, meta turns, compaction
 	// summaries (which restate tool output) and synthesized API errors.
 	for _, flag := range []json.RawMessage{e.IsSidechain, e.IsMeta, e.IsCompactSummary, e.TranscriptOnly, e.IsAPIErrorMessage} {

@@ -116,6 +116,7 @@ Flags:
   --json            Print the result, or the error, as JSON on stdout.
   --limit N         Return at most N results. (default 20)
   --since DURATION  Only transcripts changed within DURATION, e.g. 72h.
+  --source KIND     Only sessions started KIND. One of: interactive, scripted (see Source below).
 
 Output:
   With --json, stdout is one JSON object:
@@ -145,6 +146,18 @@ Searched:
   compaction summaries, or text the agent CLI adds to a turn by itself
   (instructions such as AGENTS.md, reminders, notifications, "!" shell
   output, interruption and API-error notices).
+
+Source (--source):
+  A session's kind is the first value its transcript records:
+  claude  entrypoint of the first event that has one
+            interactive  cli, claude-vscode, claude-desktop
+            scripted     sdk-cli (claude -p), sdk-ts, sdk-py
+  codex   payload.source of the first line (session_meta), when a string
+            interactive  cli, vscode
+            scripted     exec
+  A session with no such value, or a value not listed, is of unknown kind:
+  returned without --source, left out by both values. Observed with Claude
+  Code 2.1.299 and Codex CLI 0.159.2; not a documented vendor contract.
 
 Transcripts:
   claude  $CLAUDE_CONFIG_DIR/projects/*/*.jsonl (default ~/.claude)

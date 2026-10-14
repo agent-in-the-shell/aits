@@ -52,6 +52,18 @@ Searched:
   (instructions such as AGENTS.md, reminders, notifications, "!" shell
   output, interruption and API-error notices).
 
+Source (--source):
+  A session's kind is the first value its transcript records:
+  claude  entrypoint of the first event that has one
+            interactive  cli, claude-vscode, claude-desktop
+            scripted     sdk-cli (claude -p), sdk-ts, sdk-py
+  codex   payload.source of the first line (session_meta), when a string
+            interactive  cli, vscode
+            scripted     exec
+  A session with no such value, or a value not listed, is of unknown kind:
+  returned without --source, left out by both values. Observed with Claude
+  Code 2.1.299 and Codex CLI 0.159.2; not a documented vendor contract.
+
 Transcripts:
   claude  $CLAUDE_CONFIG_DIR/projects/*/*.jsonl (default ~/.claude)
   codex   $CODEX_HOME/sessions/*/*/*/rollout-*.jsonl (default ~/.codex)
@@ -87,6 +99,8 @@ func searchCommand() *Command {
 				return nil
 			})
 			limit := fs.Int("limit", session.DefaultLimit, "Return at most `N` results.")
+			sources := strings.Join(session.Sources, ", ")
+			source := nonEmpty(fs, "source", "Only sessions started `KIND`. One of: "+sources+" (see Source below).", "a source (one of: "+sources+")")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				var terms []string
 				for _, a := range args {
@@ -101,7 +115,7 @@ func searchCommand() *Command {
 					dir = abs
 				}
 				out, err := session.Search(ctx, session.Query{
-					Terms: terms, Agent: *agent, Cwd: dir, Since: since, Limit: *limit, Environ: env.Environ,
+					Terms: terms, Agent: *agent, Cwd: dir, Since: since, Limit: *limit, Source: *source, Environ: env.Environ,
 				})
 				if err != nil {
 					return 0, searchError(err)

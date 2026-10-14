@@ -19,8 +19,12 @@ type Query struct {
 	Cwd     string        // absolute; only sessions in or below it, as given or with symlinks resolved; "" for any
 	Since   time.Duration // only files modified within it; 0 for any
 	Limit   int           // at most this many results; at least 1
+	Source  string        // "interactive" or "scripted": only sessions started so; "" for all
 	Environ []string      // KEY=VALUE, for HOME, CLAUDE_CONFIG_DIR and CODEX_HOME
 }
+
+// Sources are the kinds a session can be started as, for Query.Source.
+var Sources = []string{"interactive", "scripted"}
 
 // Result is one matching session.
 type Result struct {
@@ -74,6 +78,9 @@ func (q Query) validate() error {
 	}
 	if q.Limit < 1 {
 		return invalid("limit must be at least 1, got %d", q.Limit)
+	}
+	if q.Source != "" && !slices.Contains(Sources, q.Source) {
+		return invalid("unknown source %q (one of: %s)", q.Source, strings.Join(Sources, ", "))
 	}
 	return nil
 }

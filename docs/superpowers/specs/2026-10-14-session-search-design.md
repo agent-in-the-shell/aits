@@ -26,7 +26,7 @@ and no copy of conversation content.
 ## 3. Command
 
 ```
-aits session search [--agent AGENT] [--cwd DIR] [--since DURATION] [--limit N] [--json] TERM...
+aits session search [--agent AGENT] [--cwd DIR] [--since DURATION] [--limit N] [--source KIND] [--json] TERM...
 ```
 
 - `TERM...`: one or more positional arguments, split on whitespace into terms;
@@ -41,6 +41,15 @@ aits session search [--agent AGENT] [--cwd DIR] [--since DURATION] [--limit N] [
 - `--since DURATION`: only transcript files modified within `DURATION`; must
   be positive.
 - `--limit N`: at most `N` results, default 20, `N ≥ 1`.
+- `--source interactive|scripted` (#24): only sessions started that way;
+  default no filter. A session's kind is the first value its transcript
+  records: Claude's `entrypoint` of the first event that has one (`cli`,
+  `claude-vscode`, `claude-desktop` interactive; `sdk-cli`, `sdk-ts`,
+  `sdk-py` scripted), Codex's `payload.source` of the first line when a
+  string (`cli`, `vscode` interactive; `exec` scripted). A missing or
+  unlisted value is unknown: returned without `--source`, left out by both
+  values, not counted in `skipped`. An empty or other value is
+  `invalid_input`. Observed with Claude Code 2.1.299 and Codex CLI 0.159.2.
 
 Invalid input → `invalid_input`, exit 2, nothing read.
 
@@ -115,7 +124,7 @@ contributes nothing.
    (§5), and require every term in the session's text. Record session id,
    cwd and the snippet. Lines that are not JSON or exceed 64 MiB are counted
    and skipped.
-4. **Filter** by `--cwd`, **sort** by `updated_at` descending, ties by
+4. **Filter** by `--cwd` and `--source`, **sort** by `updated_at` descending, ties by
    session id, **cut** to `--limit`.
 
 A signal stops the search between chunks and between lines (one line is

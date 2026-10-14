@@ -17,6 +17,7 @@ const snippetSize = 160
 // text that contains the first term.
 type transcript struct {
 	sessionID, cwd string
+	source         string   // the first source recorded, the vendor's own value
 	terms          []string // lower-cased
 	found          []bool
 	snippetText    string
@@ -25,6 +26,7 @@ type transcript struct {
 // parsed is what a parser found in one transcript line.
 type parsed struct {
 	id, cwd    string   // the session id and working directory it names, or ""
+	source     string   // how the session was started, the vendor's value, or ""
 	message    bool     // the line is a conversation message, searched or not
 	texts      []string // the searched text in it
 	notSession bool     // the file is not a conversation the user can continue
@@ -43,13 +45,17 @@ func newTranscript(terms []string) *transcript {
 	return t
 }
 
-// identify records the session id and working directory unless already known.
-func (t *transcript) identify(id, cwd string) {
+// identify records the session id, working directory and source a line
+// names, each unless already known: the first value wins.
+func (t *transcript) identify(p parsed) {
 	if t.sessionID == "" {
-		t.sessionID = id
+		t.sessionID = p.id
 	}
 	if t.cwd == "" {
-		t.cwd = cwd
+		t.cwd = p.cwd
+	}
+	if t.source == "" {
+		t.source = p.source
 	}
 }
 
