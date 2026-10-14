@@ -69,6 +69,38 @@ func Lock(dir string) (func(), error) {
 	return func() { f.Close() }, nil // closing the file releases the lock
 }
 
+// ErrLocked means another holder has the lock TryLock asked for.
+var ErrLocked = errors.New("locked by another process")
+
+// TryLock takes an exclusive lock on path without waiting and returns the
+// function that releases it. With create it creates path, or tightens an
+// existing file, to 0600; without it a missing path is an os.ErrNotExist
+// error and nothing is created. Another holder gives ErrLocked.
+func TryLock(path string, create bool) (func(), error) {
+	flags := os.O_RDWR
+	if create {
+		flags |= os.O_CREATE
+	}
+	f, err := os.OpenFile(path, flags, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if create {
+		if err := f.Chmod(0o600); err != nil {
+			f.Close()
+			return nil, err
+		}
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, ErrLocked
+		}
+		return nil, err
+	}
+	return func() { f.Close() }, nil // closing the file releases the lock
+}
+
 // Lookup returns the last value of name in environ, or "".
 func Lookup(environ []string, name string) string {
 	val := ""

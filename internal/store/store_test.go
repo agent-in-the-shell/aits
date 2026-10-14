@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,5 +84,46 @@ func TestLock(t *testing.T) {
 	case <-got:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the second Lock did not get the lock after unlock")
+	}
+}
+
+func TestTryLock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.lock")
+	if _, err := TryLock(path, false); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("TryLock(missing, create=false) = %v, want ErrNotExist", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("TryLock(create=false) created the file")
+	}
+	unlock, err := TryLock(path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, path); m != 0o600 {
+		t.Errorf("mode %v, want 0600", m)
+	}
+	for _, create := range []bool{true, false} {
+		if _, err := TryLock(path, create); !errors.Is(err, ErrLocked) {
+			t.Errorf("second TryLock(create=%v) = %v, want ErrLocked", create, err)
+		}
+	}
+	unlock()
+	again, err := TryLock(path, false)
+	if err != nil {
+		t.Fatalf("TryLock after unlock = %v", err)
+	}
+	again()
+	loose := filepath.Join(dir, "b.lock")
+	if err := os.WriteFile(loose, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	u, err := TryLock(loose, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u()
+	if m := mode(t, loose); m != 0o600 {
+		t.Errorf("existing file mode %v, want 0600 (tightened)", m)
 	}
 }
