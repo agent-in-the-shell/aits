@@ -42,9 +42,6 @@ const (
 // stops the agent at the timeout, so only a dead worker outlives its lease.
 const leaseSlack = time.Minute
 
-// stopGrace is how long a leftover agent group gets between TERM and KILL.
-const stopGrace = 5 * time.Second
-
 // Task is one queued agent run and, once worked, its result.
 type Task struct {
 	ID        string    `json:"id"`
@@ -81,20 +78,22 @@ type Spec struct {
 	Env                []string
 }
 
-// InvalidError means the input was rejected and nothing was written.
+// InvalidError means an unknown task id or agent filter; invalid create input
+// is a *shell.InvalidRequestError.
 type InvalidError struct{ Reason string }
 
 func (e *InvalidError) Error() string { return e.Reason }
 
 func invalid(format string, a ...any) error { return &InvalidError{fmt.Sprintf(format, a...)} }
 
-// ErrReclaimed means the worker's lease expired and another caller failed the
+// errReclaimed means the worker's lease expired and another caller failed the
 // task before the worker could record its run.
-var ErrReclaimed = errors.New("reclaimed after its lease expired")
+var errReclaimed = errors.New("reclaimed after its lease expired")
 
 // Create validates s and queues it.
 func Create(environ []string, s Spec) (Task, error) {
-	if err := s.validate(); err != nil {
+	req := shell.Request{Agent: s.Agent, Prompt: s.Prompt, Dir: s.Cwd, Timeout: s.Timeout, Pass: s.Env}
+	if err := req.Validate(); err != nil {
 		return Task{}, err
 	}
 	dir, err := store.Dir(environ, "task")
@@ -120,30 +119,6 @@ func Create(environ []string, s Spec) (Task, error) {
 	return t, write(dir, t)
 }
 
-func (s Spec) validate() error {
-	switch {
-	case s.Agent == "":
-		return invalid("agent is required (one of: %s)", strings.Join(shell.Agents(), ", "))
-	case !slices.Contains(shell.Agents(), s.Agent):
-		return invalid("unknown agent %q (one of: %s)", s.Agent, strings.Join(shell.Agents(), ", "))
-	case strings.TrimSpace(s.Prompt) == "":
-		return invalid("prompt is empty")
-	case !filepath.IsAbs(s.Cwd):
-		return invalid("working directory %q is not absolute", s.Cwd)
-	case s.Timeout <= 0:
-		return invalid("timeout must be positive, got %s", s.Timeout)
-	}
-	if fi, err := os.Stat(s.Cwd); err != nil || !fi.IsDir() {
-		return invalid("working directory %q is not a directory", s.Cwd)
-	}
-	for _, name := range s.Env {
-		if name == "" || strings.Contains(name, "=") {
-			return invalid("%q is not an environment variable name", name)
-		}
-	}
-	return nil
-}
-
 // List reclaims expired leases and returns every task, oldest first.
 func List(environ []string) ([]Task, error) {
 	dir, err := store.Dir(environ, "task")
@@ -154,13 +129,9 @@ func List(environ []string) ([]Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := load(dir)
-	var groups []int
-	if err == nil {
-		groups, err = reclaim(dir, tasks)
-	}
+	tasks, groups, err := reclaim(dir)
 	unlock()
-	stop(groups)
+	shell.Stop(groups...)
 	return tasks, err
 }
 
@@ -183,7 +154,7 @@ func Show(environ []string, id string) (Task, error) {
 // Work reclaims expired leases, claims the oldest queued task (of agent, if
 // not empty), runs it through shell and records the run. It returns nil when
 // nothing is queued, shell.ErrStopped when ctx is done before the claim, and
-// ErrReclaimed when the lease was lost.
+// errReclaimed, wrapped with the task id, when the lease was lost.
 func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	if agent != "" && !slices.Contains(shell.Agents(), agent) {
 		return nil, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
@@ -191,9 +162,6 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
 		return nil, err
-	}
-	if ctx.Err() != nil {
-		return nil, shell.ErrStopped
 	}
 	t, err := claim(ctx, dir, agent)
 	if t == nil || err != nil {
@@ -217,9 +185,6 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	}
 	run := &Run{Result: res, StartedAt: started, FinishedAt: time.Now().UTC()}
 	done, err := update(dir, t.ID, token, func(t *Task) { t.Status, t.Run, t.Lease = status, run, nil })
-	if errors.Is(err, ErrReclaimed) {
-		return nil, fmt.Errorf("task %s was %w", t.ID, err)
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -238,11 +203,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, error) {
 		unlock()
 		return nil, shell.ErrStopped
 	}
-	tasks, err := load(dir)
-	var groups []int
-	if err == nil {
-		groups, err = reclaim(dir, tasks)
-	}
+	tasks, groups, err := reclaim(dir)
 	var claimed *Task
 	if err == nil {
 		for i := range tasks {
@@ -261,16 +222,20 @@ func claim(ctx context.Context, dir, agent string) (*Task, error) {
 		}
 	}
 	unlock()
-	stop(groups)
+	shell.Stop(groups...)
 	return claimed, err
 }
 
-// reclaim fails every running task whose lease has expired and whose worker
-// is gone, updating tasks in place, and returns the agent process groups to
-// stop once the lock is free. A live worker keeps its task even past the
+// reclaim, under the lock, loads every task and fails each running one whose
+// lease has expired and whose worker is gone. It returns the tasks and the
+// agent process groups to stop once the lock is free. A live worker keeps its task even past the
 // lease: the lease is wall-clock time, and after the machine sleeps it can
 // expire while the worker's own timeout (monotonic) still has time left.
-func reclaim(dir string, tasks []Task) ([]int, error) {
+func reclaim(dir string) ([]Task, []int, error) {
+	tasks, err := load(dir)
+	if err != nil {
+		return nil, nil, err
+	}
 	var groups []int
 	now := time.Now()
 	for i := range tasks {
@@ -278,40 +243,18 @@ func reclaim(dir string, tasks []Task) ([]int, error) {
 		if t.Status != Running || t.Lease == nil || now.Before(t.Lease.ExpiresAt) || alive(t.Lease.WorkerPID) {
 			continue
 		}
-		if stoppable(t.Lease.PGID) {
-			groups = append(groups, t.Lease.PGID)
-		}
+		groups = append(groups, t.Lease.PGID)
 		t.Status, t.Lease = Failed, nil
 		t.Run = &Run{Result: shell.Result{
 			Status: LeaseExpired, Agent: t.Agent,
 			Message: "the worker's lease expired before it recorded a result",
 		}, FinishedAt: now.UTC()}
 		if err := write(dir, *t); err != nil {
-			return groups, err
+			return tasks, groups, err
 		}
 	}
-	return groups, nil
+	return tasks, groups, nil
 }
-
-// stop ends leftover agent process groups: TERM, up to stopGrace, KILL (P10).
-func stop(groups []int) {
-next:
-	for _, pgid := range groups {
-		if syscall.Kill(-pgid, syscall.SIGTERM) != nil {
-			continue // already gone
-		}
-		for deadline := time.Now().Add(stopGrace); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-			if errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) {
-				continue next // gone: no KILL that could reach a reused group id
-			}
-		}
-		_ = syscall.Kill(-pgid, syscall.SIGKILL)
-	}
-}
-
-// stoppable reports whether a recorded process group may be signalled: never
-// 0 or 1 (kill(-1) reaches every process of the user) or aits's own group.
-func stoppable(pgid int) bool { return pgid > 1 && pgid != syscall.Getpgrp() }
 
 // alive reports whether process pid exists.
 func alive(pid int) bool {
@@ -332,7 +275,7 @@ func update(dir, id, token string, fn func(*Task)) (Task, error) {
 		return Task{}, err
 	}
 	if t.Lease == nil || t.Lease.Token != token {
-		return t, ErrReclaimed
+		return t, fmt.Errorf("task %s was %w", id, errReclaimed)
 	}
 	fn(&t)
 	return t, write(dir, t)

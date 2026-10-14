@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -15,7 +14,10 @@ import (
 	"github.com/agent-in-the-shell/aits/internal/store"
 )
 
+// env is a fresh environment with no agent on PATH. shell looks agents up on
+// the process's own PATH, so that is emptied too.
 func env(t *testing.T) []string {
+	t.Setenv("PATH", t.TempDir())
 	return []string{"HOME=" + t.TempDir(), "AITS_HOME=" + t.TempDir(), "PATH=" + t.TempDir()}
 }
 
@@ -40,9 +42,9 @@ func TestCreateValidates(t *testing.T) {
 		"zero timeout":  {Agent: "claude", Cwd: dir, Prompt: "hi"},
 		"bad env name":  {Agent: "claude", Cwd: dir, Prompt: "hi", Timeout: time.Minute, Env: []string{"A=B"}},
 	} {
-		var invalid *InvalidError
+		var invalid *shell.InvalidRequestError
 		if _, err := Create(environ, s); !errors.As(err, &invalid) {
-			t.Errorf("%s: err = %v, want *InvalidError", name, err)
+			t.Errorf("%s: err = %v, want *shell.InvalidRequestError", name, err)
 		}
 	}
 }
@@ -113,8 +115,8 @@ func TestUpdateForeignToken(t *testing.T) {
 	if err := write(dir, tk); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := update(dir, tk.ID, "mine", func(t *Task) { t.Status = Done }); !errors.Is(err, ErrReclaimed) {
-		t.Fatalf("update = %v, want ErrReclaimed", err)
+	if _, err := update(dir, tk.ID, "mine", func(t *Task) { t.Status = Done }); !errors.Is(err, errReclaimed) {
+		t.Fatalf("update = %v, want errReclaimed", err)
 	}
 	if got, _ := Show(environ, tk.ID); got.Status != Running {
 		t.Errorf("record overwritten: %+v", got)
@@ -145,16 +147,6 @@ func TestReclaimSparesLiveWorker(t *testing.T) {
 	}
 }
 
-// Only an agent's own process group may be signalled: never pid 1's group
-// (kill(-1) reaches every process of the user) or aits's own.
-func TestStoppable(t *testing.T) {
-	for pgid, want := range map[int]bool{0: false, 1: false, syscall.Getpgrp(): false, 1 << 22: true} {
-		if got := stoppable(pgid); got != want {
-			t.Errorf("stoppable(%d) = %v, want %v", pgid, got, want)
-		}
-	}
-}
-
 // A signal that arrives while work waits for the lock touches no task.
 func TestWorkStoppedBeforeClaim(t *testing.T) {
 	environ := env(t)
@@ -181,7 +173,7 @@ func TestWorkStoppedBeforeClaim(t *testing.T) {
 // deadPID returns the pid of a process that has exited: a worker that died.
 func deadPID(t *testing.T) int {
 	t.Helper()
-	cmd := exec.Command("true")
+	cmd := exec.Command(os.Args[0], "-test.run=^$") // this test binary; PATH is empty
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -62,19 +61,9 @@ Exit codes:
 				return nil
 			})
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
-				if len(args) != 1 {
-					return 0, usageError("invalid_input", "expected one prompt argument, or - to read it from stdin; got %d", len(args))
-				}
-				prompt := args[0]
-				if prompt == "-" {
-					var err error
-					if prompt, err = readPrompt(ctx, env.Stdin); err != nil {
-						return 0, err
-					}
-				}
-				dir, err := filepath.Abs(*cwd)
+				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
-					return 0, failure("internal", "resolve working directory: %v", err)
+					return 0, err
 				}
 				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, Timeout: *timeout, Env: pass})
 				if err != nil {
@@ -227,11 +216,12 @@ func writeTask(env *Env, t task.Task) {
 
 func taskError(err error) error {
 	var invalid *task.InvalidError
+	var bad *shell.InvalidRequestError
 	switch {
 	case errors.As(err, &invalid):
 		return usageError("invalid_input", "%s", invalid.Reason)
-	case errors.Is(err, shell.ErrStopped):
-		return failure("stopped", "%v", err)
+	case errors.As(err, &bad), errors.Is(err, shell.ErrStopped):
+		return submitError(err)
 	}
 	return failure("internal", "%v", err)
 }

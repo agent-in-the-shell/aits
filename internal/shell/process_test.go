@@ -2,6 +2,7 @@ package shell
 
 import (
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -19,5 +20,15 @@ func TestTailBuffer(t *testing.T) {
 	_, _ = big.Write([]byte(strings.Repeat("x", 100) + "é"))
 	if got := big.String(); got != "xxé" {
 		t.Errorf("tail = %q, want %q", got, "xxé")
+	}
+}
+
+// Only an agent's own process group may be signalled: never pid 1's group
+// (kill(-1) reaches every process of the user) or aits's own.
+func TestStoppable(t *testing.T) {
+	for pgid, want := range map[int]bool{0: false, 1: false, syscall.Getpgrp(): false, 1 << 22: true} {
+		if got := stoppable(pgid); got != want {
+			t.Errorf("stoppable(%d) = %v, want %v", pgid, got, want)
+		}
 	}
 }

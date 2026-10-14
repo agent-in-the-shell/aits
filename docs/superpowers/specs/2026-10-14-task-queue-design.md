@@ -17,7 +17,7 @@ Follow-ups on a task's session come in a later issue.
 | Topic | Decision | Basis |
 |---|---|---|
 | Caller | An AI agent dispatching work to other agents | P2: the issue's use case |
-| Storage | One JSON file per task under `$AITS_HOME/task/`, one `flock` lock for claims | P3, P14: about +40 KB measured; a SQLite driver costs +1.8 MB (cgo, breaks P3) to +4.5 MB (pure Go); no query needs today (P2) |
+| Storage | One JSON file per task under `$AITS_HOME/task/`, one `flock` lock for claims | P3, P14: the whole group measured +94 KB; a SQLite driver costs +1.8 MB (cgo, breaks P3) to +4.5 MB (pure Go); no query needs today (P2) |
 | Running | `task work` claims one task, runs it, records the run, exits; no loop, no daemon | P10 |
 | Lease | Written at claim: random token, worker pid, expiry = task timeout + 1 minute; never renewed | P10; `shell` enforces the timeout itself, so a lease expires only when the worker died |
 | Expired lease | Task set to `failed` (`lease_expired`), its leftover agent process group stopped; never re-queued | Re-running a task with side effects twice is worse than asking the dispatcher to resubmit |
@@ -40,7 +40,11 @@ Follow-ups on a task's session come in a later issue.
 - `internal/cli/task.go`: the `task` group, reusing `nonEmpty`, `readPrompt`
   and the error mapping of `shell submit`.
 - `internal/shell`: `Request.Started func(pgid int)`, called once right after
-  the agent starts; nil means not called.
+  the agent starts; nil means not called. `Request.Validate()` checks a
+  request without the environment it will run in (whether `--env` variables
+  are set is checked by `Submit`), so `create` validates exactly as `submit`
+  does. `Stop(pgids ...int)` ends leftover agent groups with the same
+  TERM/KILL sequence `Submit` uses, never signalling group 0, 1 or its own.
 
 ## 4. Task record
 
@@ -138,8 +142,8 @@ id; exit 1.
 - **P7**: a structural test fails when `os.WriteFile`, `os.MkdirAll` or
   `os.Create` appears in non-test code outside `internal/store`; tests check
   the on-disk modes (0700, 0600).
-- **P14**: the existing CI size check; the change is expected to add about
-  40 KB.
+- **P14**: the existing CI size check; the change adds 94,208 bytes
+  (linux/amd64 release build: 2,691,234 → 2,785,442).
 
 ## 8. Testing
 

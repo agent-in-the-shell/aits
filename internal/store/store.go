@@ -15,9 +15,9 @@ import (
 // Dir returns the directory of group under the root, creating it 0700 and
 // tightening the root and the directory to 0700 if they exist.
 func Dir(environ []string, group string) (string, error) {
-	root := lookup(environ, "AITS_HOME")
+	root := Lookup(environ, "AITS_HOME")
 	if root == "" {
-		home := lookup(environ, "HOME")
+		home := Lookup(environ, "HOME")
 		if home == "" {
 			return "", errors.New("neither AITS_HOME nor HOME is set")
 		}
@@ -69,8 +69,8 @@ func Lock(dir string) (func(), error) {
 	return func() { f.Close() }, nil // closing the file releases the lock
 }
 
-// lookup returns the last value of name in environ, or "".
-func lookup(environ []string, name string) string {
+// Lookup returns the last value of name in environ, or "".
+func Lookup(environ []string, name string) string {
 	val := ""
 	for _, kv := range environ {
 		if k, v, ok := strings.Cut(kv, "="); ok && k == name {

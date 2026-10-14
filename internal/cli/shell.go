@@ -78,19 +78,9 @@ func submitCommand() *Command {
 				return nil
 			})
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
-				if len(args) != 1 {
-					return 0, usageError("invalid_input", "expected one prompt argument, or - to read it from stdin; got %d", len(args))
-				}
-				prompt := args[0]
-				if prompt == "-" {
-					var err error
-					if prompt, err = readPrompt(ctx, env.Stdin); err != nil {
-						return 0, err
-					}
-				}
-				dir, err := filepath.Abs(*cwd)
+				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
-					return 0, failure("internal", "resolve working directory: %v", err)
+					return 0, err
 				}
 				res, err := shell.Submit(ctx, shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
@@ -103,6 +93,23 @@ func submitCommand() *Command {
 			}
 		},
 	}
+}
+
+// promptArgs takes the one prompt argument, read from stdin when it is "-",
+// and makes cwd absolute (shell submit, task create).
+func promptArgs(ctx context.Context, env *Env, args []string, cwd string) (prompt, dir string, err error) {
+	if len(args) != 1 {
+		return "", "", usageError("invalid_input", "expected one prompt argument, or - to read it from stdin; got %d", len(args))
+	}
+	if prompt = args[0]; prompt == "-" {
+		if prompt, err = readPrompt(ctx, env.Stdin); err != nil {
+			return "", "", err
+		}
+	}
+	if dir, err = filepath.Abs(cwd); err != nil {
+		return "", "", failure("internal", "resolve working directory: %v", err)
+	}
+	return prompt, dir, nil
 }
 
 // readPrompt reads all of r, giving up as soon as ctx is done (P10).
