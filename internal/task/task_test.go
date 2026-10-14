@@ -14,12 +14,9 @@ import (
 	"github.com/agent-in-the-shell/aits/internal/store"
 )
 
-// env is a fresh environment with no agent on PATH. shell looks agents up on
-// the process's own PATH, so that is emptied too.
+// env is a fresh environment with no agent on its PATH.
 func env(t *testing.T) []string {
-	empty := t.TempDir()
-	t.Setenv("PATH", empty)
-	return []string{"HOME=" + t.TempDir(), "AITS_HOME=" + t.TempDir(), "PATH=" + empty}
+	return []string{"HOME=" + t.TempDir(), "AITS_HOME=" + t.TempDir(), "PATH=" + t.TempDir()}
 }
 
 func create(t *testing.T, environ []string, agent string) Task {
@@ -175,7 +172,7 @@ func TestWorkStoppedBeforeClaim(t *testing.T) {
 // deadPID returns the pid of a process that has exited: a worker that died.
 func deadPID(t *testing.T) int {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^$") // this test binary; PATH is empty
+	cmd := exec.Command(os.Args[0], "-test.run=^$") // this test binary
 	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
 	}

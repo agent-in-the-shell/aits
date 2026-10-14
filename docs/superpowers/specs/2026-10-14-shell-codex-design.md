@@ -28,8 +28,8 @@ issue.
 
 ## 3. Running Codex
 
-**Lookup.** `codex` on aits's `PATH`; not found → `agent_not_found`, as for
-Claude.
+**Lookup.** `codex` on the `PATH` in the request's environment; not found →
+`agent_not_found`, as for Claude.
 
 **Argv.** `codex exec --json -`. Nothing else.
 

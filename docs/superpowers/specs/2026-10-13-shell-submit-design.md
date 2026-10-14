@@ -69,8 +69,8 @@ All input is validated before anything is started; any failure exits 2 with
 
 ## 5. Running Claude (`internal/shell`)
 
-**Lookup.** `claude` is resolved on aits's own `PATH`. Not found →
-`agent_not_found` error envelope, exit 1, nothing started.
+**Lookup.** `claude` is resolved on the `PATH` in the request's environment.
+Not found → `agent_not_found` error envelope, exit 1, nothing started.
 
 **Argv.** `claude -p --output-format stream-json --verbose`. No permission or
 model flags (P9; out of scope in the issue). The prompt is written to the

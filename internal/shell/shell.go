@@ -35,7 +35,7 @@ type Request struct {
 	Prompt  string         // sent on the agent's stdin, never in argv (P8)
 	Dir     string         // absolute working directory
 	Timeout time.Duration  // must be positive
-	Environ []string       // the caller's environment, KEY=VALUE
+	Environ []string       // the caller's environment, KEY=VALUE; its PATH also finds the agent
 	Pass    []string       // variable names passed from Environ beyond the allowlist (P8)
 	Session string         // a session to continue; empty starts a new one
 	Started func(pgid int) // if set, called once with the agent's process group right after it starts
@@ -53,7 +53,8 @@ type Result struct {
 	Message    string `json:"message,omitempty"`
 }
 
-// ErrAgentNotFound means the agent's executable is not on PATH.
+// ErrAgentNotFound means the agent's executable is not on the PATH in
+// Request.Environ.
 var ErrAgentNotFound = errors.New("agent executable not found")
 
 // ErrStopped means ctx was done before the agent was started (P6).
@@ -133,9 +134,9 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 			return Result{}, invalid("environment variable %s is not set", name)
 		}
 	}
-	path, err := exec.LookPath(ag.executable)
+	path, err := lookPath(req.Environ, ag.executable)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %s is not on PATH", ErrAgentNotFound, ag.executable)
+		return Result{}, err
 	}
 	if ctx.Err() != nil {
 		return Result{}, ErrStopped
@@ -161,4 +162,34 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		res.StderrTail = obs.stderrTail
 	}
 	return res, nil
+}
+
+// lookPath finds name on the PATH the agent is given: the last PATH in
+// environ (P8), never aits's own. A first match in an empty or relative entry
+// is refused, as exec.LookPath does: it would resolve against aits's working
+// directory, not the agent's (P6).
+func lookPath(environ []string, name string) (string, error) {
+	path, set := "", false
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+			path, set = v, true
+		}
+	}
+	if !set {
+		return "", fmt.Errorf("%w: %s is not on PATH (PATH is not set)", ErrAgentNotFound, name)
+	}
+	for _, dir := range filepath.SplitList(path) {
+		file := filepath.Join(dir, name)
+		if !filepath.IsAbs(file) {
+			file = "." + string(filepath.Separator) + file // never a bare name: that searches aits's PATH
+		}
+		if _, err := exec.LookPath(file); err != nil {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			break
+		}
+		return file, nil
+	}
+	return "", fmt.Errorf("%w: %s is not on PATH", ErrAgentNotFound, name)
 }
