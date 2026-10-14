@@ -82,24 +82,34 @@ func TestSubmitTimeoutEscalatesToKill(t *testing.T) {
 func TestSubmitStopped(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
-			t.Run(sig.String(), func(t *testing.T) {
-				bin := vendorAs(t, agent, "sleep")
-				cmd, stdout, stderr := call{path: bin, args: agentArgs(agent, "--json", "hi")}.command(t)
-				if err := cmd.Start(); err != nil {
-					t.Fatal(err)
-				}
-				waitFile(t, filepath.Join(bin, "child.pid"))
-				if err := cmd.Process.Signal(sig); err != nil {
-					t.Fatal(err)
-				}
-				out := finish(t, cmd.Wait(), stdout, stderr)
-				r := decode(t, out.stdout)
-				if out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" {
-					t.Fatalf("code=%d result=%+v", out.code, r)
-				}
-				assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
-				assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
-			})
+			for _, mode := range []string{"--json", "text"} {
+				t.Run(sig.String()+" "+mode, func(t *testing.T) {
+					bin := vendorAs(t, agent, "sleep")
+					args := agentArgs(agent, "hi")
+					if mode == "--json" {
+						args = agentArgs(agent, "--json", "hi")
+					}
+					cmd, stdout, stderr := call{path: bin, args: args}.command(t)
+					if err := cmd.Start(); err != nil {
+						t.Fatal(err)
+					}
+					waitFile(t, filepath.Join(bin, "child.pid"))
+					if err := cmd.Process.Signal(sig); err != nil {
+						t.Fatal(err)
+					}
+					out := finish(t, cmd.Wait(), stdout, stderr)
+					if mode == "--json" {
+						if r := decode(t, out.stdout); out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" || out.stderr != "" {
+							t.Fatalf("code=%d result=%+v stderr=%q", out.code, r, out.stderr)
+						}
+					} else if out.code != 1 || out.stdout != "" ||
+						out.stderr != "aits: stopped: aits was stopped by a signal before the agent finished\nsession: sess-fake-1\n" {
+						t.Fatalf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+					}
+					assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+					assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+				})
+			}
 		}
 	})
 }

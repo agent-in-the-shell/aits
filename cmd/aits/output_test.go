@@ -41,6 +41,10 @@ func TestOutputChannels(t *testing.T) {
 		{name: "bad output", scenario: "not_json", args: submitArgs("hi"), code: 1, result: submitIs("bad_agent_output"),
 			stderr: "aits: bad_agent_output: the agent printed a line that is not a usable JSON event\nsession: sess-fake-1\n"},
 		{name: "ok", scenario: "ok", args: submitArgs("hi"), result: submitIs("ok"), stdout: "fake answer\n", stderr: "session: sess-fake-1\n"},
+		{name: "timeout", scenario: "sleep", args: submitArgs("--timeout", "1s", "hi"), code: 1, result: submitIs("timeout"),
+			stderr: "aits: timeout: the agent did not finish before the timeout\nsession: sess-fake-1\n"},
+		{name: "output too large", scenario: "huge_line", args: submitArgs("hi"), code: 1, result: submitIs("output_too_large"),
+			stderr: "aits: output_too_large: an agent output event exceeded 16 MiB\nsession: sess-fake-1\n"},
 
 		{name: "task create", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"},
 			result: jsonIs(`{"id":"{ID}","status":"queued"}`), stdout: "{ID}\n"},
