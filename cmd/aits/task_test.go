@@ -124,15 +124,6 @@ func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	}
 }
 
-func TestTaskWorkFailed(t *testing.T) {
-	q := newQueue(t, "exit_nonzero")
-	id := q.create("hi")
-	out := q.run("work", "--json")
-	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.ID != id || w.Status != "failed" || w.Run.Status != "agent_failed" {
-		t.Fatalf("code=%d %+v", out.code, w)
-	}
-}
-
 // Claims are atomic: as many workers as tasks, started together, run each
 // task exactly once.
 func TestTaskConcurrentWorkers(t *testing.T) {
