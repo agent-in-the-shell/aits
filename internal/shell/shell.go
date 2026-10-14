@@ -31,13 +31,14 @@ const (
 
 // Request is one prompt to run.
 type Request struct {
-	Agent   string        // one of Agents()
-	Prompt  string        // sent on the agent's stdin, never in argv (P8)
-	Dir     string        // absolute working directory
-	Timeout time.Duration // must be positive
-	Environ []string      // the caller's environment, KEY=VALUE
-	Pass    []string      // variable names passed from Environ beyond the allowlist (P8)
-	Session string        // a session to continue; empty starts a new one
+	Agent   string         // one of Agents()
+	Prompt  string         // sent on the agent's stdin, never in argv (P8)
+	Dir     string         // absolute working directory
+	Timeout time.Duration  // must be positive
+	Environ []string       // the caller's environment, KEY=VALUE
+	Pass    []string       // variable names passed from Environ beyond the allowlist (P8)
+	Session string         // a session to continue; empty starts a new one
+	Started func(pgid int) // if set, called once with the agent's process group right after it starts
 }
 
 // Result describes a run that started.
@@ -67,6 +68,13 @@ func invalid(format string, a ...any) error {
 	return &InvalidRequestError{Reason: fmt.Sprintf(format, a...)}
 }
 
+// Validate checks req without looking at the environment it will run in:
+// whether the --env variables are set is checked by Submit.
+func (r Request) Validate() error {
+	_, err := r.validate()
+	return err
+}
+
 func (r Request) validate() (agent, error) {
 	choices := strings.Join(Agents(), ", ")
 	if r.Agent == "" {
@@ -91,9 +99,6 @@ func (r Request) validate() (agent, error) {
 	for _, name := range r.Pass {
 		if name == "" || strings.Contains(name, "=") {
 			return agent{}, invalid("%q is not an environment variable name", name)
-		}
-		if !isSet(r.Environ, name) {
-			return agent{}, invalid("environment variable %s is not set", name)
 		}
 	}
 	if r.Session != "" && !validSession(r.Session) {
@@ -122,6 +127,11 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	ag, err := req.validate()
 	if err != nil {
 		return Result{}, err
+	}
+	for _, name := range req.Pass {
+		if !isSet(req.Environ, name) {
+			return Result{}, invalid("environment variable %s is not set", name)
+		}
 	}
 	path, err := exec.LookPath(ag.executable)
 	if err != nil {

@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -41,7 +42,6 @@ func TestRequestValidate(t *testing.T) {
 		{"missing dir", func(r *Request) { r.Dir = filepath.Join(dir, "missing") }},
 		{"dir is a file", func(r *Request) { r.Dir = file }},
 		{"zero timeout", func(r *Request) { r.Timeout = 0 }},
-		{"unset pass variable", func(r *Request) { r.Pass = []string{"UNSET"} }},
 		{"bad pass name", func(r *Request) { r.Pass = []string{"A=B"} }},
 		{"empty pass name", func(r *Request) { r.Pass = []string{""} }},
 		{"session starting with a dash", func(r *Request) { r.Session = "-x" }},
@@ -60,5 +60,16 @@ func TestRequestValidate(t *testing.T) {
 				t.Fatalf("validate() = %v, want *InvalidRequestError", err)
 			}
 		})
+	}
+	// Whether a --env variable is set is Submit's check, not Validate's: a
+	// queued task is validated before the worker's environment exists.
+	r := good
+	r.Pass = []string{"UNSET"}
+	if err := r.Validate(); err != nil {
+		t.Errorf("Validate() with an unset variable = %v", err)
+	}
+	var invalid *InvalidRequestError
+	if _, err := Submit(context.Background(), r); !errors.As(err, &invalid) {
+		t.Errorf("Submit() with an unset variable = %v, want *InvalidRequestError", err)
 	}
 }

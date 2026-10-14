@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/agent-in-the-shell/aits/internal/store"
 )
 
 // maxLine bounds one transcript line; longer lines are skipped and counted.
@@ -33,9 +35,9 @@ var vendors = map[string]vendor{
 
 // files lists the vendor's transcript files. A missing root lists nothing.
 func (v vendor) files(environ []string) []string {
-	root := lookup(environ, v.rootVar)
+	root := store.Lookup(environ, v.rootVar)
 	if root == "" {
-		home := lookup(environ, "HOME")
+		home := store.Lookup(environ, "HOME")
 		if home == "" {
 			return nil
 		}
@@ -45,17 +47,6 @@ func (v vendor) files(environ []string) []string {
 	// directories without saying so (a documented limit).
 	paths, _ := filepath.Glob(filepath.Join(escapeGlob(root), v.pattern))
 	return paths
-}
-
-// lookup returns the last value of name in environ, or "".
-func lookup(environ []string, name string) string {
-	val := ""
-	for _, kv := range environ {
-		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
-			val = v
-		}
-	}
-	return val
 }
 
 // escapeGlob quotes the pattern characters of a literal path.

@@ -1,0 +1,81 @@
+// Package store owns every file aits writes (P7): one root, $AITS_HOME
+// (default ~/.local/share/aits), with one directory per command group;
+// directories 0700, files 0600; writes go through a temporary file and a
+// rename, so a reader sees the old file or the new one, never half of one.
+package store
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+)
+
+// Dir returns the directory of group under the root, creating it 0700 and
+// tightening the root and the directory to 0700 if they exist.
+func Dir(environ []string, group string) (string, error) {
+	root := Lookup(environ, "AITS_HOME")
+	if root == "" {
+		home := Lookup(environ, "HOME")
+		if home == "" {
+			return "", errors.New("neither AITS_HOME nor HOME is set")
+		}
+		root = filepath.Join(home, ".local", "share", "aits")
+	}
+	dir := filepath.Join(root, group)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	for _, d := range []string{root, dir} {
+		if err := os.Chmod(d, 0o700); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+// WriteFile replaces path with data through a temporary file in the same
+// directory and a rename. The file is 0600.
+func WriteFile(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(f.Name(), path)
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+	}
+	return err
+}
+
+// Lock takes an exclusive lock on dir/.lock, waiting for it if another
+// process holds it, and returns the function that releases it.
+func Lock(dir string) (func(), error) {
+	f, err := os.OpenFile(filepath.Join(dir, ".lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return func() { f.Close() }, nil // closing the file releases the lock
+}
+
+// Lookup returns the last value of name in environ, or "".
+func Lookup(environ []string, name string) string {
+	val := ""
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
+			val = v
+		}
+	}
+	return val
+}

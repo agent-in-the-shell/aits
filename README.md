@@ -6,8 +6,8 @@ through an OpenAI-compatible gateway — one Go binary, built for AI agents to
 call.
 
 > **Status:** pre-release. `aits shell submit` (Claude Code and Codex, with
-> `--session` to continue) and `aits session search` work; `task` and `model`
-> are planned.
+> `--session` to continue), `aits session search` and `aits task` work;
+> `model` is planned.
 
 ## Install
 
@@ -30,6 +30,12 @@ Find an earlier conversation and its id:
 
     aits session search --json "process group timeout"
 
+Queue work for agents and collect it later:
+
+    id=$(aits task create --agent claude --cwd ~/src/proj "Review internal/session for bugs")
+    aits task work            # in one or more terminals; one task per call
+    aits task show "$id" --json
+
 The full reference is [docs/cli.md](docs/cli.md).
 
 ## Planned command groups
@@ -37,7 +43,7 @@ The full reference is [docs/cli.md](docs/cli.md).
 | Group | Job |
 | --- | --- |
 | `aits shell` | Run a prompt through a vendor agent CLI (Claude Code, Codex) and return the result and session id |
-| `aits task` | A local work queue: create tasks, run them through `shell`, follow up on the same session |
+| `aits task` | A local work queue: create tasks, run them through `shell` (available); follow up on the same session (planned) |
 | `aits session` | Full-text search over vendor transcripts; get back a resumable session id (available) |
 | `aits model` | OpenAI-compatible LLM gateway with routing and fallback |
 

@@ -56,6 +56,9 @@ func run(ctx context.Context, ag agent, path string, req Request) (observation, 
 	if err != nil {
 		return observation{}, fmt.Errorf("start %s: %w", ag.name, err)
 	}
+	if req.Started != nil {
+		req.Started(cmd.Process.Pid) // the agent leads its own group (Setpgid)
+	}
 	return supervise(ctx, cmd, outR, errR, req.Timeout, ag.parse), nil
 }
 
@@ -105,6 +108,25 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 	o.stderrTail = tail.String()
 	return o
 }
+
+// Stop ends agent process groups left by an earlier aits process the way
+// Submit ends its own (P10). Groups 0 and 1 and the caller's own are never
+// signalled: kill(-1) reaches every process of the user.
+func Stop(pgids ...int) {
+	var gs []*group
+	for _, pgid := range pgids {
+		if stoppable(pgid) {
+			g := &group{pgid: pgid}
+			g.terminate()
+			gs = append(gs, g)
+		}
+	}
+	for _, g := range gs {
+		g.settle()
+	}
+}
+
+func stoppable(pgid int) bool { return pgid > 1 && pgid != syscall.Getpgrp() }
 
 // group is the agent's process group (P10).
 type group struct {
