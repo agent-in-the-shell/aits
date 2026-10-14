@@ -207,7 +207,9 @@ Flags:
 
 Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
 {"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}.
-Expired leases of dead workers are reclaimed first.
+Tasks of dead workers are reclaimed first. A running task whose lock file is
+missing cannot be judged: it stays running, with "aits: cannot tell whether
+the worker of task ID is alive: its lock file is missing" on stderr.
 
 A task file that cannot be read (not a regular file named by a task id, not
 JSON, not the record of that id, an unknown status, or running without a
@@ -239,12 +241,13 @@ Task fields (--json):
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
-  lease        While running: token, worker_pid, pgid, expires_at.
+  lease        While running: token, pgid.
   run          Once worked: the "shell submit" result (status, session_id,
                answer, exit_code, duration_ms, stderr_tail, message) plus
                started_at and finished_at. run.status is a shell status,
                not_started (the agent was never started; no started_at), or
-               lease_expired (the worker died; set by the next work or list).
+               worker_died (its worker exited first; set by the next work or
+               list).
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
@@ -273,21 +276,23 @@ Task fields (--json):
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
-  lease        While running: token, worker_pid, pgid, expires_at.
+  lease        While running: token, pgid.
   run          Once worked: the "shell submit" result (status, session_id,
                answer, exit_code, duration_ms, stderr_tail, message) plus
                started_at and finished_at. run.status is a shell status,
                not_started (the agent was never started; no started_at), or
-               lease_expired (the worker died; set by the next work or list).
+               worker_died (its worker exited first; set by the next work or
+               list).
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
 
 With nothing queued, work prints {"status":"empty"} with --json (nothing
-otherwise) and exits 0. A worker whose lease was reclaimed records nothing
-and fails with "task ID was reclaimed after its lease expired". A task file
-that cannot be read is skipped and left as it is, with
-"aits: skipped task ID that could not be read" on stderr.
+otherwise) and exits 0. A worker whose task was reclaimed records nothing
+and fails with "task ID was reclaimed before its run was recorded". A task
+file that cannot be read is skipped and left as it is, with
+"aits: skipped task ID that could not be read" on stderr. Running tasks
+whose lock file is missing are reported as list does.
 
 Exit codes:
   0  The task is done, or nothing was queued.
