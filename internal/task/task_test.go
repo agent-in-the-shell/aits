@@ -3,10 +3,15 @@ package task
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/agent-in-the-shell/aits/internal/shell"
 	"github.com/agent-in-the-shell/aits/internal/store"
 )
 
@@ -82,7 +87,7 @@ func TestReclaim(t *testing.T) {
 		tk      Task
 		expires time.Time
 	}{{expired, time.Now().Add(-time.Second)}, {live, time.Now().Add(time.Hour)}} {
-		x.tk.Status, x.tk.Lease = Running, &Lease{Token: "w", WorkerPID: 1, ExpiresAt: x.expires}
+		x.tk.Status, x.tk.Lease = Running, &Lease{Token: "w", WorkerPID: deadPID(t), ExpiresAt: x.expires}
 		if err := write(dir, x.tk); err != nil {
 			t.Fatal(err)
 		}
@@ -122,5 +127,86 @@ func TestShowUnknown(t *testing.T) {
 		if _, err := Show(env(t), id); !errors.As(err, &invalid) {
 			t.Errorf("Show(%q) err = %v", id, err)
 		}
+	}
+}
+
+// A lease that has expired by the wall clock while its worker is still alive
+// (the laptop slept: shell's timeout uses the monotonic clock) is left alone.
+func TestReclaimSparesLiveWorker(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	tk.Status, tk.Lease = Running, &Lease{Token: "w", WorkerPID: os.Getpid(), ExpiresAt: time.Now().Add(-time.Hour)}
+	if err := write(dir, tk); err != nil {
+		t.Fatal(err)
+	}
+	if tasks, err := List(environ); err != nil || tasks[0].Status != Running {
+		t.Fatalf("List = %+v, %v; want the task still running", tasks, err)
+	}
+}
+
+// Only an agent's own process group may be signalled: never pid 1's group
+// (kill(-1) reaches every process of the user) or aits's own.
+func TestStoppable(t *testing.T) {
+	for pgid, want := range map[int]bool{0: false, 1: false, syscall.Getpgrp(): false, 1 << 22: true} {
+		if got := stoppable(pgid); got != want {
+			t.Errorf("stoppable(%d) = %v, want %v", pgid, got, want)
+		}
+	}
+}
+
+// A signal that arrives while work waits for the lock touches no task.
+func TestWorkStoppedBeforeClaim(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	unlock, err := store.Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { _, err := Work(ctx, environ, ""); done <- err }()
+	time.Sleep(100 * time.Millisecond) // let Work block on the lock
+	cancel()
+	unlock()
+	if err := <-done; !errors.Is(err, shell.ErrStopped) {
+		t.Fatalf("Work err = %v, want shell.ErrStopped", err)
+	}
+	if got, _ := Show(environ, tk.ID); got.Status != Queued || got.Run != nil {
+		t.Errorf("task touched: %+v", got)
+	}
+}
+
+// deadPID returns the pid of a process that has exited: a worker that died.
+func deadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	return cmd.Process.Pid
+}
+
+// The record keeps --env names; values stay in the worker's environment (P8).
+func TestEnvValuesNotStored(t *testing.T) {
+	environ := append(env(t), "AITS_TEST_SECRET=s3cr3t-value")
+	tk, err := Create(environ, Spec{Agent: "claude", Cwd: t.TempDir(), Prompt: "hi", Timeout: time.Minute, Env: []string{"AITS_TEST_SECRET"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Work(context.Background(), environ, ""); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := store.Dir(environ, "task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, tk.ID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(data); !strings.Contains(s, "AITS_TEST_SECRET") || strings.Contains(s, "s3cr3t-value") {
+		t.Fatalf("task file = %s", s)
 	}
 }

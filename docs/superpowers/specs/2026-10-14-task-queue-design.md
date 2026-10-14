@@ -64,8 +64,8 @@ ordered by `created_at` (nanoseconds), since several can share a second.
 - `run`: the fields of `shell.Result`, so answer and stderr are bounded as in
   `shell`; `run.status` is a shell status, or `not_started` when the agent
   could not be started after the claim (agent not on `PATH`, an `--env`
-  variable unset in the worker's environment, start failure), with the
-  reason in `message`.
+  variable unset in the worker's environment, start failure), or
+  `lease_expired` when the worker died (§6), with the reason in `message`.
 
 ## 5. Commands
 
@@ -104,7 +104,7 @@ is generated from help (P13).
 ## 6. Claim, run, reclaim
 
 **Claim**, under the lock: reclaim (below); pick the oldest `queued` task
-(name order) matching `--agent`; set `running` and the lease
+(by `created_at`) matching `--agent`; set `running` and the lease
 (`token` random, `worker_pid`, `expires_at` = now + task timeout + 1 minute,
 RFC 3339 wall clock); write; unlock.
 
@@ -119,10 +119,10 @@ the task was reclaimed: write nothing, print
 `aits: task ID was reclaimed after its lease expired` on stderr, exit 1.
 
 **Reclaim** (before every `work` and `list`): under the lock, every `running`
-task whose `expires_at` has passed becomes `failed` with `message`
-`lease_expired`; after unlocking, for each such task with a non-zero `pgid`
-whose process group still exists: SIGTERM, wait up to 5 seconds, SIGKILL
-(P10). Known limits: a worker that dies between claim and agent start leaves
+task whose `expires_at` has passed and whose worker is no longer alive
+becomes `failed` with run status `lease_expired`; after unlocking, for each such task with a non-zero `pgid`
+whose process group still exists (and is not the caller's own): SIGTERM,
+wait up to 5 seconds, SIGKILL (P10). Known limits: a worker that dies between claim and agent start leaves
 no pgid; a pgid can be reused by an unrelated process group in the meantime.
 
 **Signals**: a signal before the claim gives the `stopped` error envelope,

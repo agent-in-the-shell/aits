@@ -168,7 +168,11 @@ func TestTaskReclaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec["status"] = "running"
-	rec["lease"] = map[string]any{"token": "dead", "worker_pid": 1, "pgid": sleeper.Process.Pid,
+	worker := exec.Command("true") // a worker that has died
+	if err := worker.Run(); err != nil {
+		t.Fatal(err)
+	}
+	rec["lease"] = map[string]any{"token": "dead", "worker_pid": worker.Process.Pid, "pgid": sleeper.Process.Pid,
 		"expires_at": time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)}
 	b, _ = json.Marshal(rec)
 	if err := os.WriteFile(file, b, 0o600); err != nil {

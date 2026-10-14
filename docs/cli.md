@@ -184,6 +184,13 @@ Flags:
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
+
+Output: the task id; with --json {"id":"…","status":"queued"}.
+
+Exit codes:
+  0  Queued.
+  1  The task could not be written.
+  2  Usage error or invalid input; nothing was written.
 ```
 
 ## aits task list
@@ -195,6 +202,15 @@ List tasks, oldest first.
 
 Flags:
   --json  Print the result, or the error, as JSON on stdout.
+
+Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
+{"tasks":[{"id","status","agent","cwd","created_at"}]}. Expired leases of
+dead workers are reclaimed first.
+
+Exit codes:
+  0  Listed.
+  1  The tasks could not be read.
+  2  Usage error.
 ```
 
 ## aits task show
@@ -208,7 +224,7 @@ Flags:
   --json  Print the result, or the error, as JSON on stdout.
 
 Task fields (--json):
-  id           Created by "task create"; ids sort by creation time.
+  id           Created by "task create".
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
@@ -216,13 +232,18 @@ Task fields (--json):
   run          Once worked: the "shell submit" result (status, session_id,
                answer, exit_code, duration_ms, stderr_tail, message) plus
                started_at and finished_at. run.status is a shell status,
-               not_started (the agent could not be started), or
+               not_started (the agent was never started; no started_at), or
                lease_expired (the worker died; set by the next work or list).
 
+Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
+stdout; the session id and why a task failed on stderr.
+
+Errors: invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).
+
 Exit codes:
-  0  Done, or nothing to do.
-  1  The task failed, or the command could not finish.
-  2  Usage error or invalid input; nothing was written.
+  0  The task exists, whatever its status.
+  1  It could not be read.
+  2  Unknown id or usage error.
 ```
 
 ## aits task work
@@ -237,7 +258,7 @@ Flags:
   --json         Print the result, or the error, as JSON on stdout.
 
 Task fields (--json):
-  id           Created by "task create"; ids sort by creation time.
+  id           Created by "task create".
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
@@ -245,13 +266,22 @@ Task fields (--json):
   run          Once worked: the "shell submit" result (status, session_id,
                answer, exit_code, duration_ms, stderr_tail, message) plus
                started_at and finished_at. run.status is a shell status,
-               not_started (the agent could not be started), or
+               not_started (the agent was never started; no started_at), or
                lease_expired (the worker died; set by the next work or list).
 
+Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
+stdout; the session id and why a task failed on stderr.
+
+Errors: invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).
+
+With nothing queued, work prints {"status":"empty"} with --json (nothing
+otherwise) and exits 0. A worker whose lease was reclaimed records nothing
+and fails with "task ID was reclaimed after its lease expired".
+
 Exit codes:
-  0  Done, or nothing to do.
-  1  The task failed, or the command could not finish.
-  2  Usage error or invalid input; nothing was written.
+  0  The task is done, or nothing was queued.
+  1  The task failed, or work could not finish.
+  2  Usage error.
 ```
 
 ## aits help

@@ -4,6 +4,7 @@
 package task
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -69,7 +70,7 @@ type Lease struct {
 // Run is the outcome of working a task.
 type Run struct {
 	shell.Result
-	StartedAt  time.Time `json:"started_at"`
+	StartedAt  time.Time `json:"started_at,omitzero"` // absent when the agent never ran
 	FinishedAt time.Time `json:"finished_at"`
 }
 
@@ -89,7 +90,7 @@ func invalid(format string, a ...any) error { return &InvalidError{fmt.Sprintf(f
 
 // ErrReclaimed means the worker's lease expired and another caller failed the
 // task before the worker could record its run.
-var ErrReclaimed = errors.New("the task was reclaimed after its lease expired")
+var ErrReclaimed = errors.New("reclaimed after its lease expired")
 
 // Create validates s and queues it.
 func Create(environ []string, s Spec) (Task, error) {
@@ -194,7 +195,7 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	if ctx.Err() != nil {
 		return nil, shell.ErrStopped
 	}
-	t, err := claim(dir, agent)
+	t, err := claim(ctx, dir, agent)
 	if t == nil || err != nil {
 		return nil, err
 	}
@@ -216,6 +217,9 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	}
 	run := &Run{Result: res, StartedAt: started, FinishedAt: time.Now().UTC()}
 	done, err := update(dir, t.ID, token, func(t *Task) { t.Status, t.Run, t.Lease = status, run, nil })
+	if errors.Is(err, ErrReclaimed) {
+		return nil, fmt.Errorf("task %s was %w", t.ID, err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -223,11 +227,16 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 }
 
 // claim, under the lock, reclaims expired leases and marks the oldest queued
-// task of agent running with a fresh lease.
-func claim(dir, agent string) (*Task, error) {
+// task of agent running with a fresh lease. A signal that arrived while it
+// waited for the lock claims nothing.
+func claim(ctx context.Context, dir, agent string) (*Task, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
 		return nil, err
+	}
+	if ctx.Err() != nil {
+		unlock()
+		return nil, shell.ErrStopped
 	}
 	tasks, err := load(dir)
 	var groups []int
@@ -256,17 +265,20 @@ func claim(dir, agent string) (*Task, error) {
 	return claimed, err
 }
 
-// reclaim fails every running task whose lease has expired, updating tasks in
-// place, and returns the agent process groups to stop once the lock is free.
+// reclaim fails every running task whose lease has expired and whose worker
+// is gone, updating tasks in place, and returns the agent process groups to
+// stop once the lock is free. A live worker keeps its task even past the
+// lease: the lease is wall-clock time, and after the machine sleeps it can
+// expire while the worker's own timeout (monotonic) still has time left.
 func reclaim(dir string, tasks []Task) ([]int, error) {
 	var groups []int
 	now := time.Now()
 	for i := range tasks {
 		t := &tasks[i]
-		if t.Status != Running || t.Lease == nil || now.Before(t.Lease.ExpiresAt) {
+		if t.Status != Running || t.Lease == nil || now.Before(t.Lease.ExpiresAt) || alive(t.Lease.WorkerPID) {
 			continue
 		}
-		if t.Lease.PGID > 0 {
+		if stoppable(t.Lease.PGID) {
 			groups = append(groups, t.Lease.PGID)
 		}
 		t.Status, t.Lease = Failed, nil
@@ -283,17 +295,28 @@ func reclaim(dir string, tasks []Task) ([]int, error) {
 
 // stop ends leftover agent process groups: TERM, up to stopGrace, KILL (P10).
 func stop(groups []int) {
+next:
 	for _, pgid := range groups {
 		if syscall.Kill(-pgid, syscall.SIGTERM) != nil {
 			continue // already gone
 		}
 		for deadline := time.Now().Add(stopGrace); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 			if errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) {
-				break
+				continue next // gone: no KILL that could reach a reused group id
 			}
 		}
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	}
+}
+
+// stoppable reports whether a recorded process group may be signalled: never
+// 0 or 1 (kill(-1) reaches every process of the user) or aits's own group.
+func stoppable(pgid int) bool { return pgid > 1 && pgid != syscall.Getpgrp() }
+
+// alive reports whether process pid exists.
+func alive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return pid > 0 && (err == nil || errors.Is(err, syscall.EPERM))
 }
 
 // update applies fn to task id under the lock if the caller still holds its
@@ -315,16 +338,21 @@ func update(dir, id, token string, fn func(*Task)) (Task, error) {
 	return t, write(dir, t)
 }
 
-// load reads every task in dir, oldest first. Ids carry the creation second
-// only, so tasks created within one second are ordered by created_at.
+// load reads every task in dir, oldest first by created_at, then by id.
+// (Readdirnames rather than os.ReadDir keeps the binary smaller, P14.)
 func load(dir string) ([]Task, error) {
-	entries, err := os.ReadDir(dir)
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	names, err := f.Readdirnames(-1)
+	f.Close()
 	if err != nil {
 		return nil, err
 	}
 	var tasks []Task
-	for _, e := range entries {
-		if name := e.Name(); strings.HasSuffix(name, ".json") && !strings.HasPrefix(name, ".") {
+	for _, name := range names {
+		if strings.HasSuffix(name, ".json") && !strings.HasPrefix(name, ".") {
 			t, err := read(filepath.Join(dir, name))
 			if err != nil {
 				return nil, err
@@ -332,7 +360,9 @@ func load(dir string) ([]Task, error) {
 			tasks = append(tasks, t)
 		}
 	}
-	slices.SortStableFunc(tasks, func(a, b Task) int { return a.CreatedAt.Compare(b.CreatedAt) })
+	slices.SortFunc(tasks, func(a, b Task) int {
+		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
+	})
 	return tasks, nil
 }
 
