@@ -27,7 +27,10 @@ behaviour the earlier implementation had, say so and why.
 ## Tests
 
 Run `go test ./...`. CI runs it on Linux and macOS with `HOME` read-only, plus
-`gofmt -l .` and `go vet ./...`.
+`gofmt -l .`, `go vet ./...` and staticcheck, which also reports unused code
+(P2). Run the same staticcheck locally with:
+
+    go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 -tags live ./...
 
 - Functional tests build `aits` and run the binary against fake vendors, with
   a temporary `AITS_HOME` and `HOME` and no network or accounts (P12).

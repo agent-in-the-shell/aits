@@ -42,11 +42,14 @@ jobs:
             echo "GOCACHE=$RUNNER_TEMP/gocache"
             echo "GOMODCACHE=$RUNNER_TEMP/gomodcache"
             echo "GOPATH=$RUNNER_TEMP/gopath"
+            echo "STATICCHECK_CACHE=$RUNNER_TEMP/staticcheck-cache"
             echo "HOME=$ro"
           } >> "$GITHUB_ENV"
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - name: go vet
         run: go vet ./...
+      - name: staticcheck (P2)
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 -tags live ./...
       - name: go test
         run: go test ./...
