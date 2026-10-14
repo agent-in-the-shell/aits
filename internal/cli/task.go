@@ -216,8 +216,11 @@ func writeTask(env *Env, t task.Task) {
 
 func taskError(err error) error {
 	var invalid *shell.InvalidRequestError
-	if errors.As(err, &invalid) || errors.Is(err, shell.ErrStopped) {
-		return submitError(err)
+	switch {
+	case errors.As(err, &invalid):
+		return usageError("invalid_input", "%s", invalid.Reason)
+	case errors.Is(err, shell.ErrStopped):
+		return failure("stopped", "%v", err)
 	}
 	return failure("internal", "%v", err)
 }
