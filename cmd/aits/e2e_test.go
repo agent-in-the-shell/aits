@@ -424,8 +424,8 @@ func TestSubmitResume(t *testing.T) {
 	})
 }
 
-// A session id goes into the agent's argv, so one that could be read as a
-// flag is refused before anything starts (P6).
+// A session id goes into the agent's argv, so an empty one, or one that could
+// be read as a flag, is refused before anything starts (P6).
 func TestSubmitInvalidSession(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		for _, id := range []string{"", "--dangerously-skip-permissions"} {
