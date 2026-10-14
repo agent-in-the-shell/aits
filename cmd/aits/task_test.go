@@ -475,3 +475,85 @@ func TestTaskUnreadableFiles(t *testing.T) {
 		}
 	})
 }
+
+// lockDir takes the task directory's lock, as another aits command would.
+func (q queue) lockDir() func() {
+	q.t.Helper()
+	f, err := os.OpenFile(filepath.Join(q.home, "task", ".lock"), os.O_RDWR, 0)
+	if err == nil {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+	}
+	if err != nil {
+		q.t.Fatal(err)
+	}
+	return func() { f.Close() }
+}
+
+// claimThenHoldDir queues task a (with flags), oldest, and a dead worker's
+// task whose leftover group ignores SIGTERM, so that work's claim, after
+// marking a running, waits to stop that group before it starts a's agent. It
+// starts work, waits for the claim, takes the directory lock, checks that a's
+// agent has not started yet, and then kills the group so that the agent
+// starts while the test holds the lock.
+func claimThenHoldDir(t *testing.T, q queue, flags ...string) (string, *started, func()) {
+	t.Helper()
+	a := q.create("hi", flags...)
+	b := q.create("dead")
+	g := exec.Command("sh", "-c", "trap '' TERM; exec sleep 60")
+	g.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := g.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = g.Wait() }()
+	q.setRunning(b, map[string]any{"token": "dead", "pgid": g.Process.Pid})
+	q.writeLockFile(b)
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	q.waitLease(a, 0)
+	unlock := q.lockDir()
+	if r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout); r.Lease == nil || r.Lease.PGID != 0 {
+		t.Fatalf("the agent started before the test held the directory lock: %+v", r.Lease)
+	}
+	if err := syscall.Kill(-g.Process.Pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	return a, s, unlock
+}
+
+// A worker killed after its agent started, while another command holds the
+// directory lock, has still recorded the agent's group: the next list stops
+// it instead of leaving it to run unsupervised (P10, #44).
+func TestTaskWorkerKilledBeforePgid(t *testing.T) {
+	q := newQueue(t, "sleep")
+	a, s, unlock := claimThenHoldDir(t, q)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	agent := readPID(t, filepath.Join(q.path, "child.pid"))
+	q.waitLease(a, agent) // recorded while the directory lock is held
+	if err := s.cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	s.waitOrKill(t, 10*time.Second)
+	unlock()
+	if out := q.run("list"); out.code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+		t.Errorf("after the worker was killed: %+v", r)
+	}
+	assertGone(t, agent)
+	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
+}
+
+// A run's timeout counts from its agent's start, however long another command
+// holds the directory lock (#44).
+func TestTaskTimeoutWhileDirLocked(t *testing.T) {
+	q := newQueue(t, "sleep")
+	_, s, unlock := claimThenHoldDir(t, q, "--timeout", "1s")
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	assertGone(t, readPID(t, filepath.Join(q.path, "child.pid")))
+	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
+	unlock()
+	out := s.waitOrKill(t, 15*time.Second)
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "timeout" {
+		t.Errorf("work: code=%d %+v", out.code, w)
+	}
+}

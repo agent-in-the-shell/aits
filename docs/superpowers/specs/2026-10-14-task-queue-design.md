@@ -127,8 +127,9 @@ its run is recorded; the agent does not inherit it.
 
 **Run**, without the lock: `shell.Submit` with the task's agent, cwd, prompt,
 timeout, the worker's environment and the task's `--env` names. `Started`
-takes the lock, writes the pgid into the lease if the token still matches,
-and unlocks.
+writes the pgid into the lease if the token still matches, without the
+directory lock: the worker holds the task's lock, so it is the only writer of
+its running record (#44).
 
 **Record**, under the lock: re-read the task; if the lease token is still this
 worker's, write `run` and set `done` (run status `ok`) or `failed`; if not,

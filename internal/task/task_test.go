@@ -404,3 +404,36 @@ func TestReclaimLockSymlink(t *testing.T) {
 		t.Errorf("task changed: %+v", got)
 	}
 }
+
+// A worker writes its pgid without waiting for the directory lock: while
+// another command holds it, a killed worker would otherwise leave its agent
+// unrecorded (P10). (Its token check is update's, see TestUpdateForeignToken.)
+func TestModifyWithoutDirLock(t *testing.T) {
+	environ := env(t)
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	tk.Status, tk.Lease = Running, &Lease{Token: "w"}
+	if err := write(dir, tk); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := store.Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	done := make(chan error, 1)
+	go func() {
+		_, err := modify(dir, tk.ID, "w", func(t *Task) { t.Lease.PGID = 4242 })
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		got, rerr := read(dir, tk.ID)
+		tk.Lease.PGID = 4242
+		if err != nil || rerr != nil || *got.Lease != *tk.Lease || got.Status != Running || !got.CreatedAt.Equal(tk.CreatedAt) {
+			t.Errorf("modify = %v; record %+v, %v", err, got, rerr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("modify waited for the directory lock")
+	}
+}

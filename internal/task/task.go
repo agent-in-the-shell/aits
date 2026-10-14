@@ -174,7 +174,11 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, Notes, er
 	req := t.request(environ)
 	req.Started = func(pgid int) {
 		started = time.Now().UTC()
-		_, _ = update(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid })
+		// Not update: waiting for the directory lock would leave a window, as
+		// long as another command holds it, in which a killed worker's agent
+		// is unrecorded and never stopped (P10). As holder of the task's lock
+		// the worker is the only writer of its running record.
+		_, _ = modify(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid })
 	}
 	res, err := shell.Submit(ctx, req)
 	if err != nil {
@@ -254,6 +258,18 @@ func reclaim(dir string) (snapshot, []int, error) {
 		case err != nil:
 			return s, groups, fmt.Errorf("task %s: %w", t.ID, err)
 		}
+		// Re-read: the worker writes its pgid without the directory lock, so it
+		// may have done so since load. (The error branch has no test: a write
+		// between load and here cannot be forced without a test seam, P2.)
+		cur, err := read(dir, t.ID)
+		if err != nil {
+			release()
+			return s, groups, err
+		}
+		if *t = cur; t.Status != Running {
+			release()
+			continue
+		}
 		groups = append(groups, t.Lease.PGID)
 		t.Status, t.Lease = Failed, nil
 		t.Run = &Run{Result: shell.Result{
@@ -270,14 +286,20 @@ func reclaim(dir string) (snapshot, []int, error) {
 	return s, groups, nil
 }
 
-// update applies fn to task id under the lock if the caller still holds its
-// lease (token), and writes it back.
+// update applies fn to task id under the directory lock if the caller still
+// holds its lease (token), and writes it back.
 func update(dir, id, token string, fn func(*Task)) (Task, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
 		return Task{}, err
 	}
 	defer unlock()
+	return modify(dir, id, token, fn)
+}
+
+// modify is update without the directory lock, for a worker writing its own
+// running record while it holds the task's lock.
+func modify(dir, id, token string, fn func(*Task)) (Task, error) {
 	t, err := read(dir, id)
 	if err != nil {
 		return Task{}, err
