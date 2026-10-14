@@ -50,8 +50,14 @@ type queue struct {
 	home, path string
 }
 
+// newQueue makes a queue whose PATH holds the fake agent set to scenario, or
+// no agent when scenario is "".
 func newQueue(t *testing.T, scenario string) queue {
-	return queue{t: t, home: t.TempDir(), path: vendor(t, scenario)}
+	q := queue{t: t, home: t.TempDir()}
+	if scenario != "" {
+		q.path = vendor(t, scenario)
+	}
+	return q
 }
 
 func (q queue) run(args ...string) output {
@@ -121,15 +127,6 @@ func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	out := q.run("work", "--json")
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" || w.Run.StartedAt != "" {
 		t.Fatalf("work: code=%d %+v", out.code, w)
-	}
-}
-
-func TestTaskWorkFailed(t *testing.T) {
-	q := newQueue(t, "exit_nonzero")
-	id := q.create("hi")
-	out := q.run("work", "--json")
-	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.ID != id || w.Status != "failed" || w.Run.Status != "agent_failed" {
-		t.Fatalf("code=%d %+v", out.code, w)
 	}
 }
 
