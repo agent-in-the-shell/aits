@@ -117,8 +117,9 @@ Output:
   With --json, stdout is one JSON object:
   {"results":[...],"skipped":{"files":N,"lines":N}}. Without --json, each
   result is a line "UPDATED_AT  AGENT  SESSION_ID  CWD" and an indented
-  snippet, and anything skipped is reported on stderr. No match is not an
-  error.
+  snippet, and anything skipped is reported on stderr. Text output shows
+  control characters from transcripts as Go escapes (\x1b, \r); --json
+  carries the original text. No match is not an error.
 
 Result fields:
   agent        The agent whose transcript matched.
