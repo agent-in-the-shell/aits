@@ -174,7 +174,7 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, Notes, er
 	req := t.request(environ)
 	req.Started = func(pgid int) {
 		started = time.Now().UTC()
-		_, _ = update(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid })
+		_ = setPGID(dir, t.ID, token, pgid)
 	}
 	res, err := shell.Submit(ctx, req)
 	if err != nil {
@@ -254,6 +254,16 @@ func reclaim(dir string) (snapshot, []int, error) {
 		case err != nil:
 			return s, groups, fmt.Errorf("task %s: %w", t.ID, err)
 		}
+		cur, err := read(dir, t.ID) // the worker may have recorded its agent since load
+		if err != nil {
+			release()
+			return s, groups, err
+		}
+		if cur.Status != Running {
+			release()
+			continue
+		}
+		*t = cur
 		groups = append(groups, t.Lease.PGID)
 		t.Status, t.Lease = Failed, nil
 		t.Run = &Run{Result: shell.Result{
@@ -268,6 +278,23 @@ func reclaim(dir string) (snapshot, []int, error) {
 	}
 	slices.Sort(s.Unknown)
 	return s, groups, nil
+}
+
+// setPGID records the agent's process group in task id if the caller still
+// holds its lease (token). It does not wait for the directory lock: the
+// caller holds the task's lock, so nobody else writes a running record, and
+// waiting would leave a window, as long as another command holds that lock,
+// in which a killed worker's agent is unrecorded and never stopped (P10).
+func setPGID(dir, id, token string, pgid int) error {
+	t, err := read(dir, id)
+	if err != nil {
+		return err
+	}
+	if t.Lease == nil || t.Lease.Token != token {
+		return fmt.Errorf("task %s was %w", id, errReclaimed)
+	}
+	t.Lease.PGID = pgid
+	return write(dir, t)
 }
 
 // update applies fn to task id under the lock if the caller still holds its

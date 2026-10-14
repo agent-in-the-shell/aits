@@ -2,6 +2,8 @@
 
 - Status: approved
 - Issue: #37
+- Revised: #44 — the pgid is written without D; reclaim re-reads the record
+  under L
 - Revises: `2026-10-14-task-queue-design.md` §2 (Lease, Expired lease), §3,
   §4, §6, §8
 - Principles: P2, P3, P5, P6, P7, P10, P12, P13, P14 (see `docs/principles.md`)
@@ -79,7 +81,12 @@ The worker keeps L. Locking before the write means there is never a
 
 **Run**, without D: `shell.Submit`.
 - The agent does not inherit L.
-- The `Started` callback writes the pgid under D, as today.
+- The `Started` callback writes the pgid without D (#44): it re-reads the
+  record, checks the token and writes it (temp file and rename). As holder
+  of L the worker is the only writer of its running record, and waiting for
+  D would leave a window, as long as another command holds D, in which a
+  killed worker's agent is unrecorded and never stopped. It also lets the
+  run's timeout start when the agent does.
 
 **Record**, under D: re-read the task.
 - Token still the worker's: write `run` and `done` or `failed`.
@@ -91,7 +98,9 @@ file is not closed by a finalizer.
 
 **Reclaim**, under D (before every `list` and `work`), for each `running`
 task, `TryLock(<id>.lock, create=false)`:
-- **lock obtained**: the worker is gone. Set `failed`, `lease: null`, `run`
+- **lock obtained**: the worker is gone. Re-read the record (the worker may
+  have written its pgid since the load; a failed re-read is returned as an
+  error and leaves the task unchanged). Set `failed`, `lease: null`, `run`
   with status `worker_died`, its message and `finished_at`. Write the task,
   release L, and collect its non-zero `pgid` to stop after D is released
   (`shell.Stop`, as today).
@@ -125,6 +134,12 @@ ignored, and a running record with a lease stays valid.
 - A worker that dies between claim and agent start leaves no pgid. A pgid
   can be reused by an unrelated group. Both are unchanged from the task-queue
   design §6.
+- A worker killed during `cmd.Start` or during its pgid write (well under a
+  millisecond, measured in #44) still leaves no pgid, and its agent is not
+  stopped; `os/exec` cannot name the group before the child exists.
+- Without D, the pgid write's token check and write are not atomic: if a
+  lock file is removed by hand, a reclaim or claim that writes the record
+  during that write can be undone by it.
 
 ## 6. Testing
 
@@ -179,6 +194,17 @@ Functional, `cmd/aits` (built binary, fake vendor):
     stays `queued` with `lease` null.
 - `taskRecord.Lease` has only `token` and `pgid`, so strict decoding fails if
   the old fields come back.
+- From #44, with a fixture whose claim stops a dead worker's group that
+  ignores SIGTERM, so the test can take D between claim and agent start:
+  - `TestTaskWorkerKilledBeforePgid`: while the test holds D, the agent's
+    pgid is still recorded; the worker is then SIGKILLed, and one `list`
+    makes the task `worker_died` and stops the agent and its child;
+  - `TestTaskTimeoutWhileDirLocked`: a 1 s timeout ends the agent while the
+    test still holds D.
+- Unit, from #44: `TestSetPGID`, `TestSetPGIDForeignToken` (writes nothing)
+  and `TestSetPGIDWithoutDirLock` (returns while D is held).
+- Not covered by a test: the reclaim re-read itself (a write between `load`
+  and the try-lock cannot be forced without a test seam, P2).
 
 Verification beyond tests:
 - a mutation check per branch, for example reclaim creating the lock file,

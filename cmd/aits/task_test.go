@@ -475,3 +475,108 @@ func TestTaskUnreadableFiles(t *testing.T) {
 		}
 	})
 }
+
+// lockDir takes the task directory's lock, as another aits command would.
+func (q queue) lockDir() func() {
+	q.t.Helper()
+	f, err := os.OpenFile(filepath.Join(q.home, "task", ".lock"), os.O_RDWR, 0)
+	if err == nil {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+	}
+	if err != nil {
+		q.t.Fatal(err)
+	}
+	return func() { f.Close() }
+}
+
+// slowClaim queues task a, oldest, and a dead worker's task whose leftover
+// group ignores SIGTERM, so that work's claim stops it for killGrace (5 s)
+// after marking a running and before starting a's agent: room for the test
+// to take the directory lock first.
+func slowClaim(t *testing.T, q queue, flags ...string) string {
+	t.Helper()
+	a := q.create("hi", flags...)
+	b := q.create("dead")
+	g := exec.Command("sh", "-c", "trap '' TERM; exec sleep 60")
+	g.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := g.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = g.Wait() }()
+	q.setRunning(b, map[string]any{"token": "dead", "pgid": g.Process.Pid})
+	q.writeLockFile(b)
+	return a
+}
+
+// holdDirAfterClaim starts work, waits until it has claimed a, takes the
+// directory lock and checks that a's agent has not started yet.
+func holdDirAfterClaim(t *testing.T, q queue, a string) (*started, func()) {
+	t.Helper()
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if decodeOne[taskRecord](t, q.run("show", a, "--json").stdout).Status == "running" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("work did not claim the task")
+		}
+	}
+	unlock := q.lockDir()
+	if _, err := os.Stat(filepath.Join(q.path, "child.pid")); err == nil {
+		t.Fatal("the agent started before the test held the directory lock")
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout); r.Lease == nil || r.Lease.PGID != 0 {
+		t.Fatalf("the agent started before the test held the directory lock: %+v", r.Lease)
+	}
+	return s, unlock
+}
+
+// A worker killed after its agent started, while another command holds the
+// directory lock, has still recorded the agent's group: the next list stops
+// it instead of leaving it to run unsupervised (P10, #44).
+func TestTaskWorkerKilledBeforePgid(t *testing.T) {
+	t.Parallel() // waits out a 5 s stop
+	q := newQueue(t, "sleep")
+	a := slowClaim(t, q)
+	s, unlock := holdDirAfterClaim(t, q, a)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	agent := readPID(t, filepath.Join(q.path, "child.pid"))
+	recorded := false
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline) && !recorded; time.Sleep(20 * time.Millisecond) {
+		r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout)
+		recorded = r.Lease != nil && r.Lease.PGID == agent
+	}
+	if !recorded {
+		t.Errorf("the agent's group was not recorded while the directory lock was held")
+	}
+	if err := s.cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	s.waitOrKill(t, 10*time.Second)
+	unlock()
+	if out := q.run("list"); out.code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+		t.Errorf("after the worker was killed: %+v", r)
+	}
+	assertGone(t, agent)
+	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
+}
+
+// A run's timeout counts from its agent's start, however long another command
+// holds the directory lock (#44).
+func TestTaskTimeoutWhileDirLocked(t *testing.T) {
+	t.Parallel() // waits out a 5 s stop
+	q := newQueue(t, "sleep")
+	a := slowClaim(t, q, "--timeout", "1s")
+	s, unlock := holdDirAfterClaim(t, q, a)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	assertGone(t, readPID(t, filepath.Join(q.path, "child.pid")))
+	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
+	unlock()
+	out := s.waitOrKill(t, 15*time.Second)
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "timeout" {
+		t.Errorf("work: code=%d %+v", out.code, w)
+	}
+}

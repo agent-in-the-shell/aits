@@ -404,3 +404,61 @@ func TestReclaimLockSymlink(t *testing.T) {
 		t.Errorf("task changed: %+v", got)
 	}
 }
+
+// runningTask writes a running task whose lease has token, as a claim does.
+func runningTask(t *testing.T, environ []string, token string) (string, Task) {
+	t.Helper()
+	tk := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	tk.Status, tk.Lease = Running, &Lease{Token: token}
+	if err := write(dir, tk); err != nil {
+		t.Fatal(err)
+	}
+	return dir, tk
+}
+
+// The worker records its agent's group in its own running record.
+func TestSetPGID(t *testing.T) {
+	dir, tk := runningTask(t, env(t), "w")
+	if err := setPGID(dir, tk.ID, "w", 4242); err != nil {
+		t.Fatal(err)
+	}
+	got, err := read(dir, tk.ID)
+	tk.Lease.PGID = 4242
+	if err != nil || got.Lease == nil || *got.Lease != *tk.Lease || got.Status != Running || got.CreatedAt != tk.CreatedAt {
+		t.Errorf("record = %+v, %v", got, err)
+	}
+}
+
+// A worker that lost its lease writes nothing.
+func TestSetPGIDForeignToken(t *testing.T) {
+	dir, tk := runningTask(t, env(t), "other")
+	before, _ := os.ReadFile(path(dir, tk.ID))
+	if err := setPGID(dir, tk.ID, "w", 4242); !errors.Is(err, errReclaimed) {
+		t.Fatalf("setPGID = %v, want errReclaimed", err)
+	}
+	if after, _ := os.ReadFile(path(dir, tk.ID)); string(after) != string(before) {
+		t.Errorf("record changed: %s", after)
+	}
+}
+
+// The pgid write never waits for the directory lock: while another command
+// holds it, a killed worker would otherwise leave its agent unrecorded (P10).
+func TestSetPGIDWithoutDirLock(t *testing.T) {
+	dir, tk := runningTask(t, env(t), "w")
+	unlock, err := store.Lock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	done := make(chan error, 1)
+	go func() { done <- setPGID(dir, tk.ID, "w", 4242) }()
+	select {
+	case err := <-done:
+		if got, _ := read(dir, tk.ID); err != nil || got.Lease.PGID != 4242 {
+			t.Errorf("setPGID = %v, record %+v", err, got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("setPGID waited for the directory lock")
+	}
+}
