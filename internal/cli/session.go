@@ -68,8 +68,9 @@ func searchCommand() *Command {
 		Summary: "Find conversations that contain every term, with an id to continue them.",
 		Details: searchDetails,
 		Setup: func(fs *flag.FlagSet) Runner {
-			agent := fs.String("agent", "", "Search only `AGENT`'s transcripts. One of: "+strings.Join(session.Agents(), ", ")+".")
-			cwd := fs.String("cwd", "", "Only sessions whose working directory is `DIR` or below it, with or without symlinks resolved.")
+			agents := strings.Join(session.Agents(), ", ")
+			agent := nonEmpty(fs, "agent", "Search only `AGENT`'s transcripts. One of: "+agents+".", "an agent (one of: "+agents+")")
+			cwd := nonEmpty(fs, "cwd", "Only sessions whose working directory is `DIR` or below it, with or without symlinks resolved.", "a directory")
 			var since time.Duration
 			fs.Func("since", "Only transcripts changed within `DURATION`, e.g. 72h.", func(v string) error {
 				d, err := time.ParseDuration(v)
