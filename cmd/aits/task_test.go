@@ -114,6 +114,32 @@ func TestTaskInvalidInput(t *testing.T) {
 	}
 }
 
+// started_at is present only when the agent was started (help, spec §4).
+func TestTaskStartedAt(t *testing.T) {
+	q := newQueue(t, "ok")
+	notStarted := q.run("create", "--agent", "claude", "--cwd", t.TempDir(), "--env", "AITS_TEST_UNSET", "--json", "hi")
+	if out := q.run("work", "--json"); out.code != 1 {
+		t.Fatalf("work (not started): code=%d stdout=%q", out.code, out.stdout)
+	}
+	done := q.create("hi")
+	if out := q.run("work", "--json"); out.code != 0 {
+		t.Fatalf("work (done): code=%d stdout=%q", out.code, out.stdout)
+	}
+	var created struct{ ID string }
+	if err := json.Unmarshal([]byte(notStarted.stdout), &created); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{created.ID: false, done: true} {
+		var rec struct{ Run map[string]any }
+		if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &rec); err != nil || rec.Run == nil {
+			t.Fatalf("show %s: %v %+v", id, err, rec)
+		}
+		if _, ok := rec.Run["started_at"]; ok != want {
+			t.Errorf("show %s: run %v, want started_at present = %v", id, rec.Run, want)
+		}
+	}
+}
+
 func TestTaskWorkFailed(t *testing.T) {
 	q := newQueue(t, "exit_nonzero")
 	id := q.create("hi")

@@ -35,8 +35,6 @@ const taskFields = `Task fields (--json):
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
-
-Errors: invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).
 `
 
 func taskCreate() *Command {
@@ -50,6 +48,8 @@ Exit codes:
   0  Queued.
   1  The task could not be written.
   2  Usage error or invalid input; nothing was written.
+
+Errors: invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).
 `,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required). One of: "+strings.Join(shell.Agents(), ", ")+".")
@@ -92,6 +92,8 @@ Exit codes:
   0  Listed.
   1  The tasks could not be read.
   2  Usage error.
+
+Errors: invalid_input (exit 2); internal (exit 1).
 `,
 		Setup: func(*flag.FlagSet) Runner {
 			return func(_ context.Context, env *Env, args []string) (int, error) {
@@ -136,6 +138,8 @@ Exit codes:
   0  The task exists, whatever its status.
   1  It could not be read.
   2  Unknown id or usage error.
+
+Errors: invalid_input (exit 2); internal (exit 1).
 `,
 		Setup: func(*flag.FlagSet) Runner {
 			return func(_ context.Context, env *Env, args []string) (int, error) {
@@ -166,6 +170,8 @@ Exit codes:
   0  The task is done, or nothing was queued.
   1  The task failed, or work could not finish.
   2  Usage error.
+
+Errors: invalid_input (exit 2); stopped, internal (exit 1).
 `,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := nonEmpty(fs, "agent", "Only claim tasks for `AGENT`.", "an agent (one of: "+strings.Join(shell.Agents(), ", ")+")")

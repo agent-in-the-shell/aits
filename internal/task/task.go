@@ -172,7 +172,7 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, error) {
 	}
 	res, err := shell.Submit(ctx, req)
 	if err != nil {
-		res = shell.Result{Status: NotStarted, Agent: t.Agent, Message: err.Error()}
+		res, started = shell.Result{Status: NotStarted, Agent: t.Agent, Message: err.Error()}, time.Time{}
 	}
 	status := Failed
 	if res.Status == shell.StatusOK {
