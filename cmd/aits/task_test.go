@@ -45,6 +45,19 @@ type taskRecord struct {
 	} `json:"run"`
 }
 
+// taskList is the --json output of task list; decoding rejects any field not
+// listed here (P5).
+type taskList struct {
+	Tasks []struct {
+		ID        string `json:"id"`
+		Status    string `json:"status"`
+		Agent     string `json:"agent"`
+		Cwd       string `json:"cwd"`
+		CreatedAt string `json:"created_at"`
+	} `json:"tasks"`
+	Skipped []string `json:"skipped"`
+}
+
 // queue is a shared AITS_HOME and fake-agent PATH for one test.
 type queue struct {
 	t          *testing.T
@@ -64,6 +77,17 @@ func newQueue(t *testing.T, scenario string) queue {
 func (q queue) run(args ...string) output {
 	q.t.Helper()
 	return call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append([]string{"task"}, args...)}.run(q.t)
+}
+
+// writeTaskFile writes body as the task file of id, as something other than
+// aits would.
+func (q queue) writeTaskFile(id, body string, mode os.FileMode) string {
+	q.t.Helper()
+	file := filepath.Join(q.home, "task", id+".json")
+	if err := os.WriteFile(file, []byte(body), mode); err != nil {
+		q.t.Fatal(err)
+	}
+	return file
 }
 
 func (q queue) create(prompt string, flags ...string) string {
@@ -187,9 +211,7 @@ func TestTaskReclaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An unreadable file next to it does not stop the reclaim.
-	if err := os.WriteFile(filepath.Join(q.home, "task", "20261014T000000-bad000.json"), []byte("garbage"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	q.writeTaskFile("20261014T000000-bad000", "garbage", 0o600)
 	if out := q.run("list"); out.code != 0 {
 		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
 	}
@@ -222,32 +244,13 @@ func TestTaskWorkStopped(t *testing.T) {
 // why (P6).
 func TestTaskUnreadableFiles(t *testing.T) {
 	const skip = "aits: skipped task %s that could not be read\n"
-	type listing struct {
-		Tasks []struct {
-			ID        string `json:"id"`
-			Status    string `json:"status"`
-			Agent     string `json:"agent"`
-			Cwd       string `json:"cwd"`
-			CreatedAt string `json:"created_at"`
-		} `json:"tasks"`
-		Skipped []string `json:"skipped"`
-	}
-	// bad writes body to the task file of id in q.
-	bad := func(q queue, id, body string, mode os.FileMode) string {
-		q.t.Helper()
-		file := filepath.Join(q.home, "task", id+".json")
-		if err := os.WriteFile(file, []byte(body), mode); err != nil {
-			q.t.Fatal(err)
-		}
-		return file
-	}
 
 	t.Run("garbage", func(t *testing.T) {
 		q := newQueue(t, "ok")
 		a := q.create("hi")
-		file := bad(q, "20261014T000000-bad000", "garbage", 0o600)
+		file := q.writeTaskFile("20261014T000000-bad000", "garbage", 0o600)
 		out := q.run("list", "--json")
-		l := decodeOne[listing](t, out.stdout)
+		l := decodeOne[taskList](t, out.stdout)
 		if out.code != 0 || out.stderr != "" || len(l.Tasks) != 1 || l.Tasks[0].ID != a || !slices.Equal(l.Skipped, []string{"20261014T000000-bad000"}) {
 			t.Errorf("list --json: code=%d %+v stderr=%q", out.code, l, out.stderr)
 		}
@@ -270,13 +273,13 @@ func TestTaskUnreadableFiles(t *testing.T) {
 	t.Run("empty and unreadable", func(t *testing.T) {
 		q := newQueue(t, "ok")
 		q.create("hi")
-		bad(q, "20261014T000000-bad001", "", 0o600)
+		q.writeTaskFile("20261014T000000-bad001", "", 0o600)
 		want := []string{"20261014T000000-bad001"}
 		if os.Geteuid() != 0 {
-			bad(q, "20261014T000000-bad002", "{}", 0o000)
+			q.writeTaskFile("20261014T000000-bad002", "{}", 0o000)
 			want = append(want, "20261014T000000-bad002")
 		}
-		if l := decodeOne[listing](t, q.run("list", "--json").stdout); !slices.Equal(l.Skipped, want) {
+		if l := decodeOne[taskList](t, q.run("list", "--json").stdout); !slices.Equal(l.Skipped, want) {
 			t.Errorf("list --json skipped %q, want %q", l.Skipped, want)
 		}
 		var lines string
@@ -293,7 +296,7 @@ func TestTaskUnreadableFiles(t *testing.T) {
 	t.Run("newline in the name", func(t *testing.T) {
 		q := newQueue(t, "ok")
 		q.run("list") // makes the task directory
-		bad(q, "20261014T000000-bad\naits: forged", "garbage", 0o600)
+		q.writeTaskFile("20261014T000000-bad\naits: forged", "garbage", 0o600)
 		if out := q.run("list"); out.stderr != fmt.Sprintf(skip, `20261014T000000-bad\naits: forged`) {
 			t.Errorf("list: stderr=%q", out.stderr)
 		}
@@ -302,8 +305,8 @@ func TestTaskUnreadableFiles(t *testing.T) {
 	t.Run("empty object", func(t *testing.T) {
 		q := newQueue(t, "ok")
 		q.run("list") // makes the task directory
-		bad(q, "20261014T000000-bad003", "{}", 0o600)
-		if l := decodeOne[listing](t, q.run("list", "--json").stdout); len(l.Tasks) != 0 || !slices.Equal(l.Skipped, []string{"20261014T000000-bad003"}) {
+		q.writeTaskFile("20261014T000000-bad003", "{}", 0o600)
+		if l := decodeOne[taskList](t, q.run("list", "--json").stdout); len(l.Tasks) != 0 || !slices.Equal(l.Skipped, []string{"20261014T000000-bad003"}) {
 			t.Errorf("list --json: %+v", l)
 		}
 	})
@@ -315,14 +318,14 @@ func TestTaskUnreadableFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		bad(q, "20261014T000000-c0ffee", string(b), 0o600)
+		q.writeTaskFile("20261014T000000-c0ffee", string(b), 0o600)
 		if w := decodeOne[taskRecord](t, q.run("work", "--json").stdout); w.ID != a || w.Status != "done" {
 			t.Errorf("first work: %+v", w)
 		}
 		if out := q.run("work", "--json"); out.stdout != `{"status":"empty"}`+"\n" {
 			t.Errorf("second work ran the copy: %q", out.stdout)
 		}
-		l := decodeOne[listing](t, q.run("list", "--json").stdout)
+		l := decodeOne[taskList](t, q.run("list", "--json").stdout)
 		if len(l.Tasks) != 1 || l.Tasks[0].ID != a || l.Tasks[0].Status != "done" || !slices.Equal(l.Skipped, []string{"20261014T000000-c0ffee"}) {
 			t.Errorf("list --json: %+v", l)
 		}
@@ -332,7 +335,7 @@ func TestTaskUnreadableFiles(t *testing.T) {
 		q := newQueue(t, "ok")
 		q.create("hi") // makes the task directory
 		for _, body := range []string{"garbage", "{}"} {
-			bad(q, "20261014T000000-bad004", body, 0o600)
+			q.writeTaskFile("20261014T000000-bad004", body, 0o600)
 			prefix := "task 20261014T000000-bad004 could not be read: "
 			out := q.run("show", "20261014T000000-bad004", "--json")
 			if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || !strings.HasPrefix(e.Message, prefix) {

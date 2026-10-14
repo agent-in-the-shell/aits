@@ -190,16 +190,7 @@ func submitIs(status string) func(*testing.T, string, vars) {
 }
 
 func listIs(t *testing.T, stdout string, v vars) {
-	r := decodeOne[struct {
-		Tasks []struct {
-			ID        string `json:"id"`
-			Status    string `json:"status"`
-			Agent     string `json:"agent"`
-			Cwd       string `json:"cwd"`
-			CreatedAt string `json:"created_at"`
-		} `json:"tasks"`
-		Skipped []string `json:"skipped"`
-	}](t, stdout)
+	r := decodeOne[taskList](t, stdout)
 	if len(r.Tasks) != 1 || r.Tasks[0].ID != v.id || r.Tasks[0].Status != "queued" || r.Tasks[0].Agent != "claude" ||
 		r.Tasks[0].Cwd != v.dir || r.Tasks[0].CreatedAt == "" || r.Skipped == nil || len(r.Skipped) != 0 {
 		t.Errorf("--json: %+v", r)

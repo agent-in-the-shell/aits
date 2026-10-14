@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -139,19 +140,11 @@ func Show(environ []string, id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	if !validID(id) {
+	t, err := read(dir, id)
+	if errors.Is(err, os.ErrNotExist) {
 		return Task{}, invalid("no task %s", id)
 	}
-	t, err := read(path(dir, id))
-	if errors.Is(err, os.ErrNotExist) {
-		if _, lerr := os.Lstat(path(dir, id)); lerr != nil {
-			return Task{}, invalid("no task %s", id)
-		}
-	}
-	if err != nil {
-		return Task{}, fmt.Errorf("task %s could not be read: %w", id, err)
-	}
-	return t, nil
+	return t, err
 }
 
 // Work reclaims expired leases, claims the oldest queued task (of agent, if
@@ -276,9 +269,9 @@ func update(dir, id, token string, fn func(*Task)) (Task, error) {
 		return Task{}, err
 	}
 	defer unlock()
-	t, err := read(path(dir, id))
+	t, err := read(dir, id)
 	if err != nil {
-		return Task{}, fmt.Errorf("task %s could not be read: %w", id, err)
+		return Task{}, err
 	}
 	if t.Lease == nil || t.Lease.Token != token {
 		return t, fmt.Errorf("task %s was %w", id, errReclaimed)
@@ -312,7 +305,7 @@ func load(dir string) (snapshot, error) {
 		if !ok || strings.HasPrefix(name, ".") {
 			continue
 		}
-		if t, err := read(filepath.Join(dir, name)); err == nil {
+		if t, err := read(dir, id); err == nil {
 			s.tasks = append(s.tasks, t)
 		} else {
 			s.skipped = append(s.skipped, id)
@@ -337,39 +330,42 @@ func (t Task) request(environ []string) shell.Request {
 // YYYYMMDDTHHMMSS-xxxxxx with lower-case hex: the only names show opens, so
 // that a case-insensitive file system cannot open a task by another spelling.
 func validID(id string) bool {
-	if len(id) != 22 {
-		return false
-	}
-	for i, c := range id {
-		ok := '0' <= c && c <= '9'
-		switch {
-		case i == 8:
-			ok = c == 'T'
-		case i == 15:
-			ok = c == '-'
-		case i > 15:
-			ok = ok || 'a' <= c && c <= 'f'
-		}
-		if !ok {
-			return false
-		}
-	}
-	return true
+	return len(id) == 22 && id[8] == 'T' && id[15] == '-' &&
+		strings.Trim(id[:8]+id[9:15], "0123456789") == "" &&
+		strings.Trim(id[16:], "0123456789abcdef") == ""
 }
 
 func path(dir, id string) string { return filepath.Join(dir, id+".json") }
 
-// read reads the task in file. It is readable only as a regular file named
-// by a task id, holding the record of that id, with a known status, and with
-// a lease while running (P6): anything else, such as a copy of another task's
-// file, is an error. It never blocks on a FIFO or reads a device (P10).
-func read(file string) (Task, error) {
-	if fi, err := os.Stat(file); err != nil {
+// read reads task id in dir, failing with "task ID could not be read". A
+// task is readable only as a regular file (not a symlink, FIFO or device:
+// read never blocks, P10) named by a task id and holding the record of that
+// id, with a known status and a lease while running (P6); anything else,
+// such as a copy of another task's file, is an error. An id that is not a
+// task id is os.ErrNotExist, so no other spelling opens a task.
+func read(dir, id string) (Task, error) {
+	t, err := readFile(dir, id)
+	if err != nil {
+		return Task{}, fmt.Errorf("task %s could not be read: %w", id, err)
+	}
+	return t, nil
+}
+
+func readFile(dir, id string) (Task, error) {
+	if !validID(id) {
+		return Task{}, fmt.Errorf("not a task id: %w", os.ErrNotExist)
+	}
+	f, err := os.OpenFile(path(dir, id), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return Task{}, err
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil {
 		return Task{}, err
 	} else if !fi.Mode().IsRegular() {
 		return Task{}, errors.New("not a regular file")
 	}
-	b, err := os.ReadFile(file)
+	b, err := io.ReadAll(f)
 	if err != nil {
 		return Task{}, err
 	}
@@ -377,9 +373,7 @@ func read(file string) (Task, error) {
 	if err := json.Unmarshal(b, &t); err != nil {
 		return Task{}, err
 	}
-	switch id := strings.TrimSuffix(filepath.Base(file), ".json"); {
-	case !validID(id):
-		return Task{}, fmt.Errorf("%q is not a task id", id)
+	switch {
 	case t.ID != id:
 		return Task{}, fmt.Errorf("its id is %q, not %q", t.ID, id)
 	case !slices.Contains([]Status{Queued, Running, Done, Failed}, t.Status):
