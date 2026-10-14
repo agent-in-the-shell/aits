@@ -499,12 +499,14 @@ func claimThenHoldDir(t *testing.T, q queue, flags ...string) (string, *started,
 	t.Helper()
 	a := q.create("hi", flags...)
 	b := q.create("dead")
-	g := exec.Command("sh", "-c", "trap '' TERM; exec sleep 60")
+	ready := filepath.Join(t.TempDir(), "ready")
+	g := exec.Command("sh", "-c", `trap '' TERM; : > "$0"; exec sleep 60`, ready)
 	g.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := g.Start(); err != nil {
 		t.Fatal(err)
 	}
 	go func() { _ = g.Wait() }()
+	waitFile(t, ready) // SIGTERM before the trap would end the group at once
 	q.setRunning(b, map[string]any{"token": "dead", "pgid": g.Process.Pid})
 	q.writeLockFile(b)
 	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
