@@ -95,8 +95,8 @@ invalid input (P5).
 | Case | `--json` | text | exit |
 |---|---|---|---|
 | nothing queued | `{"status":"empty"}` | nothing | 0 |
-| run status `ok` → task `done` | task record | answer on stdout; `task: ID`, `session: ID` on stderr | 0 |
-| any other run status → task `failed` | task record | `aits: task ID failed: MESSAGE` on stderr | 1 |
+| run status `ok` → task `done` | task record | `ID  STATUS  AGENT  CWD` and the answer on stdout; `session: ID` on stderr | 0 |
+| any other run status → task `failed` | task record | `ID  STATUS  AGENT  CWD` on stdout; `aits: task ID failed: STATUS: MESSAGE` on stderr | 1 |
 
 Help for each command lists its output fields and statuses (P5); `docs/cli.md`
 is generated from help (P13).
