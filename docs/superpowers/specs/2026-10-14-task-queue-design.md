@@ -1,6 +1,6 @@
 # `aits task` — Design
 
-- Status: draft
+- Status: approved
 - Issue: #32
 - Principles: P1, P2, P3, P5, P6, P7, P8, P9, P10, P12, P13, P14 (see `docs/principles.md`)
 
