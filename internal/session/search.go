@@ -182,7 +182,7 @@ func examine(j job, terms []string, ns [][]byte, dirs []string, b *buffers) outc
 		p, ok := parse(line)
 		t.identify(p.id, p.cwd)
 		notSession = notSession || p.notSession
-		sawMessage = sawMessage || p.message
+		sawMessage = sawMessage || p.message || len(p.texts) > 0
 		for _, s := range p.texts {
 			t.add(s)
 		}
@@ -216,7 +216,12 @@ func examine(j job, terms []string, ns [][]byte, dirs []string, b *buffers) outc
 func eachLine(r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
 	b.reader.Reset(r)
 	line := b.line[:0]
-	defer func() { b.line = line[:0] }()
+	defer func() {
+		if cap(line) > chunkSize {
+			line = nil // do not hold a huge line's buffer for the rest of the search
+		}
+		b.line = line[:0]
+	}()
 	bad := 0
 	tooLong := false
 	for {

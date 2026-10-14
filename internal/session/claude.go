@@ -62,8 +62,8 @@ func parseClaude(line []byte) (parsed, bool) {
 		}
 		p.texts = texts
 	case "attachment":
-		if s := queuedPrompt(e.Attachment); s != "" {
-			p.texts = ownText([]string{s}, claudeInjected)
+		if s := queuedPrompt(e.Attachment); s != "" && !injected(s, claudeInjected) {
+			p.texts = []string{s}
 		}
 	}
 	return p, true

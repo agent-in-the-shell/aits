@@ -54,12 +54,11 @@ func mayMatch(r io.Reader, needles [][]byte, b *buffers) (bool, error) {
 	overlap := 4 * longest
 	found := make([]bool, len(needles))
 	left := len(needles)
-	window := b.window[:0]
-	defer func() { b.window = window[:0] }()
+	b.window = b.window[:0]
 	for {
 		n, err := io.ReadFull(r, b.chunk)
-		window = append(window, b.chunk[:n]...)
-		b.low = lowerInto(b.low[:0], window)
+		b.window = append(b.window, b.chunk[:n]...)
+		b.low = lowerInto(b.low[:0], b.window)
 		for i, nd := range needles {
 			if !found[i] && bytes.Contains(b.low, nd) {
 				found[i] = true
@@ -74,8 +73,8 @@ func mayMatch(r io.Reader, needles [][]byte, b *buffers) (bool, error) {
 		case err != nil:
 			return false, err
 		}
-		if len(window) > overlap {
-			window = append(window[:0], window[len(window)-overlap:]...)
+		if len(b.window) > overlap {
+			b.window = append(b.window[:0], b.window[len(b.window)-overlap:]...)
 		}
 	}
 }
