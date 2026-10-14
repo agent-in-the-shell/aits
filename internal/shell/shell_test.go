@@ -73,3 +73,70 @@ func TestRequestValidate(t *testing.T) {
 		t.Errorf("Submit() with an unset variable = %v, want *InvalidRequestError", err)
 	}
 }
+
+// writeExe writes a shell script named name into dir with mode.
+func writeExe(t *testing.T, dir, name, body string, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The agent is looked up on the PATH the agent will get: the last PATH in
+// the request's environment (P8), never aits's own.
+func TestLookPath(t *testing.T) {
+	a, empty, c, r := t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	writeExe(t, a, "claude", "", 0o755)
+	writeExe(t, c, "claude", "", 0o644)
+	writeExe(t, r, "claude", "", 0o755)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(wd, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(a, "claude")
+	tests := []struct {
+		name    string
+		environ []string
+		want    string // "" means ErrAgentNotFound
+		msg     string // exact error text, when set
+	}{
+		{"found", []string{"PATH=" + a}, want, ""},
+		{"second entry", []string{"PATH=" + empty + ":" + a}, want, ""},
+		{"not executable", []string{"PATH=" + c + ":" + a}, want, ""},
+		{"last PATH wins", []string{"PATH=" + empty, "PATH=" + a}, want, ""},
+		{"last PATH empty", []string{"PATH=" + a, "PATH=" + empty}, "", ""},
+		{"not on PATH", []string{"PATH=" + empty}, "", "agent executable not found: claude is not on PATH"},
+		{"no PATH", []string{"HOME=" + empty}, "", "agent executable not found: claude is not on PATH (PATH is not set)"},
+		{"relative entry first", []string{"PATH=" + rel + ":" + a}, "", ""},
+		{"empty entry", []string{"PATH=:" + a}, want, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := lookPath(tt.environ, "claude")
+			if tt.want != "" {
+				if err != nil || got != tt.want {
+					t.Fatalf("lookPath = %q, %v; want %q", got, err, tt.want)
+				}
+				return
+			}
+			if !errors.Is(err, ErrAgentNotFound) || (tt.msg != "" && err.Error() != tt.msg) {
+				t.Fatalf("lookPath = %q, %v; want ErrAgentNotFound %q", got, err, tt.msg)
+			}
+		})
+	}
+}
+
+// Submit ignores aits's own PATH: a claude there must not run.
+func TestSubmitIgnoresProcessPATH(t *testing.T) {
+	proc := t.TempDir()
+	writeExe(t, proc, "claude", "exit 4", 0o755)
+	t.Setenv("PATH", proc)
+	req := Request{Agent: "claude", Prompt: "hi", Dir: t.TempDir(), Timeout: time.Minute, Environ: []string{"PATH=" + t.TempDir()}}
+	if res, err := Submit(context.Background(), req); !errors.Is(err, ErrAgentNotFound) {
+		t.Fatalf("Submit = %+v, %v; want ErrAgentNotFound", res, err)
+	}
+}

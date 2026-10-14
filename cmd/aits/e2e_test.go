@@ -290,6 +290,18 @@ func TestSubmitAgentNotFound(t *testing.T) {
 	})
 }
 
+// An agent first found in a relative PATH entry is refused: it would resolve
+// against aits's directory, not the agent's (P6).
+func TestSubmitRelativePATHEntry(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := vendorAs(t, agent, "ok")
+		out := call{dir: bin, path: ".:" + bin, args: agentArgs(agent, "--json", "hi")}.run(t)
+		if r := decode(t, out.stdout); out.code != 1 || r.Error == nil || r.Error.Code != "agent_not_found" {
+			t.Fatalf("code=%d stdout=%q", out.code, out.stdout)
+		}
+	})
+}
+
 func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 	tests := []struct {
 		name string

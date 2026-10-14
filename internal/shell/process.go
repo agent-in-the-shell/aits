@@ -25,9 +25,9 @@ const (
 
 var errTimedOut = errors.New("agent timed out")
 
-// run starts the agent in its own process group and supervises it until it
-// has exited and its output pipes are closed.
-func run(ctx context.Context, ag agent, path string, req Request) (observation, error) {
+// run starts the agent with environment env in its own process group and
+// supervises it until it has exited and its output pipes are closed.
+func run(ctx context.Context, ag agent, path string, env []string, req Request) (observation, error) {
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		return observation{}, err
@@ -42,7 +42,7 @@ func run(ctx context.Context, ag agent, path string, req Request) (observation, 
 	defer errR.Close()
 	cmd := exec.Command(path, ag.argv(req.Session)...)
 	cmd.Dir = req.Dir
-	cmd.Env = ag.environ(req.Environ, req.Pass)
+	cmd.Env = env
 	cmd.Stdin = strings.NewReader(req.Prompt)
 	cmd.Stdout, cmd.Stderr = outW, errW
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

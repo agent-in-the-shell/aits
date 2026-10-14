@@ -35,7 +35,7 @@ type Request struct {
 	Prompt  string         // sent on the agent's stdin, never in argv (P8)
 	Dir     string         // absolute working directory
 	Timeout time.Duration  // must be positive
-	Environ []string       // the caller's environment, KEY=VALUE
+	Environ []string       // the caller's environment, KEY=VALUE; its PATH also finds the agent
 	Pass    []string       // variable names passed from Environ beyond the allowlist (P8)
 	Session string         // a session to continue; empty starts a new one
 	Started func(pgid int) // if set, called once with the agent's process group right after it starts
@@ -53,7 +53,8 @@ type Result struct {
 	Message    string `json:"message,omitempty"`
 }
 
-// ErrAgentNotFound means the agent's executable is not on PATH.
+// ErrAgentNotFound means the agent's executable is not on the PATH in
+// Request.Environ.
 var ErrAgentNotFound = errors.New("agent executable not found")
 
 // ErrStopped means ctx was done before the agent was started (P6).
@@ -128,20 +129,21 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	env := ag.environ(req.Environ, req.Pass) // the one environment checked, searched and given
 	for _, name := range req.Pass {
-		if !isSet(req.Environ, name) {
+		if _, ok := lookupEnv(env, name); !ok {
 			return Result{}, invalid("environment variable %s is not set", name)
 		}
 	}
-	path, err := exec.LookPath(ag.executable)
+	path, err := lookPath(env, ag.executable)
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %s is not on PATH", ErrAgentNotFound, ag.executable)
+		return Result{}, err
 	}
 	if ctx.Err() != nil {
 		return Result{}, ErrStopped
 	}
 	start := time.Now()
-	obs, err := run(ctx, ag, path, req)
+	obs, err := run(ctx, ag, path, env, req)
 	if err != nil {
 		return Result{}, err
 	}
@@ -161,4 +163,28 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		res.StderrTail = obs.stderrTail
 	}
 	return res, nil
+}
+
+// lookPath finds name on the PATH in env, the agent's own environment (P8),
+// never on aits's. A first match in an empty or relative entry is refused, as
+// exec.LookPath does: it would resolve against aits's working directory, not
+// the agent's (P6).
+func lookPath(env []string, name string) (string, error) {
+	path, ok := lookupEnv(env, "PATH")
+	if !ok {
+		return "", fmt.Errorf("%w: %s is not on PATH (PATH is not set)", ErrAgentNotFound, name)
+	}
+	for _, dir := range filepath.SplitList(path) {
+		file, abs := filepath.Join(dir, name), filepath.IsAbs(dir)
+		if !abs {
+			file = "." + string(filepath.Separator) + file // never a bare name: that searches aits's PATH
+		}
+		if _, err := exec.LookPath(file); err == nil {
+			if abs {
+				return file, nil
+			}
+			break
+		}
+	}
+	return "", fmt.Errorf("%w: %s is not on PATH", ErrAgentNotFound, name)
 }
