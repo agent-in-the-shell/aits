@@ -81,12 +81,15 @@ func (q queue) run(args ...string) output {
 // aits would.
 func (q queue) writeTaskFile(id, body string, mode os.FileMode) string {
 	q.t.Helper()
-	file := filepath.Join(q.home, "task", id+".json")
+	file := q.taskFile(id)
 	if err := os.WriteFile(file, []byte(body), mode); err != nil {
 		q.t.Fatal(err)
 	}
 	return file
 }
+
+// taskFile is the path of task id's record.
+func (q queue) taskFile(id string) string { return filepath.Join(q.home, "task", id+".json") }
 
 // lockFile is the path of task id's lock file.
 func (q queue) lockFile(id string) string { return filepath.Join(q.home, "task", id+".lock") }
@@ -103,7 +106,7 @@ func (q queue) writeLockFile(id string) {
 // earlier aits) would have left it, and returns the bytes written.
 func (q queue) setRunning(id string, lease map[string]any) []byte {
 	q.t.Helper()
-	file := filepath.Join(q.home, "task", id+".json")
+	file := q.taskFile(id)
 	var rec map[string]any
 	b, err := os.ReadFile(file)
 	if err == nil {
@@ -344,7 +347,7 @@ func TestTaskLockError(t *testing.T) {
 		if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
 			t.Errorf("list: code=%d stdout=%q", out.code, out.stdout)
 		}
-		if after, _ := os.ReadFile(filepath.Join(q.home, "task", id+".json")); string(after) != string(b) {
+		if after, _ := os.ReadFile(q.taskFile(id)); string(after) != string(b) {
 			t.Errorf("record changed: %s", after)
 		}
 	})

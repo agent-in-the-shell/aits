@@ -80,11 +80,11 @@ func lockFile(path string, create bool, how int) (func(), error) {
 	if create {
 		flag |= os.O_CREATE
 	}
-	f, _, err := OpenRegular(path, flag, 0o600)
+	f, fi, err := OpenRegular(path, flag, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	if create {
+	if create && fi.Mode().Perm() != 0o600 {
 		err = f.Chmod(0o600)
 	}
 	if err == nil {
