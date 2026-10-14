@@ -106,6 +106,9 @@ group is terminated as for a timeout.
 `agent_failed`, as `stderr_tail`. aits writes
 no logs.
 
+Since #13 the event record is vendor-neutral and each agent has its own
+parser; see `2026-10-14-shell-codex-design.md` §5.
+
 ## 6. Outcome
 
 Once the child has started, the run always ends with a result object; the
@@ -138,6 +141,10 @@ Result object (`--json`):
 Without `--json`: for `ok`, stdout is the answer text followed by a newline,
 and stderr gets `session: <id>`. For any other status, stdout is empty and
 stderr gets `aits: <status>: <message>` plus `session: <id>` when known.
+
+Since #13, `message` for `agent_failed` carries the error the agent reported
+when there is one, even when it exited non-zero; see
+`2026-10-14-shell-codex-design.md` §5.
 
 ## 7. Testing
 

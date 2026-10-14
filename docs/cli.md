@@ -63,7 +63,7 @@ Result fields:
 Statuses:
   ok                The agent answered.
   agent_failed      The agent exited non-zero or reported an error.
-  bad_agent_output  The agent's output was not usable stream-json.
+  bad_agent_output  The agent's JSON events were not usable.
   output_too_large  One output event exceeded 16 MiB; the agent was stopped.
   timeout           --timeout elapsed; the agent was stopped.
   stopped           aits got SIGTERM, SIGINT or SIGHUP; the agent was stopped.
