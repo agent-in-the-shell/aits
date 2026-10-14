@@ -199,3 +199,29 @@ func TestOneVendorVocabulary(t *testing.T) {
 		t.Errorf("session knows %q, shell knows %q", s, sh)
 	}
 }
+
+// Vendors record the working directory with symlinks resolved, so --cwd must
+// resolve them too: on macOS /tmp and $TMPDIR are symlinks.
+func TestSessionSearchCwdThroughSymlink(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	writeTranscript(t, home, ".claude/projects/-w/s.jsonl", time.Now(),
+		`{"type":"user","sessionId":"s","cwd":"`+real+`","message":{"content":"needle"}}`)
+	for _, c := range []call{
+		{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "--cwd", link, "needle"}},
+		{env: []string{"HOME=" + home}, dir: link, args: []string{"session", "search", "--json", "--cwd", ".", "needle"}},
+	} {
+		c.env = append(c.env, "PWD="+link)
+		out := c.run(t)
+		if got := found(decodeSearch(t, out.stdout)); !slices.Equal(got, []string{"claude:s"}) {
+			t.Errorf("aits %s (dir %q): results %q", strings.Join(c.args, " "), c.dir, got)
+		}
+	}
+}

@@ -123,7 +123,7 @@ Output:
 Result fields:
   agent        The agent whose transcript matched.
   session_id   Pass it to "aits shell submit --session" to continue.
-  cwd          The session's working directory.
+  cwd          The session's working directory, symlinks resolved.
   updated_at   When the transcript file last changed, in UTC; newest first.
   snippet      Text around the first term in the newest message with it.
 
@@ -132,9 +132,12 @@ Skipped:
   lines        Lines that were not JSON or were longer than 64 MiB.
 
 Searched:
-  User and assistant message text, every term somewhere in the session,
-  ignoring case. Not tool calls or their output, model thinking, subagent
-  transcripts, or text the agent CLI adds to a turn by itself.
+  User and assistant message text, and prompts queued while the agent was
+  working; every term somewhere in the session, ignoring case. Not tool calls
+  or their output, model thinking, subagent transcripts (Claude's or Codex's),
+  compaction summaries, or text the agent CLI adds to a turn by itself
+  (instructions such as AGENTS.md, reminders, notifications, "!" shell
+  output, interruption and API-error notices).
 
 Transcripts:
   claude  $CLAUDE_CONFIG_DIR/projects/*/*.jsonl (default ~/.claude)

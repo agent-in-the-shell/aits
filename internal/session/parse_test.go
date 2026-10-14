@@ -20,17 +20,20 @@ func run(t *testing.T, parse parser, c parseCase) {
 	var id, cwd string
 	var texts []string
 	for i, l := range c.lines {
-		lid, lcwd, lt, ok := parse([]byte(l))
+		p, ok := parse([]byte(l))
 		if ok != c.ok[i] {
 			t.Errorf("%s: line %d ok = %v, want %v", c.name, i, ok, c.ok[i])
 		}
+		if p.notSession {
+			t.Errorf("%s: line %d marks the file as not a session", c.name, i)
+		}
 		if id == "" {
-			id = lid
+			id = p.id
 		}
 		if cwd == "" {
-			cwd = lcwd
+			cwd = p.cwd
 		}
-		texts = append(texts, lt...)
+		texts = append(texts, p.texts...)
 	}
 	if id != c.id || cwd != c.cwd {
 		t.Errorf("%s: id=%q cwd=%q, want %q %q", c.name, id, cwd, c.id, c.cwd)
@@ -58,6 +61,25 @@ func TestParseClaude(t *testing.T) {
 			`{"type":"user",` + head + `,"message":{"content":[{"type":"text","text":"<command-name>/clear</command-name>"}]}}`,
 			`{"type":"assistant",` + head + `,"message":{"content":[{"type":"text","text":"<command-name> is fine from the assistant"}]}}`},
 			[]bool{true, true, true}, "s1", "/w", []string{"<command-name> is fine from the assistant"}},
+		{"text the CLI writes itself is not searched", []string{
+			`{"type":"user",` + head + `,"message":{"content":"<bash-stdout>API_TOKEN=abc</bash-stdout>"}}`,
+			`{"type":"user",` + head + `,"message":{"content":"<bash-stderr>boom</bash-stderr>"}}`,
+			`{"type":"user",` + head + `,"message":{"content":[{"type":"text","text":"[Request interrupted by user]"}]}}`,
+			`{"type":"user",` + head + `,"isCompactSummary":true,"isVisibleInTranscriptOnly":true,"message":{"content":"This session is being continued from a previous conversation"}}`,
+			`{"type":"assistant",` + head + `,"isApiErrorMessage":true,"message":{"model":"<synthetic>","content":[{"type":"text","text":"API Error: 500 upstream body"}]}}`,
+			`{"type":"assistant",` + head + `,"message":{"model":"<synthetic>","content":[{"type":"text","text":"No response requested."}]}}`,
+			`{"type":"user",` + head + `,"message":{"content":"<bash-input>ls</bash-input>"}}`},
+			[]bool{true, true, true, true, true, true, true}, "s1", "/w", []string{"<bash-input>ls</bash-input>"}},
+		{"prompts queued while the agent works are searched", []string{
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":"also check the docs","origin":{"kind":"human"}}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":"no origin recorded"}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":"from another agent","isMeta":true,"origin":{"kind":"task"}}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":"agent origin","origin":{"kind":"agent"}}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"bash","prompt":"ls -la"}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"queued_command","commandMode":"prompt","prompt":"<system-reminder>x"}}`,
+			`{"type":"attachment",` + head + `,"attachment":{"type":"file","content":"secret file"}}`,
+			`{"type":"attachment",` + head + `,"attachment":"a string"}`},
+			[]bool{true, true, true, true, true, true, true, true}, "s1", "/w", []string{"also check the docs", "no origin recorded"}},
 		{"other event types", []string{
 			`{"type":"summary","summary":"x","leafUuid":"u"}`,
 			`{"type":"file-history-snapshot","snapshot":{}}`,
@@ -87,6 +109,16 @@ func TestParseCodex(t *testing.T) {
 			msg("developer", "input_text", "<permissions instructions>"),
 			msg("user", "input_text", "<environment_context><cwd>/w</cwd></environment_context>")},
 			[]bool{true, true, true}, "c1", "/w", nil},
+		{"text Codex writes itself is not searched", []string{meta,
+			msg("user", "input_text", "# AGENTS.md instructions for /w"),
+			msg("user", "input_text", "<user_instructions>be terse</user_instructions>"),
+			msg("user", "input_text", "<subagent_notification>child said x</subagent_notification>"),
+			msg("user", "input_text", "<turn_aborted>"),
+			msg("user", "input_text", "<user_action>review</user_action>"),
+			msg("user", "input_text", "<image name=[Image #1]>"),
+			msg("user", "input_text", "</image>"),
+			msg("user", "input_text", "my own words")},
+			[]bool{true, true, true, true, true, true, true, true, true}, "c1", "/w", []string{"my own words"}},
 		{"other line types", []string{meta,
 			`{"type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"cmd\":\"cat .env\"}"}}`,
 			`{"type":"response_item","payload":{"type":"function_call_output","output":"API_KEY=x"}}`,
@@ -99,5 +131,20 @@ func TestParseCodex(t *testing.T) {
 			[]bool{false, false, false}, "", "", nil},
 	} {
 		run(t, parseCodex, c)
+	}
+}
+
+// A Codex subagent's rollout is not a conversation the user can continue, so
+// its file is left out, like Claude's subagent transcripts.
+func TestParseCodexSubagent(t *testing.T) {
+	for line, want := range map[string]bool{
+		`{"type":"session_meta","payload":{"id":"c2","cwd":"/w","source":{"subagent":{"thread_spawn":{"parent_thread_id":"c1"}}}}}`: true,
+		`{"type":"session_meta","payload":{"id":"c2","cwd":"/w","source":{"subagent":"review"}}}`:                                   true,
+		`{"type":"session_meta","payload":{"id":"c1","cwd":"/w","source":"cli"}}`:                                                   false,
+		`{"type":"session_meta","payload":{"id":"c1","cwd":"/w","source":{"exec":{}}}}`:                                             false,
+	} {
+		if p, ok := parseCodex([]byte(line)); !ok || p.notSession != want {
+			t.Errorf("%s: notSession = %v, ok = %v; want %v", line, p.notSession, ok, want)
+		}
 	}
 }

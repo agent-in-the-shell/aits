@@ -176,14 +176,22 @@ func examine(j job, q Query, ns [][]byte) outcome {
 	}
 	t := newTranscript(q.Terms)
 	bad, err := eachLine(f, func(line []byte) bool {
-		id, cwd, texts, ok := j.parse(line)
-		t.identify(id, cwd)
-		for _, s := range texts {
+		p, ok := j.parse(line)
+		t.identify(p.id, p.cwd)
+		t.notSession = t.notSession || p.notSession
+		for _, s := range p.texts {
 			t.add(s)
 		}
 		return ok
 	})
-	if err != nil || t.sessionID == "" || t.cwd == "" {
+	switch {
+	case err != nil:
+		return outcome{lines: bad, badFile: true}
+	case t.notSession || (t.cwd == "" && t.texts == 0):
+		// A subagent's rollout, or a file that holds no conversation (a
+		// metadata file): nothing to find and nothing unreadable.
+		return outcome{}
+	case t.sessionID == "" || t.cwd == "":
 		return outcome{lines: bad, badFile: true}
 	}
 	if !t.matched() || !within(t.cwd, q.Cwd) {

@@ -19,12 +19,20 @@ type transcript struct {
 	terms          []string // lower-cased
 	found          []bool
 	snippetText    string
+	texts          int  // how many texts were added
+	notSession     bool // a line said the file is not a session
 }
 
-// parser reads one transcript line: the session id and working directory it
-// names (or ""), the searched texts in it, and ok=false when the line is not
-// usable. Lines of shapes it does not search are usable and carry no text.
-type parser func(line []byte) (id, cwd string, texts []string, ok bool)
+// parsed is what a parser found in one transcript line.
+type parsed struct {
+	id, cwd    string   // the session id and working directory it names, or ""
+	texts      []string // the searched text in it
+	notSession bool     // the file is not a conversation the user can continue
+}
+
+// parser reads one transcript line; ok is false when the line is not usable.
+// Lines of shapes it does not search are usable and carry no text.
+type parser func(line []byte) (p parsed, ok bool)
 
 func newTranscript(terms []string) *transcript {
 	t := &transcript{found: make([]bool, len(terms))}
@@ -46,6 +54,7 @@ func (t *transcript) identify(id, cwd string) {
 
 // add records one piece of searched text.
 func (t *transcript) add(text string) {
+	t.texts++
 	low := strings.ToLower(text)
 	for i, term := range t.terms {
 		if strings.Contains(low, term) {

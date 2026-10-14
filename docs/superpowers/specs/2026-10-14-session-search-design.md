@@ -33,8 +33,9 @@ aits session search [--agent AGENT] [--cwd DIR] [--since DURATION] [--limit N] [
   at least one non-empty term.
 - `--agent`: `claude` or `codex`; default both.
 - `--cwd DIR`: only sessions whose working directory is `DIR` or below it;
-  `DIR` is made absolute and cleaned, and "below" means a path-separator
-  boundary (`/a/b` matches `/a/b` and `/a/b/c`, not `/a/bc`).
+  `DIR` is made absolute, its symlinks are resolved (agents record the
+  resolved path; on macOS `/tmp` is `/private/tmp`), and "below" means a
+  path-separator boundary (`/a/b` matches `/a/b` and `/a/b/c`, not `/a/bc`).
 - `--since DURATION`: only transcript files modified within `DURATION`; must
   be positive.
 - `--limit N`: at most `N` results, default 20, `N ≥ 1`.
@@ -55,9 +56,11 @@ Invalid input → `invalid_input`, exit 2, nothing read.
 - `snippet`: up to 160 bytes of text around the first occurrence of the first
   term in the newest message that contains it, cut on rune boundaries, with
   newlines and runs of whitespace collapsed to one space, and `…` where cut.
-- `skipped.files`: transcript files that could not be opened or that have no
-  session id or no cwd; `skipped.lines`: lines in examined files that were not
-  JSON or were longer than 64 MiB.
+- `skipped.files`: transcript files that could not be opened, or that hold
+  messages but no session id or cwd; `skipped.lines`: lines in examined files
+  that were not JSON or were longer than 64 MiB. Files that hold no
+  conversation (a metadata file without messages or cwd, a Codex subagent's
+  rollout) are left out without being counted.
 
 Without `--json`: per result, one line `UPDATED_AT  AGENT  SESSION_ID  CWD`
 and one indented snippet line; nothing for no match. When anything was
@@ -72,11 +75,12 @@ read`. Exit 0.
 | Files | `filepath.Glob(root + "/projects/*/*.jsonl")` | `filepath.Glob(root + "/sessions/*/*/*/rollout-*.jsonl")` |
 | Session id | `sessionId` of the first event that has one | `payload.id` of the `session_meta` line |
 | cwd | `cwd` of the first event that has one | `payload.cwd` of the `session_meta` line |
-| Searched text | events with `type` `user` or `assistant`, `isSidechain` and `isMeta` not true; `message.content` if a string, else the `text` of its blocks of `type` `text` | lines with `type` `response_item`, `payload.type` `message`, `payload.role` `user` or `assistant`; the `text` of `content` blocks of type `input_text` or `output_text` |
-| Not searched | `tool_use`, `tool_result`, `thinking` blocks; user text that starts with `<task-notification>`, `<local-command-`, `<command-` or `<system-reminder>` | `developer` role, `reasoning`, `function_call`, `function_call_output`, `event_msg` lines; user text that starts with `<environment_context>` |
+| Searched text | events with `type` `user` or `assistant`: `message.content` if a string, else the `text` of its blocks of `type` `text`; and `attachment` events with `attachment.type` `queued_command`, `commandMode` `prompt`, not `isMeta`, `origin.kind` `human` or no origin: `attachment.prompt` (a prompt typed while the agent was working) | lines with `type` `response_item`, `payload.type` `message`, `payload.role` `user` or `assistant`; the `text` of `content` blocks of type `input_text` or `output_text` |
+| Not searched | events with `isSidechain`, `isMeta`, `isCompactSummary`, `isVisibleInTranscriptOnly` or `isApiErrorMessage` true, or `message.model` `<synthetic>`; `tool_use`, `tool_result`, `thinking` blocks; user text that starts with `<task-notification>`, `<local-command-`, `<command-`, `<system-reminder>`, `<bash-stdout>`, `<bash-stderr>` or `[Request interrupted` | rollouts whose `session_meta.payload.source` has a `subagent` key (the whole file); `developer` role, `reasoning`, `function_call`, `function_call_output`, `event_msg` lines; user text that starts with `<environment_context>`, `<user_instructions>`, `# AGENTS.md instructions`, `<subagent_notification>`, `<turn_aborted>`, `<user_action>`, `<image` or `</image>` |
 
-Observed with Claude Code 2.1.296 and Codex CLI 0.159.2. Neither layout is a
-documented contract. Known limits, stated in help:
+Observed with Claude Code 2.1.296 and Codex CLI 0.159.2, and checked against
+older transcripts on disk (older Codex versions wrote AGENTS.md into the first
+user turn). Neither layout is a documented contract. Known limits, stated in help:
 
 - `filepath.Glob` skips subdirectories it cannot read without reporting them,
   so those files are not counted in `skipped`.
@@ -95,7 +99,9 @@ contributes nothing.
    length minus one, lower-case it, and keep the file only if every term
    occurs. A term containing `"`, `\` or a control character is left out of
    the prefilter, because JSON escapes those bytes; the parse step decides.
-   Memory is bounded by workers × chunk size, whatever the file size (P8).
+   Memory in this step is bounded by workers × chunk size, whatever the file
+   size (P8); the parse step below holds one line at a time, up to 64 MiB,
+   per worker.
 3. **Confirm** each kept file line by line: parse JSON, take the searched text
    (§5), and require every term in the session's text. Record session id,
    cwd and the snippet. Lines that are not JSON or exceed 64 MiB are counted

@@ -180,3 +180,20 @@ func TestAgents(t *testing.T) {
 		t.Errorf("Agents() = %q", got)
 	}
 }
+
+// Files that are not conversations the user can continue are left out
+// without being counted as unreadable: a Codex subagent's rollout, and a
+// Claude metadata file with no messages and no cwd.
+func TestSearchIgnoresNonSessions(t *testing.T) {
+	h := newHome(t)
+	now := time.Now()
+	h.write(".codex/sessions/2026/10/14/rollout-x-sub.jsonl", now,
+		`{"type":"session_meta","payload":{"id":"sub","cwd":"/w","source":{"subagent":{"thread_spawn":{}}}}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"needle"}]}}`)
+	h.write(".claude/projects/-w/meta.jsonl", now, `{"type":"bridge","sessionId":"m","bridgeSessionId":"needle"}`)
+	h.write(".claude/projects/-w/real.jsonl", now, claudeLine("real", "/w", "user", "needle"))
+	out := search(t, Query{Terms: []string{"needle"}, Environ: h.env()})
+	if got := ids(out); !slices.Equal(got, []string{"claude:real"}) || out.Skipped != (Skipped{}) {
+		t.Errorf("results %q, skipped %+v", got, out.Skipped)
+	}
+}

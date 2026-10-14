@@ -5,8 +5,9 @@ queue and follow up on it, search past agent sessions, and route LLM requests
 through an OpenAI-compatible gateway — one Go binary, built for AI agents to
 call.
 
-> **Status:** pre-release. `aits shell submit` works with Claude Code; the
-> other command groups are planned.
+> **Status:** pre-release. `aits shell submit` (Claude Code and Codex, with
+> `--session` to continue) and `aits session search` work; `task` and `model`
+> are planned.
 
 ## Install
 
