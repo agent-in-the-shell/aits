@@ -932,7 +932,7 @@ func TestTaskNoRoot(t *testing.T) {
 		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != msg {
 			t.Errorf("%v --json: code=%d stdout=%q, want invalid_input %q", args, out.code, out.stdout, msg)
 		}
-		if help := strings.Join(strings.Fields(call{args: []string{"task", args[0], "--help"}}.run(t).stdout), " "); !strings.Contains(help, "neither AITS_HOME nor HOME set") {
+		if !strings.Contains(helpLine(t, "task", args[0]), "neither AITS_HOME nor HOME set") {
 			t.Errorf("task %s --help does not say what happens without AITS_HOME and HOME", args[0])
 		}
 	}

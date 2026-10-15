@@ -107,10 +107,17 @@ func TestTaskHelpNamesParentFaults(t *testing.T) {
 	}
 	want := "parent " + strings.Join(faults[:len(faults)-1], ", ") + " or " + faults[len(faults)-1]
 	for _, cmd := range []string{"show", "list", "create"} {
-		if help := strings.Join(strings.Fields(call{args: []string{"task", cmd, "--help"}}.run(t).stdout), " "); !strings.Contains(help, want) {
+		if help := helpLine(t, "task", cmd); !strings.Contains(help, want) {
 			t.Errorf("task %s --help does not say %q", cmd, want)
 		}
 	}
+}
+
+// helpLine returns the help of the command at path as one line of words, so
+// that a check does not depend on where the help wraps.
+func helpLine(t *testing.T, path ...string) string {
+	t.Helper()
+	return strings.Join(strings.Fields(call{args: append(path, "--help")}.run(t).stdout), " ")
 }
 
 // helpErrors maps each error code that the help of the command at path lists
