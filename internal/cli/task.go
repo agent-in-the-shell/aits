@@ -38,8 +38,7 @@ const taskFields = `Task fields (--json):
                session when done), or worker_died (its worker exited first;
                set by the next work or list). A not_started or worker_died
                run has no exit_code and no duration_ms, which are unknown;
-               only a worker_died run whose agent had started has
-               started_at.
+               only a worker_died run whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr, with control
@@ -62,8 +61,7 @@ without a session, and may have only one follow-up that has not failed (one
 whose worker died counts until its agent is stopped; try again then). A
 queued follow-up whose parent does not exist, failed or has no session when
 done is failed by the next list or work (run status not_started); until then
-show reports it queued. An unreadable task file makes create fail
-(internal).
+show reports it queued. An unreadable task file fails create (internal).
 
 Exit codes:
   0  Queued.
@@ -116,10 +114,10 @@ whether the worker of task ID is alive: its lock file is missing" on stderr.
 A task file that cannot be read (not a regular file named by a task id, not
 JSON, not the record of that id, an unknown status, or running without a
 lease) is skipped and left as it is: its id is in "skipped" (always present,
-sorted) or, without --json, on stderr as "aits: skipped task ID that could
-not be read". A running task whose file cannot be read is not reclaimed, and
-its agent is not stopped; a follow-up of a task whose file cannot be read
-stays queued.
+sorted) or, without --json, on stderr as
+"aits: skipped task ID that could not be read". A running task whose file
+cannot be read is not reclaimed, and its agent is not stopped; a follow-up
+of a task whose file cannot be read stays queued.
 
 Exit codes:
   0  Listed.
@@ -204,16 +202,17 @@ func taskWork() *Command {
 		Summary: "Claim the oldest claimable task, run it, record the result, exit.",
 		Details: taskFields + `
 With nothing claimable (no task queued, none for AGENT with --agent, or only
-follow-ups whose parent is not done), work prints {"status":"empty"} with
---json (nothing otherwise) and exits 0. A worker whose task was reclaimed
-records nothing and fails with "task ID was reclaimed before its run was
-recorded". A task file that cannot be read is skipped and left as it is,
-with "aits: skipped task ID that could not be read" on stderr. Running tasks
-whose lock file is missing are reported as list does. The agent is stopped
-as shell submit stops it. If its process group cannot be recorded in the
-task, the agent is killed at once, so that it never runs unrecorded: the run
-is stopped, with the reason as its message, or work fails (internal) if the
-run cannot be recorded either; the next list or work then reclaims the task.
+follow-ups whose parent is not done or cannot be read), work exits 0,
+printing {"status":"empty"} with --json and nothing otherwise. A worker whose
+task was reclaimed records nothing and fails with "task ID was reclaimed
+before its run was recorded". A task file that cannot be read is skipped and
+left as it is, with "aits: skipped task ID that could not be read" on
+stderr. Running tasks whose lock file is missing are reported as list does.
+The agent is stopped as shell submit stops it. If its process group cannot
+be recorded in the task, the agent is killed at once, so that it never runs
+unrecorded: the run is stopped, with the reason as its message, or work
+fails (internal) if the run cannot be recorded either; the next list or work
+then reclaims the task.
 
 Exit codes:
   0  The task is done, or nothing was claimable.

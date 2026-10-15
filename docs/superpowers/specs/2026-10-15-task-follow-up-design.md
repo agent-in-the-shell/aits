@@ -80,10 +80,11 @@ names as a failure to avoid. The task-queue spec deferred this (§1).
   - `work`: it claims "the oldest claimable task"; `{"status":"empty"}` and
     its exit-code row mean nothing is claimable, which includes follow-ups
     waiting on their parent;
-  - the task fields: `after`; `not_started`, like `list` and `create`, names
-    every reason a follow-up is failed (its parent does not exist, failed or
-    has no session when done), and `list` says a follow-up of an unreadable
-    task stays queued (#79);
+  - the task fields: `after`;
+  - the task fields' `not_started`, `list` and `create` name every reason a
+    follow-up is failed (its parent does not exist, failed or has no session
+    when done); `list` says a follow-up of an unreadable task stays queued
+    (#79);
   - `list --json` items gain `after` when set. Text output is unchanged.
 - `show` does not reclaim, so a follow-up of a failed parent shows `queued`
   until the next `list` or `work`; the `create` help says so.
