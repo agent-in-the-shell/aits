@@ -11,19 +11,22 @@ import (
 )
 
 // storeOnly matches the os functions that create, move, change or remove a
-// file or directory, called or taken as a value. OpenFile is matched whatever
-// its flags: code that only reads uses os.Open or store.OpenRegular.
-var storeOnly = regexp.MustCompile(`\bos\.(OpenFile|Mkdir|MkdirAll|MkdirTemp|Create|CreateTemp|WriteFile|Rename|Symlink|Link|Chmod|Chown|Lchown|Chtimes|Truncate|Remove|RemoveAll)\b`)
+// file or directory, called or taken as a value. OpenFile and OpenRoot are
+// matched whatever their use: code that only reads uses os.Open or
+// store.OpenRegular.
+var storeOnly = regexp.MustCompile(`\bos\.(OpenFile|OpenRoot|Mkdir|MkdirAll|MkdirTemp|Create|CreateTemp|WriteFile|CopyFS|Rename|Symlink|Link|Chmod|Chown|Lchown|Chtimes|Truncate|Remove|RemoveAll)\b`)
 
-// TestOnlyStoreWrites enforces P7: only internal/store creates, moves,
-// changes or removes files and directories, so the root, the modes and the
-// temp-file-plus-rename rule live in one place.
+// TestOnlyStoreWrites enforces P7: only internal/store calls storeOnly's
+// functions, so the root, the modes and the temp-file-plus-rename rule live in
+// one place. It reads the sources the go tool builds: directories named
+// testdata or starting with "." or "_" (such as .claude/worktrees) are not.
 func TestOnlyStoreWrites(t *testing.T) {
+	scanned := 0
 	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && (d.Name() == "testdata" || d.Name() == ".git" || path == filepath.Join("..", "..", "internal", "store")) {
+		if d.IsDir() && path != "../.." && (ignored(d.Name()) || path == filepath.Join("..", "..", "internal", "store")) {
 			return filepath.SkipDir
 		}
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -33,21 +36,24 @@ func TestOnlyStoreWrites(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		scanned++
 		for _, loc := range storeOnly.FindAllIndex(src, -1) {
 			line := bytes.Count(src[:loc[0]], []byte("\n")) + 1
-			t.Errorf("%s:%d writes files outside internal/store: %s", path, line, src[loc[0]:loc[1]])
+			t.Errorf("%s:%d touches files outside internal/store: %s", path, line, src[loc[0]:loc[1]])
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if scanned == 0 {
+		t.Fatal("no source file was scanned")
+	}
 }
 
-// TestStoreOnlyCalls checks the pattern TestOnlyStoreWrites applies: every
-// os function that creates, moves, changes or removes a file or directory is
-// caught, called or taken as a value; reads and unrelated names are not.
-func TestStoreOnlyCalls(t *testing.T) {
+// TestStoreOnlyPattern pins storeOnly: each function, OpenFile whatever its
+// flags, a function taken as a value; not reads or look-alike names.
+func TestStoreOnlyPattern(t *testing.T) {
 	caught := []string{
 		"os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0o644)",
 		"os.OpenFile(p, os.O_RDONLY, 0)",
@@ -67,6 +73,8 @@ func TestStoreOnlyCalls(t *testing.T) {
 		"os.Truncate(p, 0)",
 		"os.Remove(p)",
 		"os.RemoveAll(p)",
+		"os.CopyFS(dir, fsys)",
+		"os.OpenRoot(dir)",
 		"mv := os.Rename",
 	}
 	for _, src := range caught {
@@ -76,10 +84,8 @@ func TestStoreOnlyCalls(t *testing.T) {
 	}
 	allowed := []string{
 		"os.Open(p)",
-		"os.ReadFile(p)",
-		"os.ReadDir(p)",
 		"os.Readlink(p)",
-		"os.Lstat(p)",
+		"os.OpenInRoot(dir, p)",
 		"var e *os.LinkError",
 		"os.O_CREATE",
 		"store.Rename(a, b)",
@@ -90,4 +96,9 @@ func TestStoreOnlyCalls(t *testing.T) {
 			t.Errorf("%s is caught", src)
 		}
 	}
+}
+
+// ignored reports whether the go tool skips a directory of this name.
+func ignored(name string) bool {
+	return name == "testdata" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
 }

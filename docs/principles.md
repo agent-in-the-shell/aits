@@ -112,10 +112,8 @@ styles.
 
 **Guard.** Tests assert actual on-disk permissions. A structural test forbids,
 outside the storage package, every `os` function that creates, moves, changes
-or removes a file or directory: `OpenFile` (whatever its flags), `Mkdir`,
-`MkdirAll`, `MkdirTemp`, `Create`, `CreateTemp`, `WriteFile`, `Rename`,
-`Symlink`, `Link`, `Chmod`, `Chown`, `Lchown`, `Chtimes`, `Truncate`, `Remove`
-and `RemoveAll`.
+or removes a file or directory, `OpenFile` and `OpenRoot` whatever their use
+(`internal/archtest/storage_test.go`).
 
 ## P8 — Content and secret hygiene
 
