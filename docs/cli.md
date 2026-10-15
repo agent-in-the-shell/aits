@@ -234,9 +234,9 @@ Follow-ups (--after ID): --agent and --cwd, if given, must be ID's (--cwd
 is made absolute, symlinks not resolved). ID must not have failed or ended
 without a session, and may have only one follow-up that has not failed (one
 whose worker died counts until its agent is stopped; try again then). A
-queued follow-up whose parent does not exist, failed or has no session is
-failed by the next list or work (run status not_started); until then show
-reports it queued. An unreadable task file makes create fail (internal).
+queued follow-up whose parent does not exist, failed or has no session (is
+done without one) is failed by the next list or work (run status
+not_started); until then show reports it queued. An unreadable task file makes create fail (internal).
 
 Exit codes:
   0  Queued.
@@ -260,7 +260,7 @@ Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
 {"tasks":[{"id","status","agent","cwd","created_at","after"}],"skipped":["ID"]},
 with after only for a follow-up. Tasks of dead workers are reclaimed first,
 and queued follow-ups whose parent does not exist, failed or has no session
-are failed (run status not_started). A running task whose lock file is
+(is done without one) are failed (run status not_started). A running task whose lock file is
 missing cannot be judged: it stays running, with "aits: cannot tell whether
 the worker of task ID is alive: its lock file is missing" on stderr.
 
@@ -269,7 +269,8 @@ JSON, not the record of that id, an unknown status, or running without a
 lease) is skipped and left as it is:
 its id is in "skipped" (always present, sorted) or, without --json, on
 stderr as "aits: skipped task ID that could not be read". A running task
-whose file cannot be read is not reclaimed, and its agent is not stopped.
+whose file cannot be read is not reclaimed, and its agent is not stopped; a
+follow-up of a task whose file cannot be read stays queued.
 
 Exit codes:
   0  Listed.
@@ -303,10 +304,11 @@ Task fields (--json):
                shell status, not_started (the agent was never started: it
                could not be started after the claim, or the task is a
                follow-up whose parent does not exist, failed or has no
-               session), or worker_died (its worker exited first; set by
-               the next work or list). A not_started or worker_died run
-               has no exit_code and no duration_ms, which are unknown; only
-               a worker_died run whose agent had started has started_at.
+               session (is done without one)), or worker_died (its worker
+               exited first; set by the next work or list). A not_started
+               or worker_died run has no exit_code and no duration_ms,
+               which are unknown; only a worker_died run whose agent had
+               started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr, with control
@@ -345,17 +347,18 @@ Task fields (--json):
                shell status, not_started (the agent was never started: it
                could not be started after the claim, or the task is a
                follow-up whose parent does not exist, failed or has no
-               session), or worker_died (its worker exited first; set by
-               the next work or list). A not_started or worker_died run
-               has no exit_code and no duration_ms, which are unknown; only
-               a worker_died run whose agent had started has started_at.
+               session (is done without one)), or worker_died (its worker
+               exited first; set by the next work or list). A not_started
+               or worker_died run has no exit_code and no duration_ms,
+               which are unknown; only a worker_died run whose agent had
+               started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr, with control
 characters shown as Go escapes (\x1b, \r).
 
-With nothing claimable (nothing queued, or only follow-ups whose parent is
-not done), work prints {"status":"empty"} with --json (nothing otherwise)
+With nothing claimable (nothing queued, only follow-ups whose parent is not
+done, or, with --agent, nothing queued for that agent), work prints {"status":"empty"} with --json (nothing otherwise)
 and exits 0. A worker whose task was reclaimed records nothing
 and fails with "task ID was reclaimed before its run was recorded". A task
 file that cannot be read is skipped and left as it is, with
