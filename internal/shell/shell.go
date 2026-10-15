@@ -39,6 +39,9 @@ type Request struct {
 	Pass    []string       // variable names passed from Environ beyond the allowlist (P8)
 	Session string         // a session to continue; empty starts a new one
 	Started func(pgid int) // if set, called once with the agent's process group right after it starts
+	// Kill, once closed, makes a run being stopped or timed out kill the
+	// agent's group at once instead of after the grace period (P10).
+	Kill <-chan struct{}
 }
 
 // Result describes a run that started.

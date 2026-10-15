@@ -286,6 +286,25 @@ func TestTaskWorkStopped(t *testing.T) {
 	}
 }
 
+// A second signal kills a stopping worker's agent group at once (P10).
+func TestTaskWorkSecondSignalKills(t *testing.T) {
+	q := newQueue(t, "ignore_term")
+	q.create("hi")
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+		if err := s.cmd.Process.Signal(sig); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := s.waitOrKill(t, 3*time.Second)
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run.Status != "stopped" {
+		t.Fatalf("code=%d %+v", out.code, w)
+	}
+	assertGone(t, readPID(t, filepath.Join(q.path, "child.pid")))
+	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
+}
+
 // A worker killed mid-run is found dead by the next list at once, not after
 // the task's 30-minute timeout, and its agent, still running, is stopped: the
 // agent does not keep the worker's lock (P10).

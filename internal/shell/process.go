@@ -59,14 +59,15 @@ func run(ctx context.Context, ag agent, path string, env []string, req Request) 
 	if req.Started != nil {
 		req.Started(cmd.Process.Pid) // the agent leads its own group (Setpgid)
 	}
-	return supervise(ctx, cmd, outR, errR, req.Timeout, ag.parse), nil
+	return supervise(ctx, cmd, outR, errR, req.Timeout, req.Kill, ag.parse), nil
 }
 
 // supervise waits for three things: the agent to exit, its stdout to reach
 // EOF, and its stderr to reach EOF. A timeout, a cancelled ctx, an oversized
 // event, or the agent's own exit terminates the whole group, so nothing the
-// agent started outlives it (P10).
-func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, parse parser) observation {
+// agent started outlives it (P10). Once the run is stopped or timed out, a
+// closed kill sends SIGKILL to the group without waiting for the grace period.
+func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, kill <-chan struct{}, parse parser) observation {
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errTimedOut)
 	defer cancel()
 	g := &group{pgid: cmd.Process.Pid, pipes: []*os.File{out, errOut}}
@@ -81,6 +82,7 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 
 	var o observation
 	done := ctx.Done()
+	var armed <-chan struct{} // kill, once the run is ended through ctx
 	for pending := 3; pending > 0; {
 		select {
 		case <-waitCh:
@@ -102,6 +104,10 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 				o.stopped = true
 			}
 			g.terminate()
+			armed = kill
+		case <-armed:
+			armed = nil
+			g.killNow()
 		}
 	}
 	g.settle()
@@ -149,6 +155,13 @@ func (g *group) terminate() {
 			_ = p.SetReadDeadline(g.deadline)
 		}
 	})
+}
+
+// killNow sends the pending SIGKILL of terminate at once, unless it was sent.
+func (g *group) killNow() {
+	if g.kill.Stop() {
+		g.kill.Reset(0)
+	}
 }
 
 // settle waits, until the drain deadline at most, for the group to be empty,

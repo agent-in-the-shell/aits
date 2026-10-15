@@ -51,6 +51,10 @@ Statuses:
   timeout           --timeout elapsed; the agent was stopped.
   stopped           aits got SIGTERM, SIGINT or SIGHUP; the agent was stopped.
 
+Stopping: on a timeout or a signal, aits sends TERM to the agent's process
+group and KILL 5s later, or at once on a second signal. It still waits for
+the group to exit and prints the result.
+
 Errors (nothing was started):
   unknown_command     exit 2  No such command.
   unknown_flag        exit 2  No such flag for this command.
@@ -90,7 +94,7 @@ func submitCommand() *Command {
 				}
 				res, err := shell.Submit(ctx, shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: pass, Session: *session,
+					Environ: env.Environ, Pass: pass, Session: *session, Kill: env.Kill,
 				})
 				if err != nil {
 					return 0, submitError(err)

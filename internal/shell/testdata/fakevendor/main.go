@@ -162,6 +162,7 @@ func play(d dialect, scenario, dir, exe string) {
 	case "ignore_term":
 		signal.Ignore(syscall.SIGTERM)
 		d.start()
+		spawnGrandchild(dir, exe)
 		writePID(filepath.Join(dir, "child.pid"))
 		time.Sleep(10 * time.Minute)
 	case "ignore_stdin", "linger":
