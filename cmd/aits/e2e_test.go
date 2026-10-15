@@ -294,11 +294,12 @@ func TestSubmitAgentNotFound(t *testing.T) {
 	})
 }
 
-// What the fake's control_chars scenario reports, raw and as text mode shows
-// it (#83).
+// What the fake's control_chars and denied scenarios report, raw and as text
+// mode shows it (#83, #100).
 const (
 	ctrlSession, ctrlSessionShown = "sess-\x1b[2K", `sess-\x1b[2K`
 	ctrlError, ctrlErrorShown     = "\x1b[2K\rall good\x1b]0;pwned\a", `\x1b[2K\rall good\x1b]0;pwned\a`
+	ctrlTool, ctrlToolShown       = "Bash\x1b[2K", `Bash\x1b[2K` // a tool the denied scenario names
 )
 
 // In text mode, the agent's error and session id reach the terminal with
@@ -315,9 +316,6 @@ func TestSubmitEscapesAgentText(t *testing.T) {
 		t.Errorf("--json: %+v", r)
 	}
 }
-
-// What the fake's denied scenario reports, raw and as text mode shows it.
-const ctrlTool, ctrlToolShown = "Bash\x1b[2K", `Bash\x1b[2K`
 
 // Tool calls Claude Code refused for want of the user's approval are named,
 // in order, on every status, without changing it: the agent may have

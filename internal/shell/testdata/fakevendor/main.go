@@ -244,7 +244,7 @@ func claudeResult(isError bool, text, session string) map[string]any {
 }
 
 // withDenials sets the refused tool calls of a Claude Code result event.
-func withDenials(ev map[string]any, denials ...any) map[string]any {
+func withDenials(ev map[string]any, denials ...map[string]any) map[string]any {
 	ev["permission_denials"] = denials
 	return ev
 }

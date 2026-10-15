@@ -41,12 +41,14 @@ func parseClaude(ev *events, line []byte) bool {
 	if err := json.Unmarshal(line, &res); err != nil {
 		return false
 	}
+	var denied []string // kept only if every entry names its tool (P6)
 	for _, d := range res.PermissionDenials {
 		if d.ToolName == "" {
 			return false
 		}
-		ev.denied = append(ev.denied, d.ToolName)
+		denied = append(denied, d.ToolName)
 	}
+	ev.denied = denied
 	ev.done = true
 	if res.IsError {
 		ev.failed, ev.failure = true, res.Result

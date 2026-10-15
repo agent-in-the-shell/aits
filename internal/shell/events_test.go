@@ -43,6 +43,8 @@ func TestParseClaude(t *testing.T) {
 			events{sessionID: "s1", answer: "a", done: true}},
 		{"denial without a tool", `{"type":"result","result":"a","session_id":"s1","permission_denials":[{"tool_use_id":"x"}]}`,
 			events{sessionID: "s1", badLine: true}},
+		{"second denial without a tool", `{"type":"result","result":"a","session_id":"s1","permission_denials":[{"tool_name":"Write"},{}]}`,
+			events{sessionID: "s1", badLine: true}},
 		{"denials of wrong type", `{"type":"result","result":"a","session_id":"s1","permission_denials":"Write"}`,
 			events{sessionID: "s1", badLine: true}},
 	}
