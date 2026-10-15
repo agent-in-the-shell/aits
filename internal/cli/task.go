@@ -108,8 +108,9 @@ func taskList() *Command {
 with after only for a follow-up. Tasks of dead workers are reclaimed first,
 and queued follow-ups whose parent does not exist, failed or has no session
 when done are failed (run status not_started). A running task whose lock
-file is missing cannot be judged: it stays running, with "aits: cannot tell
-whether the worker of task ID is alive: its lock file is missing" on stderr.
+file is missing cannot be judged: it stays running, with
+"aits: cannot tell whether the worker of task ID is alive: its lock file is missing"
+on stderr.
 
 A task file that cannot be read (not a regular file named by a task id, not
 JSON, not the record of that id, an unknown status, or running without a
@@ -204,10 +205,10 @@ func taskWork() *Command {
 With nothing claimable (no task queued, none for AGENT with --agent, or only
 follow-ups whose parent is not done or cannot be read), work exits 0,
 printing {"status":"empty"} with --json and nothing otherwise. A worker whose
-task was reclaimed records nothing and fails with "task ID was reclaimed
-before its run was recorded". A task file that cannot be read is skipped and
-left as it is, with "aits: skipped task ID that could not be read" on
-stderr. Running tasks whose lock file is missing are reported as list does.
+task was reclaimed records nothing and fails with
+"task ID was reclaimed before its run was recorded". A task file that cannot
+be read is skipped and left as it is, with
+"aits: skipped task ID that could not be read" on stderr. Running tasks whose lock file is missing are reported as list does.
 The agent is stopped as shell submit stops it. If its process group cannot
 be recorded in the task, the agent is killed at once, so that it never runs
 unrecorded: the run is stopped, with the reason as its message, or work
