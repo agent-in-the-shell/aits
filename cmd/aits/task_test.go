@@ -202,23 +202,29 @@ func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	q := newQueue(t, "ok")
 	q.create("hi", "--env", "AITS_TEST_UNSET")
 	out := q.run("work", "--json")
-	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" || w.Run.StartedAt != "" {
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" {
 		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
 	// No exit code or duration: an agent that never ran has neither (P6, #57).
-	if got := runKeys(t, out.stdout); !slices.Equal(got, []string{"agent", "finished_at", "message", "status"}) {
+	if got := recordKeys(t, out.stdout, "run"); !slices.Equal(got, []string{"agent", "finished_at", "message", "status"}) {
 		t.Errorf("run keys = %v", got)
 	}
 }
 
-// runKeys returns the sorted keys of a task record's run.
-func runKeys(t *testing.T, stdout string) []string {
+// recordKeys returns the sorted keys of field ("run" or "lease") of a task
+// record.
+func recordKeys(t *testing.T, stdout, field string) []string {
 	t.Helper()
-	var r struct{ Run map[string]any }
-	if err := json.Unmarshal([]byte(stdout), &r); err != nil {
+	var r map[string]json.RawMessage
+	var f map[string]any
+	err := json.Unmarshal([]byte(stdout), &r)
+	if err == nil {
+		err = json.Unmarshal(r[field], &f)
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
-	keys := slices.Collect(maps.Keys(r.Run))
+	keys := slices.Collect(maps.Keys(f))
 	slices.Sort(keys)
 	return keys
 }
@@ -285,12 +291,8 @@ func TestTaskWorkStopped(t *testing.T) {
 	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Lease == nil || r.Lease.PGID != readPID(t, filepath.Join(q.path, "child.pid")) {
 		t.Errorf("running task lease = %+v, want the agent's process group", r.Lease)
 	}
-	var raw struct {
-		Lease map[string]any `json:"lease"`
-	}
-	if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &raw); err != nil || len(raw.Lease) != 3 ||
-		raw.Lease["token"] == nil || raw.Lease["pgid"] == nil || raw.Lease["started_at"] == nil {
-		t.Errorf("lease = %v, want exactly token, pgid and started_at", raw.Lease)
+	if got := recordKeys(t, q.run("show", id, "--json").stdout, "lease"); !slices.Equal(got, []string{"pgid", "started_at", "token"}) {
+		t.Errorf("lease keys = %v", got)
 	}
 	if out := q.run("list", "--json"); out.code != 0 || decodeOne[taskList](t, out.stdout).Tasks[0].Status != "running" {
 		t.Errorf("list while the worker runs: code=%d stdout=%q", out.code, out.stdout)
@@ -301,7 +303,7 @@ func TestTaskWorkStopped(t *testing.T) {
 		t.Fatalf("code=%d %+v", out.code, w)
 	}
 	// A run whose agent ran keeps every field of the shell result (#57).
-	if got := runKeys(t, out.stdout); !slices.Equal(got, []string{"agent", "duration_ms", "exit_code", "finished_at", "message", "session_id", "started_at", "status"}) {
+	if got := recordKeys(t, out.stdout, "run"); !slices.Equal(got, []string{"agent", "duration_ms", "exit_code", "finished_at", "message", "session_id", "started_at", "status"}) {
 		t.Errorf("run keys = %v", got)
 	}
 }
@@ -344,7 +346,7 @@ func TestTaskWorkerKilled(t *testing.T) {
 	}
 	// When its agent started is known; its exit code and duration are not
 	// (P6, #57).
-	if got := runKeys(t, show); !slices.Equal(got, []string{"agent", "finished_at", "message", "started_at", "status"}) {
+	if got := recordKeys(t, show, "run"); !slices.Equal(got, []string{"agent", "finished_at", "message", "started_at", "status"}) {
 		t.Errorf("run keys = %v", got)
 	}
 	assertGone(t, pgid)

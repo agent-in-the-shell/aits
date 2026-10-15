@@ -154,12 +154,12 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	status, msg := decide(obs)
-	ms := time.Since(start).Milliseconds()
+	code, ms := obs.exitCode, time.Since(start).Milliseconds()
 	res := Result{
 		Status:     status,
 		Agent:      ag.name,
 		SessionID:  obs.events.sessionID,
-		ExitCode:   &obs.exitCode,
+		ExitCode:   &code,
 		DurationMS: &ms,
 		Message:    msg,
 	}
