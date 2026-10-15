@@ -311,16 +311,12 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 	var session string
 	var release func()
 	i := slices.IndexFunc(s.tasks, func(t Task) bool {
-		if t.Status != Queued || (agent != "" && t.Agent != agent) {
-			return false
-		}
-		p := byID[t.After]
-		return t.After == "" || (p != nil && p.Status == Done)
+		return t.Status == Queued && (agent == "" || t.Agent == agent) && claimable(t, byID)
 	})
 	if err == nil && i >= 0 {
 		t := &s.tasks[i]
 		if t.After != "" {
-			session = byID[t.After].Run.SessionID // reclaim failed any done parent without one
+			session = byID[t.After].Run.SessionID // claimable checked it
 		}
 		if release, err = store.TryLock(lockPath(dir, t.ID), true); err != nil {
 			err = fmt.Errorf("task %s: %w", t.ID, err)
@@ -440,6 +436,14 @@ func index(tasks []Task) map[string]*Task {
 		m[tasks[i].ID] = &tasks[i]
 	}
 	return m
+}
+
+// claimable reports whether queued task t may run now: a follow-up only once
+// its parent is done with a session to continue (parentFault). It does not
+// rely on a reclaim having failed the follow-ups of other parents (P6).
+func claimable(t Task, byID map[string]*Task) bool {
+	p := byID[t.After]
+	return t.After == "" || (p != nil && p.Status == Done && parentFault(p, false) == "")
 }
 
 // parentFault says why a follow-up of p can never run, or "" if it may yet:

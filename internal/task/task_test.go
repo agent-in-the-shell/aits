@@ -578,3 +578,22 @@ func TestCollectReadsRunningTaskMissedByListing(t *testing.T) {
 		t.Errorf("collect = %+v; want %s only", s, p.ID)
 	}
 }
+
+// A follow-up is claimable only once its parent is done with a session; a
+// done parent without a run is not followed and does not crash the check,
+// whether or not a reclaim has failed the follow-up yet (#77).
+func TestClaimable(t *testing.T) {
+	ok := &Run{Result: shell.Result{Status: shell.StatusOK, SessionID: "s"}}
+	byID := map[string]*Task{
+		"done":       {Status: Done, Run: ok},
+		"no-run":     {Status: Done},
+		"no-session": {Status: Done, Run: &Run{Result: shell.Result{Status: shell.StatusOK}}},
+		"running":    {Status: Running},
+		"failed":     {Status: Failed, Run: ok},
+	}
+	for after, want := range map[string]bool{"": true, "done": true, "no-run": false, "no-session": false, "running": false, "failed": false, "gone": false} {
+		if got := claimable(Task{Status: Queued, After: after}, byID); got != want {
+			t.Errorf("claimable after %q = %v, want %v", after, got, want)
+		}
+	}
+}
