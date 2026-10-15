@@ -83,6 +83,37 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 	}
 }
 
+// TestSearchHelpDocumentsErrors enforces P5 for "aits session search": every
+// error code internal/cli/session.go can produce is on the help's Errors line
+// with the exit code it causes (#62).
+func TestSearchHelpDocumentsErrors(t *testing.T) {
+	var errs string
+	for _, line := range strings.Split(call{args: []string{"session", "search", "--help"}}.run(t).stdout, "\n") {
+		if after, ok := strings.CutPrefix(line, "Errors: "); ok {
+			errs = after
+		}
+	}
+	// exits maps each code to its group's exit, e.g. "stopped" to "exit 1"
+	// in "invalid_input (exit 2); stopped, internal (exit 1).".
+	exits := map[string]string{}
+	for _, group := range strings.Split(strings.TrimSuffix(errs, "."), "; ") {
+		codes, exit, _ := strings.Cut(strings.TrimSuffix(group, ")"), " (")
+		for _, c := range strings.Split(codes, ", ") {
+			exits[c] = exit
+		}
+	}
+	src, err := os.ReadFile("../../internal/cli/session.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
+	for _, m := range regexp.MustCompile(`\b(usageError|failure)\(\s*"(\w+)"`).FindAllStringSubmatch(string(src), -1) {
+		if exits[m[2]] != exit[m[1]] {
+			t.Errorf("error code %q is not on the Errors line with %s: %q", m[2], exit[m[1]], errs)
+		}
+	}
+}
+
 // sourceMatches returns the submatches of pattern in the non-test Go files of
 // dir, failing the test if there are none.
 func sourceMatches(t *testing.T, dir, pattern string) [][]string {

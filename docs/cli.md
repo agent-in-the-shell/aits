@@ -124,8 +124,9 @@ Flags:
   --source KIND     Only sessions started KIND. One of: interactive, scripted (see Source below).
 
 Output:
-  With --json, stdout is one JSON object:
-  {"results":[...],"skipped":{"files":N,"lines":N}}. Without --json, each
+  With --json, stdout is exactly one JSON object:
+  {"results":[...],"skipped":{"files":N,"lines":N}}, or on failure
+  {"error":{"code":"…","message":"…"}}. Without --json, each
   result is a line "UPDATED_AT  AGENT  SESSION_ID  CWD" and an indented
   snippet, and anything skipped is reported on stderr. Text output shows
   control characters from transcripts as Go escapes (\x1b, \r); --json
@@ -176,6 +177,8 @@ Exit codes:
   0  The search ran, with or without results.
   1  Stopped by a signal, or an unexpected failure.
   2  Usage error or invalid input.
+
+Errors: invalid_input (exit 2); stopped, internal (exit 1).
 ```
 
 ## aits task
