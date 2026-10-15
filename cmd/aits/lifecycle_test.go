@@ -171,7 +171,7 @@ func TestSubmitStoppedAfterTimeout(t *testing.T) {
 
 // An agent that answered and exited keeps its answer when a timeout or a
 // signal comes while aits waits for a descendant that still holds its output
-// and ignores TERM (#81).
+// and ignores TERM; a second signal still kills that descendant at once (#81).
 func TestSubmitAnswerKeptAfterExit(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		check := func(t *testing.T, bin string, out output) {
@@ -183,30 +183,22 @@ func TestSubmitAnswerKeptAfterExit(t *testing.T) {
 		}
 		t.Run("timeout", func(t *testing.T) {
 			bin := vendorAs(t, agent, "linger_ignore_term")
-			check(t, bin, call{path: bin, args: agentArgs(agent, "--timeout", "1s", "--json", "hi")}.run(t))
+			check(t, bin, call{path: bin, args: agentArgs(agent, "--timeout", "2s", "--json", "hi")}.run(t))
 		})
-		t.Run("signal", func(t *testing.T) {
+		t.Run("signals", func(t *testing.T) {
 			bin := vendorAs(t, agent, "linger_ignore_term")
 			s := call{path: bin, args: agentArgs(agent, "--json", "hi")}.start(t)
 			waitFile(t, filepath.Join(bin, "child.pid"))
-			waitExited(t, readPID(t, filepath.Join(bin, "child.pid")))
-			s.signal(t, syscall.SIGINT)
+			assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+			time.Sleep(200 * time.Millisecond) // for aits to see the exit
+			start := time.Now()
+			s.signal(t, syscall.SIGINT, syscall.SIGTERM)
 			check(t, bin, s.waitOrKill(t, 15*time.Second))
+			if elapsed := time.Since(start); elapsed > 3*time.Second {
+				t.Errorf("finished %s after two signals; the second must not wait for the 5s grace period", elapsed)
+			}
 		})
 	})
-}
-
-// waitExited waits until pid has exited and been reaped, and a little longer
-// for aits to see it.
-func waitExited(t *testing.T, pid int) {
-	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
-			time.Sleep(200 * time.Millisecond)
-			return
-		}
-	}
-	t.Fatalf("process %d did not exit", pid)
 }
 
 func TestSubmitOutputTooLarge(t *testing.T) {

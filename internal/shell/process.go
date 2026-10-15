@@ -89,15 +89,14 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 
 	var o observation
 	stop := ctx.Done()
-	var armed <-chan struct{} // kill, once the run is stopped or timed out
-	exited := false
+	var armed <-chan struct{} // kill, once the run is stopped, timed out or exited
 	for pending := 3; pending > 0; {
 		select {
 		case <-waitCh:
 			pending--
-			exited = true
 			o.exitCode = cmd.ProcessState.ExitCode()
 			g.terminate()
+			deadline, stop, armed = nil, nil, kill // later ones no longer change the outcome
 		case o.events = <-evCh:
 			pending--
 			if o.events.tooLarge {
@@ -106,12 +105,12 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 		case <-tailCh:
 			pending--
 		case <-deadline:
-			o.timedOut = !exited
+			o.timedOut = true
 			g.terminate()
 			armed = kill
 		case <-stop:
 			stop = nil
-			o.stopped = !exited
+			o.stopped = true
 			g.terminate()
 			armed = kill
 		case <-armed:
