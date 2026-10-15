@@ -151,7 +151,7 @@ func (q queue) queuedAny() bool { return q.count() > 0 }
 
 // count returns how many task records exist.
 func (q queue) count() int {
-	m, _ := filepath.Glob(filepath.Join(q.home, "task", "*.json"))
+	m, _ := filepath.Glob(q.taskFile("*"))
 	return len(m)
 }
 
@@ -169,12 +169,16 @@ func (q queue) after(parent, prompt string, flags ...string) string {
 // created returns the id that a successful create --json printed.
 func created(t *testing.T, out output) string {
 	t.Helper()
-	var r struct{ ID, Status string }
-	if err := json.Unmarshal([]byte(out.stdout), &r); out.code != 0 || err != nil || r.Status != "queued" {
+	if out.code != 0 {
 		t.Fatalf("create: code=%d stdout=%q", out.code, out.stdout)
+	}
+	r := decodeOne[struct{ ID, Status string }](t, out.stdout)
+	if r.Status != "queued" {
+		t.Fatalf("create: stdout=%q", out.stdout)
 	}
 	return r.ID
 }
+
 func TestTaskFlow(t *testing.T) {
 	q := newQueue(t, "ok")
 	id := q.create("Review the code")
@@ -856,6 +860,7 @@ func TestTaskCreateAfterInvalid(t *testing.T) {
 		args []string
 		msg  string
 	}{
+		{"unknown parent", []string{"--after", "20000101T000000-000000"}, "no task 20000101T000000-000000"},
 		{"not a task id", []string{"--after", "x"}, "no task x"},
 		{"empty after", []string{"--after", ""}, `invalid value "" for flag -after: needs a task id`},
 		{"failed parent", []string{"--after", failed}, "task " + failed + " failed" + only},
@@ -874,4 +879,15 @@ func TestTaskCreateAfterInvalid(t *testing.T) {
 	// the same agent and cwd, spelled with a trailing slash, are the parent's.
 	q.patch(first, map[string]any{"status": "failed", "run": map[string]any{"status": "not_started", "agent": "claude", "finished_at": parent.CreatedAt}})
 	q.after(p, "again", "--cwd", parent.Cwd+"/", "--agent", "claude")
+	// An unreadable task file could be another follow-up of the parent:
+	// create fails closed, naming it, and writes nothing (P6).
+	fresh := q.create("fresh")
+	junk := "20000101T000000-00000a"
+	q.writeTaskFile(junk, "not json", 0o600)
+	before := q.count()
+	out := q.run("create", "--after", fresh, "--json", "x")
+	want := "cannot tell whether task " + fresh + " already has a follow-up: task " + junk + " could not be read"
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || e.Message != want || q.count() != before {
+		t.Errorf("unreadable file: code=%d stdout=%q; want internal %q", out.code, out.stdout, want)
+	}
 }

@@ -454,23 +454,6 @@ func setStatus(t *testing.T, environ []string, tk Task, st Status, r *Run) {
 	}
 }
 
-// An unreadable task file could be a follow-up of the same parent: create
-// --after fails closed, and a plain create is unaffected (spec §2, P6).
-func TestCreateFollowUpUnreadableFile(t *testing.T) {
-	environ := env(t)
-	p := create(t, environ, "claude")
-	dir, _ := store.Dir(environ, "task")
-	if err := store.WriteFile(path(dir, "20000101T000000-00000a"), []byte("not json")); err != nil {
-		t.Fatal(err)
-	}
-	var invalid *shell.InvalidRequestError
-	if _, err := follow(environ, p.ID, Spec{}); err == nil || errors.As(err, &invalid) ||
-		!strings.Contains(err.Error(), "cannot tell whether task "+p.ID+" already has a follow-up") {
-		t.Errorf("follow-up with an unreadable file: err = %v", err)
-	}
-	create(t, environ, "claude")
-}
-
 // A follow-up is passed over until its parent is done, then run in the
 // parent's session. The fake PATH has no agent, so the run is not_started;
 // which task was claimed, and with which session, is what matters.

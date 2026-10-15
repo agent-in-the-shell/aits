@@ -200,7 +200,7 @@ func List(environ []string) ([]Task, Notes, error) {
 	return s.tasks, s.Notes, err
 }
 
-// Show returns one task; an unknown id is a *shell.InvalidRequestError.
+// Show returns one task (see find).
 func Show(environ []string, id string) (Task, error) {
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
