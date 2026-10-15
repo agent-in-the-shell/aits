@@ -225,6 +225,9 @@ Flags:
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
 invalid_input.
 
+The prompt, --cwd and --env names must be valid UTF-8: a task is stored as
+JSON text.
+
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
 Follow-ups (--after ID): --agent and --cwd, if given, must be ID's (--cwd

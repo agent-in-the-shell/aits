@@ -49,7 +49,10 @@ func taskCreate() *Command {
 		Name:    "create",
 		Args:    "(PROMPT | -)",
 		Summary: "Queue a prompt for an agent; prints the task id.",
-		Details: promptDetails + `Output: the task id; with --json {"id":"…","status":"queued"}.
+		Details: promptDetails + `The prompt, --cwd and --env names must be valid UTF-8: a task is stored as
+JSON text.
+
+Output: the task id; with --json {"id":"…","status":"queued"}.
 
 Follow-ups (--after ID): --agent and --cwd, if given, must be ID's (--cwd
 is made absolute, symlinks not resolved). ID must not have failed or ended
