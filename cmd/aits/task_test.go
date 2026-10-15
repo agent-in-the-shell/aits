@@ -507,8 +507,9 @@ func (q queue) lockDir() func() {
 }
 
 // deadWorker makes task id running as a dead worker leaves it: unlocked, its
-// pgid a leftover group running script (sh -c) with $0 a file the script
-// creates once ready, and args. It returns the group.
+// pgid a leftover group running "sh -c script READY args...". The script sets
+// its traps and then creates READY ($0); args are $1 and on. It returns the
+// group.
 func (q queue) deadWorker(id, script string, args ...string) int {
 	q.t.Helper()
 	ready := filepath.Join(q.t.TempDir(), "ready")
@@ -576,7 +577,7 @@ func TestTaskWorkerKilledBeforePgid(t *testing.T) {
 // later command could have stopped it (P10, #56).
 func TestTaskWorkPgidNotRecorded(t *testing.T) {
 	q := newQueue(t, "ignore_term")
-	t.Cleanup(func() { assertNoneRunning(t, q.path) }) // the agent was killed, even if before its pid file
+	t.Cleanup(func() { assertNoneRunning(t, q.path) }) // nothing from the agent survives, also when work hangs
 	a := q.create("hi")
 	dir := filepath.Join(q.home, "task")
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })

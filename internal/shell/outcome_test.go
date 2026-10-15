@@ -13,7 +13,7 @@ func TestDecide(t *testing.T) {
 		want Status
 	}{
 		{"ok", observation{events: okEvents}, StatusOK},
-		{"aborted first", observation{aborted: errors.New("x"), stopped: true, timedOut: true, exitCode: -1}, StatusStopped},
+		{"aborted before timeout", observation{aborted: errors.New("x"), timedOut: true, exitCode: -1}, StatusStopped},
 		{"stopped first", observation{stopped: true, timedOut: true, exitCode: -1, events: events{tooLarge: true}}, StatusStopped},
 		{"timeout before too large", observation{timedOut: true, exitCode: -1, events: events{tooLarge: true}}, StatusTimeout},
 		{"too large before exit code", observation{exitCode: -1, events: events{tooLarge: true}}, StatusTooLarge},
