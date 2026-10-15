@@ -96,12 +96,9 @@ func Search(ctx context.Context, q Query) (Output, error) {
 		cutoff = time.Now().Add(-q.Since)
 	}
 	var jobs []job
-	for _, name := range Agents() {
-		if q.Agent != "" && q.Agent != name {
-			continue
-		}
+	for _, name := range q.agents() {
 		v := vendors[name]
-		root, err := v.root(q.Environ)
+		root, err := v.root(q.Environ) // validate checked it; never glob a relative pattern
 		if err != nil {
 			return Output{}, err
 		}

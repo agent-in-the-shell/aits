@@ -82,5 +82,18 @@ func (q Query) validate() error {
 	if q.Source != "" && !slices.Contains(Sources, q.Source) {
 		return invalid("unknown source %q (one of: %s)", q.Source, strings.Join(Sources, ", "))
 	}
+	for _, name := range q.agents() {
+		if _, err := vendors[name].root(q.Environ); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// agents is the agents whose transcripts the query searches.
+func (q Query) agents() []string {
+	if q.Agent != "" {
+		return []string{q.Agent}
+	}
+	return Agents()
 }
