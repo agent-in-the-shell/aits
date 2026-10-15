@@ -23,8 +23,6 @@ const (
 	drainGrace = time.Second
 )
 
-var errTimedOut = errors.New("agent timed out")
-
 // run starts the agent with environment env in its own process group and
 // supervises it until it has exited and its output pipes are closed.
 func run(ctx context.Context, ag agent, path string, env []string, req Request) (observation, error) {
@@ -72,11 +70,12 @@ func run(ctx context.Context, ag agent, path string, env []string, req Request) 
 // supervise waits for three things: the agent to exit, its stdout to reach
 // EOF, and its stderr to reach EOF. A timeout, a cancelled ctx, an oversized
 // event, or the agent's own exit terminates the whole group, so nothing the
-// agent started outlives it (P10). Once the run is stopped or timed out, a
-// closed kill sends SIGKILL to the group without waiting for the grace period.
+// agent started outlives it (P10). ctx is watched even after the timeout, so
+// a stop during the grace period is recorded too. Once the run is stopped or
+// timed out, a closed kill sends SIGKILL to the group without waiting for the
+// grace period.
 func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, kill <-chan struct{}, parse parser) observation {
-	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errTimedOut)
-	defer cancel()
+	deadline := time.After(timeout)
 	g := &group{pgid: cmd.Process.Pid, pipes: []*os.File{out, errOut}}
 
 	evCh := make(chan events, 1)
@@ -88,8 +87,8 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 	go func() { _ = cmd.Wait(); waitCh <- struct{}{} }()
 
 	var o observation
-	done := ctx.Done()
-	var armed <-chan struct{} // kill, once the run is ended through ctx
+	stop := ctx.Done()
+	var armed <-chan struct{} // kill, once the run is stopped or timed out
 	for pending := 3; pending > 0; {
 		select {
 		case <-waitCh:
@@ -103,13 +102,13 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 			}
 		case <-tailCh:
 			pending--
-		case <-done:
-			done = nil
-			if errors.Is(context.Cause(ctx), errTimedOut) {
-				o.timedOut = true
-			} else {
-				o.stopped = true
-			}
+		case <-deadline:
+			o.timedOut = true
+			g.terminate()
+			armed = kill
+		case <-stop:
+			stop = nil
+			o.stopped = true
 			g.terminate()
 			armed = kill
 		case <-armed:
