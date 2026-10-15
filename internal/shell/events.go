@@ -14,13 +14,14 @@ const maxEventSize = 16 << 20
 // does not depend on the vendor. Each agent's parser fills it; every event is
 // dropped once parsed.
 type events struct {
-	sessionID string // the first session id seen
-	answer    string // the reply text
-	failure   string // the error the agent reported
-	done      bool   // the agent's final event was seen
-	failed    bool   // the agent reported that the run failed
-	badLine   bool   // a line was not a usable event
-	tooLarge  bool   // a line exceeded maxEventSize
+	sessionID string   // the first session id seen
+	answer    string   // the reply text
+	failure   string   // the error the agent reported
+	denied    []string // the tools of the calls the agent was refused, in order
+	done      bool     // the agent's final event was seen
+	failed    bool     // the agent reported that the run failed
+	badLine   bool     // a line was not a usable event
+	tooLarge  bool     // a line exceeded maxEventSize
 }
 
 // setSession records id unless a session id was already seen.

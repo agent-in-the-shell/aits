@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -45,7 +46,7 @@ func TestParseCodex(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := readEvents(strings.NewReader(tt.in), parseCodex); got != tt.want {
+			if got := readEvents(strings.NewReader(tt.in), parseCodex); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("readEvents = %+v, want %+v", got, tt.want)
 			}
 		})

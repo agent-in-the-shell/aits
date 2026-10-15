@@ -57,6 +57,9 @@ type Result struct {
 	DurationMS *int64 `json:"duration_ms,omitempty"` // likewise
 	StderrTail string `json:"stderr_tail,omitempty"`
 	Message    string `json:"message,omitempty"`
+	// DeniedTools names the tool of each call the agent was refused for want
+	// of the user's approval, in order; Claude Code only.
+	DeniedTools []string `json:"denied_tools,omitempty"`
 }
 
 // ErrAgentNotFound means the agent's executable is not on the PATH in
@@ -162,6 +165,9 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		ExitCode:   &code,
 		DurationMS: &ms,
 		Message:    msg,
+		// Reported on every status, like the session id: a refusal can explain
+		// a failure too.
+		DeniedTools: obs.events.denied,
 	}
 	switch status {
 	case StatusOK:

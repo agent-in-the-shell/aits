@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -32,10 +33,24 @@ func TestParseClaude(t *testing.T) {
 		{"json null", "null\n", events{badLine: true}},
 		{"result of wrong type", `{"type":"result","result":42}`, events{badLine: true}},
 		{"no result event", initLine, events{sessionID: "s1"}},
+		{"denials", `{"type":"result","result":"a","session_id":"s1","permission_denials":[{"tool_name":"Write","tool_input":{}},{"tool_name":"Bash"}]}`,
+			events{sessionID: "s1", answer: "a", done: true, denied: []string{"Write", "Bash"}}},
+		{"denials on an error", `{"type":"result","is_error":true,"result":"bad","session_id":"s1","permission_denials":[{"tool_name":"Write"}]}`,
+			events{sessionID: "s1", failure: "bad", done: true, failed: true, denied: []string{"Write"}}},
+		{"no denials", `{"type":"result","result":"a","session_id":"s1","permission_denials":[]}`,
+			events{sessionID: "s1", answer: "a", done: true}},
+		{"null denials", `{"type":"result","result":"a","session_id":"s1","permission_denials":null}`,
+			events{sessionID: "s1", answer: "a", done: true}},
+		{"denial without a tool", `{"type":"result","result":"a","session_id":"s1","permission_denials":[{"tool_use_id":"x"}]}`,
+			events{sessionID: "s1", badLine: true}},
+		{"second denial without a tool", `{"type":"result","result":"a","session_id":"s1","permission_denials":[{"tool_name":"Write"},{}]}`,
+			events{sessionID: "s1", badLine: true}},
+		{"denials of wrong type", `{"type":"result","result":"a","session_id":"s1","permission_denials":"Write"}`,
+			events{sessionID: "s1", badLine: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := readEvents(strings.NewReader(tt.in), parseClaude); got != tt.want {
+			if got := readEvents(strings.NewReader(tt.in), parseClaude); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("readEvents = %+v, want %+v", got, tt.want)
 			}
 		})

@@ -105,7 +105,9 @@ envelope `stopped`, exit 1, and nothing is started.
 
 **Reading stdout.** Line by line, each line at most 16 MiB. From each event
 aits keeps only the `session_id` (first one seen) and, from the event with
-`"type":"result"`, its `is_error`, `result` and `session_id`. Every other
+`"type":"result"`, its `is_error`, `result`, `session_id` and, since #100, the
+`tool_name` of each `permission_denials` entry; the refused calls' inputs are
+not kept (P8). Every other
 event is discarded after parsing. A line that is not JSON is
 `bad_agent_output`; parsing continues after it, so a session id on a later
 line is still reported (#4). A line above the limit is `output_too_large`, and the
@@ -150,10 +152,14 @@ Result object (`--json`):
 - `exit_code`: the child's exit code; `-1` when it was ended by a signal.
 - `stderr_tail`: present only for `agent_failed`.
 - `message`: a one-line human explanation, present for every status but `ok`.
+- `denied_tools`: since #100, on every status, the tool of each call Claude
+  Code refused for want of the user's approval, in order; omitted when there
+  were none. It does not change the status.
 
 Without `--json`: for `ok`, stdout is the answer text followed by a newline,
 and stderr gets `session: <id>`. For any other status, stdout is empty and
-stderr gets `aits: <status>: <message>` plus `session: <id>` when known.
+stderr gets `aits: <status>: <message>` plus `session: <id>` when known. On
+every status, `denied_tools: <tool>, …` follows when there were any.
 
 Since #13, `message` for `agent_failed` carries the error the agent reported
 when there is one, even when it exited non-zero; see

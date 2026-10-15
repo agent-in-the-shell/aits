@@ -58,8 +58,8 @@ Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
-  goes to stderr, with control characters in the message and session id
-  shown as Go escapes (\x1b, \r).
+  goes to stderr, with control characters in the message, session id and
+  denied tools shown as Go escapes (\x1b, \r).
 
 Result fields:
   status       Always. One of the statuses below.
@@ -70,6 +70,10 @@ Result fields:
   duration_ms  Always.
   stderr_tail  Only for agent_failed: the last 4 KiB of the agent's stderr.
   message      Every status but ok: one line explaining it.
+  denied_tools Claude Code only, on every status: the tool of each call
+               refused for want of your approval, in order.
+               claude -p never stops to ask, and a refusal leaves the
+               status as it is: the agent may have finished another way.
 
 Statuses:
   ok                The agent answered.
@@ -308,20 +312,19 @@ Task fields (--json):
   after        For a follow-up: the task whose session it continues.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
-  run          Once worked: the "shell submit" result (status, agent,
-               session_id, answer, exit_code, duration_ms, stderr_tail,
-               message) plus started_at and finished_at. run.status is a
-               shell status, not_started (the agent was never started: it
-               could not be started after the claim, or the task is a
-               follow-up whose parent does not exist, failed or has no
-               session when done), or worker_died (its worker exited first;
-               set by the next work or list). A not_started or worker_died
+  run          Once worked: the result fields of "shell submit --help"
+               plus started_at and finished_at. run.status is a shell
+               status, not_started (the agent was never started: it could
+               not be started after the claim, or the task is a follow-up
+               whose parent does not exist, failed or has no session when
+               done), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died
                run has no exit_code and no duration_ms, which are unknown;
                only a worker_died run whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id and why a task failed on stderr, with control
-characters shown as Go escapes (\x1b, \r).
+stdout; the session id, the denied tools and why a task failed on stderr,
+with control characters shown as Go escapes (\x1b, \r).
 
 Exit codes:
   0  The task exists, whatever its status.
@@ -353,20 +356,19 @@ Task fields (--json):
   after        For a follow-up: the task whose session it continues.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
-  run          Once worked: the "shell submit" result (status, agent,
-               session_id, answer, exit_code, duration_ms, stderr_tail,
-               message) plus started_at and finished_at. run.status is a
-               shell status, not_started (the agent was never started: it
-               could not be started after the claim, or the task is a
-               follow-up whose parent does not exist, failed or has no
-               session when done), or worker_died (its worker exited first;
-               set by the next work or list). A not_started or worker_died
+  run          Once worked: the result fields of "shell submit --help"
+               plus started_at and finished_at. run.status is a shell
+               status, not_started (the agent was never started: it could
+               not be started after the claim, or the task is a follow-up
+               whose parent does not exist, failed or has no session when
+               done), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died
                run has no exit_code and no duration_ms, which are unknown;
                only a worker_died run whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id and why a task failed on stderr, with control
-characters shown as Go escapes (\x1b, \r).
+stdout; the session id, the denied tools and why a task failed on stderr,
+with control characters shown as Go escapes (\x1b, \r).
 
 With nothing claimable (no task queued, none for AGENT with --agent, or only
 follow-ups whose parent is not done or cannot be read), work exits 0,

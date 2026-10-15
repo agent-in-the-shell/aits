@@ -153,15 +153,16 @@ type errorBody struct {
 }
 
 type submitResult struct {
-	Status     string     `json:"status"`
-	Agent      string     `json:"agent"`
-	SessionID  string     `json:"session_id"`
-	Answer     string     `json:"answer"`
-	ExitCode   *int       `json:"exit_code"`
-	DurationMS *int64     `json:"duration_ms"`
-	StderrTail string     `json:"stderr_tail"`
-	Message    string     `json:"message"`
-	Error      *errorBody `json:"error"`
+	Status      string     `json:"status"`
+	Agent       string     `json:"agent"`
+	SessionID   string     `json:"session_id"`
+	Answer      string     `json:"answer"`
+	ExitCode    *int       `json:"exit_code"`
+	DurationMS  *int64     `json:"duration_ms"`
+	StderrTail  string     `json:"stderr_tail"`
+	Message     string     `json:"message"`
+	DeniedTools []string   `json:"denied_tools"`
+	Error       *errorBody `json:"error"`
 }
 
 // decodeOne parses stdout as exactly one JSON object with known fields (P5).
@@ -221,6 +222,9 @@ func TestSubmitSuccess(t *testing.T) {
 		if r.Status != "ok" || r.Agent != agent || r.SessionID != "sess-fake-1" || r.Answer != "fake answer" ||
 			r.ExitCode == nil || *r.ExitCode != 0 || r.DurationMS == nil || r.Message != "" || r.Error != nil {
 			t.Fatalf("result = %+v", r)
+		}
+		if strings.Contains(out.stdout, "denied_tools") { // none were refused (#100)
+			t.Errorf("stdout = %q", out.stdout)
 		}
 		rec := readRecord(t, bin)
 		if rec.Stdin != "Summarize this repo" {
@@ -290,11 +294,12 @@ func TestSubmitAgentNotFound(t *testing.T) {
 	})
 }
 
-// What the fake's control_chars scenario reports, raw and as text mode shows
-// it (#83).
+// What the fake's control_chars and denied scenarios report, raw and as text
+// mode shows it (#83, #100).
 const (
 	ctrlSession, ctrlSessionShown = "sess-\x1b[2K", `sess-\x1b[2K`
 	ctrlError, ctrlErrorShown     = "\x1b[2K\rall good\x1b]0;pwned\a", `\x1b[2K\rall good\x1b]0;pwned\a`
+	ctrlTool, ctrlToolShown       = "Bash\x1b[2K", `Bash\x1b[2K` // a tool the denied scenario names
 )
 
 // In text mode, the agent's error and session id reach the terminal with
@@ -309,6 +314,28 @@ func TestSubmitEscapesAgentText(t *testing.T) {
 	out = call{path: bin, args: submitArgs("--json", "hi")}.run(t)
 	if r := decode(t, out.stdout); r.Message != "the agent reported an error: "+ctrlError || r.SessionID != ctrlSession {
 		t.Errorf("--json: %+v", r)
+	}
+}
+
+// Tool calls Claude Code refused for want of the user's approval are named,
+// in order, on every status, without changing it: the agent may have
+// finished another way (P5, #100). TestOutputChannels checks text mode.
+func TestSubmitDeniedTools(t *testing.T) {
+	for _, tt := range []struct {
+		scenario, status string
+		code             int
+		denied           []string
+	}{
+		{"denied", "ok", 0, []string{"Write", ctrlTool}},
+		{"denied_error", "agent_failed", 1, []string{"Write"}},
+		{"denied_empty_answer", "bad_agent_output", 1, []string{"Write"}},
+		// Denials aits cannot read are not taken as none (P6).
+		{"denial_without_tool", "bad_agent_output", 1, nil},
+	} {
+		out := call{path: vendor(t, tt.scenario), args: submitArgs("--json", "hi")}.run(t)
+		if r := decode(t, out.stdout); out.code != tt.code || r.Status != tt.status || !slices.Equal(r.DeniedTools, tt.denied) {
+			t.Errorf("%s: code=%d %+v", tt.scenario, out.code, r)
+		}
 	}
 }
 

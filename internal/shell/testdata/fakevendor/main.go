@@ -197,6 +197,19 @@ func play(d dialect, scenario, dir, exe string) {
 		emit(map[string]any{"type": "system", "subtype": "init", "session_id": id})
 		emit(claudeResult(true, "\x1b[2K\rall good\x1b]0;pwned\a", id))
 		os.Exit(1)
+	case "denied": // Claude only: tool calls refused for want of the user's approval
+		d.start()
+		emit(withDenials(claudeResult(false, "fake answer", sessionID), denial("Write"), denial("Bash\x1b[2K")))
+	case "denied_error": // Claude only
+		d.start()
+		emit(withDenials(claudeResult(true, "fake failure", sessionID), denial("Write")))
+		os.Exit(1)
+	case "denied_empty_answer": // Claude only
+		d.start()
+		emit(withDenials(claudeResult(false, "", sessionID), denial("Write")))
+	case "denial_without_tool": // Claude only
+		d.start()
+		emit(withDenials(claudeResult(false, "fake answer", sessionID), map[string]any{"tool_use_id": "toolu_1"}))
 	case "unknown_session":
 		d.missing(resumedID())
 		os.Exit(1)
@@ -220,12 +233,25 @@ func resumedID() string {
 	return ""
 }
 
+// claudeResult is Claude Code's final event. Like Claude Code, it always
+// lists the refused tool calls, most often none.
 func claudeResult(isError bool, text, session string) map[string]any {
-	ev := map[string]any{"type": "result", "subtype": "success", "is_error": isError, "result": text}
+	ev := map[string]any{"type": "result", "subtype": "success", "is_error": isError, "result": text, "permission_denials": []any{}}
 	if session != "" {
 		ev["session_id"] = session
 	}
 	return ev
+}
+
+// withDenials sets the refused tool calls of a Claude Code result event.
+func withDenials(ev map[string]any, denials ...map[string]any) map[string]any {
+	ev["permission_denials"] = denials
+	return ev
+}
+
+// denial is one refused tool call as Claude Code reports it.
+func denial(tool string) map[string]any {
+	return map[string]any{"tool_name": tool, "tool_use_id": "toolu_1", "tool_input": map[string]any{"file_path": "/tmp/x"}}
 }
 
 func codexItem(item map[string]any) map[string]any {
