@@ -157,10 +157,11 @@ func (g *group) terminate() {
 	})
 }
 
-// killNow sends the pending SIGKILL of terminate at once, unless it was sent.
+// killNow sends the SIGKILL that terminate scheduled at once, unless it was
+// already sent.
 func (g *group) killNow() {
 	if g.kill.Stop() {
-		g.kill.Reset(0)
+		_ = syscall.Kill(-g.pgid, syscall.SIGKILL)
 	}
 }
 

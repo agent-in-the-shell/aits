@@ -87,11 +87,7 @@ func stopWith(t *testing.T, agent, scenario string, sigs []syscall.Signal, args 
 	bin := vendorAs(t, agent, scenario)
 	s := call{path: bin, args: agentArgs(agent, args...)}.start(t)
 	waitFile(t, filepath.Join(bin, "child.pid"))
-	for _, sig := range sigs {
-		if err := s.cmd.Process.Signal(sig); err != nil {
-			t.Fatal(err)
-		}
-	}
+	s.signal(t, sigs...)
 	out := s.waitOrKill(t, 10*time.Second)
 	assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
 	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
@@ -193,8 +189,9 @@ func TestSubmitStoppedWhileReadingPrompt(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)                                      // let aits block on the prompt
-	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} { // a second signal changes nothing
+	time.Sleep(300 * time.Millisecond) // let aits block on the prompt
+	// A second signal changes nothing.
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		if err := cmd.Process.Signal(sig); err != nil {
 			t.Fatal(err)
 		}

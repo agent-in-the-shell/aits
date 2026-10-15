@@ -56,6 +56,16 @@ func (s *started) waitOrKill(t *testing.T, d time.Duration) output {
 	return out
 }
 
+// signal sends sigs to aits, in order.
+func (s *started) signal(t *testing.T, sigs ...syscall.Signal) {
+	t.Helper()
+	for _, sig := range sigs {
+		if err := s.cmd.Process.Signal(sig); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // oneSession builds a HOME with one session of agent that contains "needle"
 // and returns the HOME and the session's "agent:id".
 func oneSession(t *testing.T, agent string) (string, string) {
@@ -214,9 +224,7 @@ func TestSessionSearchStopsPromptly(t *testing.T) {
 			if _, ok := s.wait(t, 200*time.Millisecond); ok {
 				t.Fatal("the search finished before the signal; the fixture is too small to test stopping")
 			}
-			if err := s.cmd.Process.Signal(tt.sig); err != nil {
-				t.Fatal(err)
-			}
+			s.signal(t, tt.sig)
 			out := s.waitOrKill(t, time.Second)
 			if out.code != 1 || out.stdout != tt.stdout || out.stderr != tt.stderr {
 				t.Errorf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
