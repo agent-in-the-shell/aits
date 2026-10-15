@@ -71,9 +71,10 @@ func run(ctx context.Context, ag agent, path string, env []string, req Request) 
 // EOF, and its stderr to reach EOF. A timeout, a cancelled ctx, an oversized
 // event, or the agent's own exit terminates the whole group, so nothing the
 // agent started outlives it (P10). ctx is watched even after the timeout, so
-// a stop during the grace period is recorded too. Once the run is stopped or
-// timed out, a closed kill sends SIGKILL to the group without waiting for the
-// grace period.
+// a stop during the grace period is recorded too; a timeout or stop after the
+// agent exited only ends what it left behind, and does not change its outcome.
+// Once the run is stopped or timed out, a closed kill sends SIGKILL to the
+// group without waiting for the grace period.
 func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, kill <-chan struct{}, parse parser) observation {
 	deadline := time.After(timeout)
 	g := &group{pgid: cmd.Process.Pid, pipes: []*os.File{out, errOut}}
@@ -88,13 +89,14 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 
 	var o observation
 	stop := ctx.Done()
-	var armed <-chan struct{} // kill, once the run is stopped or timed out
+	var armed <-chan struct{} // kill, once the run is stopped, timed out or exited
 	for pending := 3; pending > 0; {
 		select {
 		case <-waitCh:
 			pending--
 			o.exitCode = cmd.ProcessState.ExitCode()
 			g.terminate()
+			deadline, stop, armed = nil, nil, kill // later ones no longer change the outcome
 		case o.events = <-evCh:
 			pending--
 			if o.events.tooLarge {

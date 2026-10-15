@@ -48,9 +48,9 @@ Statuses:
   agent_failed      The agent exited non-zero or reported an error.
   bad_agent_output  The agent's JSON events were not usable.
   output_too_large  One output event exceeded 16 MiB; the agent was stopped.
-  timeout           --timeout elapsed; the agent was stopped.
-  stopped           aits got SIGTERM, SIGINT or SIGHUP, even after a timeout;
-                    the agent was stopped.
+  timeout           --timeout elapsed before the agent exited; it was stopped.
+  stopped           aits got SIGTERM, SIGINT or SIGHUP before the agent
+                    exited, even after a timeout; it was stopped.
 
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for

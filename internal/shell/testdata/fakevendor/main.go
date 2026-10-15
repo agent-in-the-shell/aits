@@ -81,7 +81,10 @@ var dialects = map[string]dialect{
 }
 
 func main() {
-	if len(os.Args) == 3 && os.Args[1] == "--fake-grandchild" {
+	if len(os.Args) >= 3 && os.Args[1] == "--fake-grandchild" {
+		if len(os.Args) == 4 && os.Args[3] == "ignore-term" {
+			signal.Ignore(syscall.SIGTERM)
+		}
 		writePID(filepath.Join(os.Args[2], "grandchild.pid"))
 		time.Sleep(10 * time.Minute)
 		return
@@ -166,6 +169,13 @@ func play(d dialect, scenario, dir, exe string) {
 		spawnGrandchild(dir, exe)
 		writePID(filepath.Join(dir, "child.pid"))
 		time.Sleep(10 * time.Minute)
+	case "linger_ignore_term":
+		// Answers and exits 0, leaving a grandchild that ignores TERM and holds
+		// stdout, so aits is still cleaning up after the agent has finished.
+		d.start()
+		d.answer("fake answer")
+		spawnGrandchild(dir, exe, "ignore-term")
+		writePID(filepath.Join(dir, "child.pid"))
 	case "ignore_stdin", "linger":
 		// A grandchild keeps stdout open, and stdin too: for ignore_stdin the
 		// prompt was never read (see main).
@@ -232,8 +242,8 @@ func emit(v any) {
 
 // spawnGrandchild starts a process in the same group that keeps the agent's
 // stdout and stderr open, and waits until it has written its pid.
-func spawnGrandchild(dir, exe string) {
-	cmd := exec.Command(exe, "--fake-grandchild", dir)
+func spawnGrandchild(dir, exe string, args ...string) {
+	cmd := exec.Command(exe, append([]string{"--fake-grandchild", dir}, args...)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
 		fail(err)

@@ -114,6 +114,10 @@ parser; see `2026-10-14-shell-codex-design.md` §5.
 Once the child has started, the run always ends with a result object; the
 error envelope is only for runs where nothing started.
 
+A signal or timeout counts only if it arrives before the child exits. After
+that, aits still stops what the child left behind (and a second signal still
+kills it at once), but the outcome is the child's (#81).
+
 | Condition (checked in this order) | `status` | aits exit |
 |---|---|---|
 | aits received SIGTERM/SIGINT/SIGHUP | `stopped` | 1 |

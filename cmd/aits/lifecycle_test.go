@@ -169,6 +169,38 @@ func TestSubmitStoppedAfterTimeout(t *testing.T) {
 	})
 }
 
+// An agent that answered and exited keeps its answer when a timeout or a
+// signal comes while aits waits for a descendant that still holds its output
+// and ignores TERM; a second signal still kills that descendant at once (#81).
+func TestSubmitAnswerKeptAfterExit(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		check := func(t *testing.T, bin string, out output) {
+			t.Helper()
+			if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" || r.Answer != "fake answer" {
+				t.Errorf("code=%d result=%+v", out.code, r)
+			}
+			assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
+		}
+		t.Run("timeout", func(t *testing.T) {
+			bin := vendorAs(t, agent, "linger_ignore_term")
+			check(t, bin, call{path: bin, args: agentArgs(agent, "--timeout", "2s", "--json", "hi")}.run(t))
+		})
+		t.Run("signals", func(t *testing.T) {
+			bin := vendorAs(t, agent, "linger_ignore_term")
+			s := call{path: bin, args: agentArgs(agent, "--json", "hi")}.start(t)
+			waitFile(t, filepath.Join(bin, "child.pid"))
+			assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+			time.Sleep(200 * time.Millisecond) // for aits to see the exit
+			start := time.Now()
+			s.signal(t, syscall.SIGINT, syscall.SIGTERM)
+			check(t, bin, s.waitOrKill(t, 15*time.Second))
+			if elapsed := time.Since(start); elapsed > 3*time.Second {
+				t.Errorf("finished %s after two signals; the second must not wait for the 5s grace period", elapsed)
+			}
+		})
+	})
+}
+
 func TestSubmitOutputTooLarge(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		start := time.Now()
