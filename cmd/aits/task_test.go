@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,8 +27,9 @@ type taskRecord struct {
 	Env       []string `json:"env"`
 	CreatedAt string   `json:"created_at"`
 	Lease     *struct {
-		Token string `json:"token"`
-		PGID  int    `json:"pgid"`
+		Token     string `json:"token"`
+		PGID      int    `json:"pgid"`
+		StartedAt string `json:"started_at"`
 	} `json:"lease"`
 	Run *struct {
 		Status     string `json:"status"`
@@ -200,9 +202,31 @@ func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	q := newQueue(t, "ok")
 	q.create("hi", "--env", "AITS_TEST_UNSET")
 	out := q.run("work", "--json")
-	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" || w.Run.StartedAt != "" {
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" {
 		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
+	// No exit code or duration: an agent that never ran has neither (P6, #57).
+	if got := recordKeys(t, out.stdout, "run"); !slices.Equal(got, []string{"agent", "finished_at", "message", "status"}) {
+		t.Errorf("run keys = %v", got)
+	}
+}
+
+// recordKeys returns the sorted keys of field ("run" or "lease") of a task
+// record.
+func recordKeys(t *testing.T, stdout, field string) []string {
+	t.Helper()
+	var r map[string]json.RawMessage
+	var f map[string]any
+	err := json.Unmarshal([]byte(stdout), &r)
+	if err == nil {
+		err = json.Unmarshal(r[field], &f)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := slices.Collect(maps.Keys(f))
+	slices.Sort(keys)
+	return keys
 }
 
 // Claims are atomic: as many workers as tasks, started together, run each
@@ -267,12 +291,8 @@ func TestTaskWorkStopped(t *testing.T) {
 	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Lease == nil || r.Lease.PGID != readPID(t, filepath.Join(q.path, "child.pid")) {
 		t.Errorf("running task lease = %+v, want the agent's process group", r.Lease)
 	}
-	var raw struct {
-		Lease map[string]any `json:"lease"`
-	}
-	if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &raw); err != nil || len(raw.Lease) != 2 ||
-		raw.Lease["token"] == nil || raw.Lease["pgid"] == nil {
-		t.Errorf("lease = %v, want exactly token and pgid", raw.Lease)
+	if got := recordKeys(t, q.run("show", id, "--json").stdout, "lease"); !slices.Equal(got, []string{"pgid", "started_at", "token"}) {
+		t.Errorf("lease keys = %v", got)
 	}
 	if out := q.run("list", "--json"); out.code != 0 || decodeOne[taskList](t, out.stdout).Tasks[0].Status != "running" {
 		t.Errorf("list while the worker runs: code=%d stdout=%q", out.code, out.stdout)
@@ -281,6 +301,10 @@ func TestTaskWorkStopped(t *testing.T) {
 	out := s.waitOrKill(t, 10*time.Second)
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run.Status != "stopped" || w.Run.SessionID != "sess-fake-1" {
 		t.Fatalf("code=%d %+v", out.code, w)
+	}
+	// A run whose agent ran keeps every field of the shell result (#57).
+	if got := recordKeys(t, out.stdout, "run"); !slices.Equal(got, []string{"agent", "duration_ms", "exit_code", "finished_at", "message", "session_id", "started_at", "status"}) {
+		t.Errorf("run keys = %v", got)
 	}
 }
 
@@ -316,8 +340,14 @@ func TestTaskWorkerKilled(t *testing.T) {
 	if out := q.run("list"); out.code != 0 {
 		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
 	}
-	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+	show := q.run("show", id, "--json").stdout
+	if r := decodeOne[taskRecord](t, show); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
 		t.Errorf("after the worker was killed: %+v", r)
+	}
+	// When its agent started is known; its exit code and duration are not
+	// (P6, #57).
+	if got := recordKeys(t, show, "run"); !slices.Equal(got, []string{"agent", "finished_at", "message", "started_at", "status"}) {
+		t.Errorf("run keys = %v", got)
 	}
 	assertGone(t, pgid)
 }

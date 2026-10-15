@@ -53,8 +53,8 @@ type Result struct {
 	Agent      string `json:"agent"`
 	SessionID  string `json:"session_id,omitempty"`
 	Answer     string `json:"answer,omitempty"`
-	ExitCode   int    `json:"exit_code"`
-	DurationMS int64  `json:"duration_ms"`
+	ExitCode   *int   `json:"exit_code,omitempty"`   // always set by Submit; nil when no agent ran (P6)
+	DurationMS *int64 `json:"duration_ms,omitempty"` // likewise
 	StderrTail string `json:"stderr_tail,omitempty"`
 	Message    string `json:"message,omitempty"`
 }
@@ -154,12 +154,13 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	status, msg := decide(obs)
+	code, ms := obs.exitCode, time.Since(start).Milliseconds()
 	res := Result{
 		Status:     status,
 		Agent:      ag.name,
 		SessionID:  obs.events.sessionID,
-		ExitCode:   obs.exitCode,
-		DurationMS: time.Since(start).Milliseconds(),
+		ExitCode:   &code,
+		DurationMS: &ms,
 		Message:    msg,
 	}
 	switch status {
