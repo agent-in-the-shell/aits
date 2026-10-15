@@ -560,11 +560,8 @@ func TestReclaimSparesFollowUpOfUnreadableParent(t *testing.T) {
 	}
 }
 
-// A listing can miss a record that a worker is renaming over (its pgid write
-// takes no directory lock). A running task always has its lock file, never
-// renamed or removed, so collect reads a task whose lock file is listed
-// without its record: neither a follow-up's parent nor a live follow-up is
-// overlooked (P6).
+// collect reads a task whose lock file is listed without its record, and
+// ignores a lock file whose record is gone (see collect).
 func TestCollectReadsRunningTaskMissedByListing(t *testing.T) {
 	environ := env(t)
 	p := create(t, environ, "claude")

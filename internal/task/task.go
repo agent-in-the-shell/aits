@@ -418,10 +418,10 @@ func index(tasks []Task) map[string]*Task {
 // file cannot be read (skipped) is waited for (P10).
 func parentFault(p *Task, skipped bool) string {
 	switch {
-	case p == nil && !skipped:
-		return "does not exist"
-	case p == nil:
+	case p == nil && skipped:
 		return ""
+	case p == nil:
+		return "does not exist"
 	case p.Status == Failed:
 		return "failed"
 	case p.Status == Done && (p.Run == nil || p.Run.SessionID == ""):
@@ -477,32 +477,28 @@ func load(dir string) (snapshot, error) {
 	return collect(dir, names), nil
 }
 
-// collect reads the tasks that names, a listing of dir, holds. A listing can
-// miss a record that a worker is renaming over, since its running record is
-// written without the directory lock (modify). A running task always has its
-// lock file, never renamed or removed, so a task whose lock file is listed
-// without its record is read all the same (P6).
+// collect reads the tasks that names, a listing of dir, holds, and also a
+// task whose lock file is listed without its record: a listing can miss a
+// record a worker renames over without the directory lock (modify), and such
+// a task was claimed with a lock file, never renamed or removed (P6).
 func collect(dir string, names []string) snapshot {
 	var s snapshot
-	listed := make(map[string]bool, len(names))
-	for _, name := range names {
-		listed[name] = true
-	}
+	ids := make(map[string]bool, len(names)) // id: whether its record is listed
 	for _, name := range names {
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		id, record := strings.CutSuffix(name, ".json")
-		if !record {
-			var ok bool
-			if id, ok = strings.CutSuffix(name, ".lock"); !ok || listed[id+".json"] {
-				continue
-			}
+		if id, ok := strings.CutSuffix(name, ".json"); ok {
+			ids[id] = true
+		} else if id, ok := strings.CutSuffix(name, ".lock"); ok && !ids[id] {
+			ids[id] = false
 		}
-		switch t, err := read(dir, id); {
-		case err == nil:
+	}
+	for id, listed := range ids {
+		t, err := read(dir, id)
+		if err == nil {
 			s.tasks = append(s.tasks, t)
-		case record || !errors.Is(err, os.ErrNotExist): // else a lock file whose record is gone
+		} else if listed || !errors.Is(err, os.ErrNotExist) { // not a lock file whose record is gone
 			s.Skipped = append(s.Skipped, id)
 		}
 	}

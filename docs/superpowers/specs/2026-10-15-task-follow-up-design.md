@@ -59,14 +59,13 @@ names as a failure to avoid. The task-queue spec deferred this (§1).
   lock.
 - `reclaim`, after failing the tasks of dead workers, fails each `queued`
   follow-up whose parent is `failed`, gone, or `done` without a session id.
-- Loading the directory: a listing can miss a record that a worker is
-  renaming over without the directory lock (its pgid write). A running task
-  always has its lock file, never renamed or removed, so a task whose lock
-  file is listed without its record is read all the same. Neither a parent
-  (taken for gone) nor a live follow-up (missed by the fan-out check) is
-  overlooked. It repeats until a
-  pass changes nothing, so a whole chain fails in one call. It does not
-  rely on `created_at` order, which follows the wall clock.
+  It repeats until a pass changes nothing, so a whole chain fails in one
+  call. It does not rely on `created_at` order, which follows the wall clock.
+- `load` also reads a task whose lock file is listed without its record: a
+  listing can miss a record a worker renames over without the directory lock
+  (its pgid write), and such a task was claimed with a lock file, which is
+  never renamed or removed. So neither a parent (taken for gone) nor a live
+  follow-up (missed by the fan-out check) is overlooked (P6).
 - `claim` takes the oldest `queued` task matching `--agent` whose `after` is
   empty or names a `done` task in the snapshot, and runs it with
   `Request.Session` set to that task's `run.session_id`.
@@ -119,6 +118,9 @@ change.
 - A worker of an earlier aits ignores `after`: it can claim a follow-up
   before its parent is done and run it in a new conversation, and its
   writes drop the field. As for #37, run one aits version per `AITS_HOME`.
+- A lock file removed by hand (liveness spec §5) loses that fallback: if a
+  listing then also misses its running task's record, a follow-up of it can
+  be failed as `does not exist`, or a second follow-up created.
 - Whether Claude Code resumes in place, as Codex does, is not observed in
   this repo; fan-out is refused either way, because concurrent resumes of
   one session are undefined.
