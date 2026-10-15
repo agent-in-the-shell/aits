@@ -86,22 +86,55 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 // error code internal/cli/session.go can produce is on the help's Errors line
 // with the exit code it causes (#62).
 func TestSearchHelpDocumentsErrors(t *testing.T) {
-	_, errs, _ := strings.Cut(call{args: []string{"session", "search", "--help"}}.run(t).stdout, "\nErrors: ")
-	errs, _, _ = strings.Cut(errs, "\n")
-	// exits maps each code to its group's exit, e.g. "stopped" to "exit 1"
-	// in "invalid_input (exit 2); stopped, internal (exit 1).".
-	exits := map[string]string{}
-	for _, group := range strings.Split(strings.TrimSuffix(errs, "."), "; ") {
-		codes, exit, _ := strings.Cut(strings.TrimSuffix(group, ")"), " (")
-		for _, c := range strings.Split(codes, ", ") {
-			exits[c] = exit
-		}
-	}
+	documented := helpErrors(t, []string{"session", "search"})
 	for code, exit := range errorCodes(t, "../../internal/cli/session.go") {
-		if exits[code] != exit {
-			t.Errorf("error code %q is not on the Errors line with %s: %q", code, exit, errs)
+		if documented[code] != exit {
+			t.Errorf("error code %q is not in the help's Errors with %s: %v", code, exit, documented)
 		}
 	}
+}
+
+// helpErrors maps each error code that the help of the command at path lists
+// to its exit code, e.g. "exit 2". It reads both forms of the Errors section:
+// one line, "Errors: a, b (exit 2); c (exit 1).", or a heading followed by
+// rows "  CODE  exit N  WHY".
+func helpErrors(t *testing.T, path []string) map[string]string {
+	t.Helper()
+	lines := strings.Split(call{args: append(slices.Clone(path), "--help")}.run(t).stdout, "\n")
+	errs := map[string]string{}
+	for i, line := range lines {
+		if after, ok := strings.CutPrefix(line, "Errors: "); ok {
+			for _, group := range strings.Split(strings.TrimSuffix(after, "."), "; ") {
+				codes, exit, _ := strings.Cut(strings.TrimSuffix(group, ")"), " (")
+				for _, c := range strings.Split(codes, ", ") {
+					errs[c] = exit
+				}
+			}
+		} else if strings.HasPrefix(line, "Errors") {
+			for _, row := range lines[i+1:] {
+				f := strings.Fields(row)
+				if !strings.HasPrefix(row, " ") || len(f) < 3 {
+					break
+				}
+				errs[f[0]] = f[1] + " " + f[2]
+			}
+		}
+	}
+	return errs
+}
+
+// commandPath returns the leading args that name a command, e.g. "task
+// create" of "task create --agent claude hi".
+func commandPath(args []string) []string {
+	cmd, n := cli.Root(), 0
+	for ; n < len(args); n++ {
+		i := slices.IndexFunc(cmd.Children, func(c *cli.Command) bool { return c.Name == args[n] })
+		if i < 0 {
+			break
+		}
+		cmd = cmd.Children[i]
+	}
+	return args[:n]
 }
 
 // errorCodes maps each error code that the files glob names pass to

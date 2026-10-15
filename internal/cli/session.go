@@ -78,7 +78,7 @@ Exit codes:
   1  Stopped by a signal, or an unexpected failure.
   2  Usage error or invalid input.
 
-Errors: invalid_input (exit 2); stopped, internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 `
 
 func searchCommand() *Command {

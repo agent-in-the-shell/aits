@@ -123,6 +123,7 @@ func writeHelp(w io.Writer, path []string, cmd *Command) {
 			fmt.Fprintf(tw, "  %s\t%s\n", ch.Name, ch.Summary)
 		}
 		fmt.Fprintf(tw, "\nRun '%s COMMAND --help' for details.\n", name)
+		fmt.Fprintln(tw, "\nErrors: unknown_command, unknown_flag (exit 2).")
 	} else {
 		usage := "Usage: " + name + " [flags]"
 		if cmd.Args != "" {
