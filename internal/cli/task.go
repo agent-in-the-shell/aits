@@ -37,7 +37,7 @@ const taskFields = `Task fields (--json):
                started_at.
   run          Once worked: the "shell submit" result (status, agent,
                session_id, answer, exit_code, duration_ms, stderr_tail,
-               message) plus started_at and finished_at. run.status is a
+               message, denied_tools) plus started_at and finished_at. run.status is a
                shell status, not_started (the agent was never started: it
                could not be started after the claim, or the task is a
                follow-up whose parent does not exist, failed or has no
@@ -47,8 +47,8 @@ const taskFields = `Task fields (--json):
                only a worker_died run whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id and why a task failed on stderr, with control
-characters shown as Go escapes (\x1b, \r).
+stdout; the session id, the denied tools and why a task failed on stderr,
+with control characters shown as Go escapes (\x1b, \r).
 `
 
 func taskCreate() *Command {
@@ -272,9 +272,7 @@ func writeTask(env *Env, t task.Task) error {
 	if t.Run == nil {
 		return nil
 	}
-	if t.Run.SessionID != "" {
-		fmt.Fprintf(env.Stderr, "session: %s\n", printable(t.Run.SessionID))
-	}
+	writeSession(env, t.Run.Result)
 	if t.Status == task.Done {
 		fmt.Fprintln(env.Stdout, t.Run.Answer)
 	} else {

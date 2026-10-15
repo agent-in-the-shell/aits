@@ -153,15 +153,16 @@ type errorBody struct {
 }
 
 type submitResult struct {
-	Status     string     `json:"status"`
-	Agent      string     `json:"agent"`
-	SessionID  string     `json:"session_id"`
-	Answer     string     `json:"answer"`
-	ExitCode   *int       `json:"exit_code"`
-	DurationMS *int64     `json:"duration_ms"`
-	StderrTail string     `json:"stderr_tail"`
-	Message    string     `json:"message"`
-	Error      *errorBody `json:"error"`
+	Status      string     `json:"status"`
+	Agent       string     `json:"agent"`
+	SessionID   string     `json:"session_id"`
+	Answer      string     `json:"answer"`
+	ExitCode    *int       `json:"exit_code"`
+	DurationMS  *int64     `json:"duration_ms"`
+	StderrTail  string     `json:"stderr_tail"`
+	Message     string     `json:"message"`
+	DeniedTools []string   `json:"denied_tools"`
+	Error       *errorBody `json:"error"`
 }
 
 // decodeOne parses stdout as exactly one JSON object with known fields (P5).
@@ -309,6 +310,37 @@ func TestSubmitEscapesAgentText(t *testing.T) {
 	out = call{path: bin, args: submitArgs("--json", "hi")}.run(t)
 	if r := decode(t, out.stdout); r.Message != "the agent reported an error: "+ctrlError || r.SessionID != ctrlSession {
 		t.Errorf("--json: %+v", r)
+	}
+}
+
+// Tool calls Claude Code refused for want of the user's approval are named,
+// in order, without changing the status: the agent may have finished another
+// way (P5, #100). In text mode they follow the session line on stderr.
+func TestSubmitDeniedTools(t *testing.T) {
+	bin := vendor(t, "denied")
+	out := call{path: bin, args: submitArgs("--json", "hi")}.run(t)
+	if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" || r.Answer != "fake answer" ||
+		!slices.Equal(r.DeniedTools, []string{"Write", "Bash\x1b[2K"}) {
+		t.Errorf("--json: code=%d %+v", out.code, r)
+	}
+	out = call{path: bin, args: submitArgs("hi")}.run(t)
+	if want := "session: sess-fake-1\ndenied_tools: Write, Bash\\x1b[2K\n"; out.code != 0 || out.stdout != "fake answer\n" || out.stderr != want {
+		t.Errorf("text: code=%d stdout=%q stderr=%q, want stderr %q", out.code, out.stdout, out.stderr, want)
+	}
+
+	out = call{path: vendor(t, "denied_error"), args: submitArgs("--json", "hi")}.run(t)
+	if r := decode(t, out.stdout); out.code != 1 || r.Status != "agent_failed" || !slices.Equal(r.DeniedTools, []string{"Write"}) {
+		t.Errorf("agent_failed: code=%d %+v", out.code, r)
+	}
+
+	// Claude Code lists no denials as []: the field is left out.
+	out = call{path: vendor(t, "ok"), args: submitArgs("--json", "hi")}.run(t)
+	if out.code != 0 || strings.Contains(out.stdout, "denied_tools") {
+		t.Errorf("no denials: code=%d stdout=%q", out.code, out.stdout)
+	}
+	out = call{path: vendor(t, "ok"), args: submitArgs("hi")}.run(t)
+	if strings.Contains(out.stderr, "denied_tools") {
+		t.Errorf("no denials, text: stderr=%q", out.stderr)
 	}
 }
 
@@ -460,12 +492,18 @@ func TestSubmitAgentReportsError(t *testing.T) {
 
 func TestSubmitBadOutput(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
-		for scenario, session := range map[string]string{
+		scenarios := map[string]string{
 			"not_json":     "sess-fake-1", // the session id arrives after the bad line
 			"no_result":    "sess-fake-1",
 			"empty_result": "sess-fake-1",
 			"no_session":   "",
-		} {
+		}
+		if agent == "claude" {
+			// Denials aits cannot read are not taken as none (P6, #100).
+			scenarios["denials_not_objects"] = "sess-fake-1"
+			scenarios["denial_without_tool"] = "sess-fake-1"
+		}
+		for scenario, session := range scenarios {
 			t.Run(scenario, func(t *testing.T) {
 				out := call{path: vendorAs(t, agent, scenario), args: agentArgs(agent, "--json", "hi")}.run(t)
 				r := decode(t, out.stdout)

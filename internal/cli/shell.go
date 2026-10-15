@@ -31,8 +31,8 @@ const submitDetails = promptDetails + `Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
-  goes to stderr, with control characters in the message and session id
-  shown as Go escapes (\x1b, \r).
+  goes to stderr, with control characters in the message, session id and
+  denied tools shown as Go escapes (\x1b, \r).
 
 Result fields:
   status       Always. One of the statuses below.
@@ -43,6 +43,10 @@ Result fields:
   duration_ms  Always.
   stderr_tail  Only for agent_failed: the last 4 KiB of the agent's stderr.
   message      Every status but ok: one line explaining it.
+  denied_tools Only for ok and agent_failed, Claude Code only: the tool of
+               each call refused for want of your approval, in order.
+               claude -p never stops to ask, and a refusal leaves the
+               status as it is: the agent may have finished another way.
 
 Statuses:
   ok                The agent answered.
@@ -164,6 +168,17 @@ func submitError(err error) error {
 	}
 }
 
+// writeSession prints, in text mode, the run's session id and the tools the
+// agent was refused, if any, on stderr.
+func writeSession(env *Env, res shell.Result) {
+	if res.SessionID != "" {
+		fmt.Fprintf(env.Stderr, "session: %s\n", printable(res.SessionID))
+	}
+	if len(res.DeniedTools) > 0 {
+		fmt.Fprintf(env.Stderr, "denied_tools: %s\n", printable(strings.Join(res.DeniedTools, ", ")))
+	}
+}
+
 // writeResult prints a run that started and returns its exit code (P5). A
 // result without a status, which would read as nothing happened, is refused
 // (P6).
@@ -179,8 +194,8 @@ func writeResult(env *Env, res shell.Result) (int, error) {
 	default:
 		fmt.Fprintf(env.Stderr, "aits: %s: %s\n", res.Status, printable(res.Message))
 	}
-	if !env.JSON && res.SessionID != "" {
-		fmt.Fprintf(env.Stderr, "session: %s\n", printable(res.SessionID))
+	if !env.JSON {
+		writeSession(env, res)
 	}
 	if res.Status == shell.StatusOK {
 		return exitOK, nil

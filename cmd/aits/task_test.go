@@ -34,16 +34,17 @@ type taskRecord struct {
 		StartedAt string `json:"started_at"`
 	} `json:"lease"`
 	Run *struct {
-		Status     string `json:"status"`
-		Agent      string `json:"agent"`
-		SessionID  string `json:"session_id"`
-		Answer     string `json:"answer"`
-		ExitCode   int    `json:"exit_code"`
-		DurationMS int64  `json:"duration_ms"`
-		StderrTail string `json:"stderr_tail"`
-		Message    string `json:"message"`
-		StartedAt  string `json:"started_at"`
-		FinishedAt string `json:"finished_at"`
+		Status      string   `json:"status"`
+		Agent       string   `json:"agent"`
+		SessionID   string   `json:"session_id"`
+		Answer      string   `json:"answer"`
+		ExitCode    int      `json:"exit_code"`
+		DurationMS  int64    `json:"duration_ms"`
+		StderrTail  string   `json:"stderr_tail"`
+		Message     string   `json:"message"`
+		DeniedTools []string `json:"denied_tools"`
+		StartedAt   string   `json:"started_at"`
+		FinishedAt  string   `json:"finished_at"`
 	} `json:"run"`
 }
 
@@ -288,6 +289,22 @@ func TestTaskEscapesAgentText(t *testing.T) {
 	}
 	if out := q.run("show", id); out.stderr != want {
 		t.Errorf("show: stderr=%q, want %q", out.stderr, want)
+	}
+}
+
+// A task's run keeps the tool calls Claude Code refused, and text mode names
+// them after the session line, as shell submit does (P5, #100).
+func TestTaskDeniedTools(t *testing.T) {
+	q := newQueue(t, "denied")
+	id := q.create("hi")
+	out := q.run("work", "--json")
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 0 || w.Status != "done" || w.Run == nil ||
+		!slices.Equal(w.Run.DeniedTools, []string{"Write", "Bash\x1b[2K"}) {
+		t.Fatalf("work: code=%d %+v", out.code, w)
+	}
+	want := "session: sess-fake-1\ndenied_tools: Write, Bash\\x1b[2K\n"
+	if out := q.run("show", id); out.stderr != want || !strings.HasSuffix(out.stdout, "\nfake answer\n") {
+		t.Errorf("show: stdout=%q stderr=%q, want stderr %q", out.stdout, out.stderr, want)
 	}
 }
 

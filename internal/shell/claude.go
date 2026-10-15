@@ -17,6 +17,11 @@ type claudeResult struct {
 	IsError bool            `json:"is_error"`
 	Result  string          `json:"result"`
 	Errors  json.RawMessage `json:"errors"` // where some errors are reported instead of result
+	// The tool calls refused for want of the user's approval: claude -p never
+	// asks.
+	PermissionDenials []struct {
+		ToolName string `json:"tool_name"`
+	} `json:"permission_denials"`
 }
 
 // parseClaude reads one line of `claude -p --output-format stream-json`: any
@@ -37,6 +42,12 @@ func parseClaude(ev *events, line []byte) bool {
 	var res claudeResult
 	if err := json.Unmarshal(line, &res); err != nil {
 		return false
+	}
+	for _, d := range res.PermissionDenials {
+		if d.ToolName == "" {
+			return false
+		}
+		ev.denied = append(ev.denied, d.ToolName)
 	}
 	ev.done = true
 	if res.IsError {

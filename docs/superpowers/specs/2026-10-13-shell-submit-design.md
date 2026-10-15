@@ -150,9 +150,13 @@ Result object (`--json`):
 - `exit_code`: the child's exit code; `-1` when it was ended by a signal.
 - `stderr_tail`: present only for `agent_failed`.
 - `message`: a one-line human explanation, present for every status but `ok`.
+- `denied_tools`: since #100, for `ok` and `agent_failed`, the tool of each
+  call Claude Code refused for want of the user's approval, in order; omitted
+  when there were none. It does not change the status.
 
 Without `--json`: for `ok`, stdout is the answer text followed by a newline,
-and stderr gets `session: <id>`. For any other status, stdout is empty and
+and stderr gets `session: <id>`, then `denied_tools: <tool>, …` when there
+were any. For any other status, stdout is empty and
 stderr gets `aits: <status>: <message>` plus `session: <id>` when known.
 
 Since #13, `message` for `agent_failed` carries the error the agent reported
