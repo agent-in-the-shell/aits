@@ -290,6 +290,21 @@ func TestSubmitAgentNotFound(t *testing.T) {
 	})
 }
 
+// An agent CLI that is found but cannot be started is agent_start_failed,
+// and nothing runs (P6, #60).
+func TestSubmitAgentStartFailed(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		bin := t.TempDir()
+		if err := os.WriteFile(filepath.Join(bin, agent), []byte("not a program\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		out := call{path: bin, args: agentArgs(agent, "--json", "hi")}.run(t)
+		if r := decode(t, out.stdout); out.code != 1 || r.Error == nil || r.Error.Code != "agent_start_failed" {
+			t.Fatalf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+		}
+	})
+}
+
 // An agent first found in a relative PATH entry is refused: it would resolve
 // against aits's directory, not the agent's (P6).
 func TestSubmitRelativePATHEntry(t *testing.T) {

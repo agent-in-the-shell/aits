@@ -403,6 +403,66 @@ func TestTaskLockFileRemoved(t *testing.T) {
 	}
 }
 
+// work reports a running task whose lock file is missing as list does, and
+// still works the queue (#60).
+func TestTaskWorkLockFileMissing(t *testing.T) {
+	q := newQueue(t, "ok")
+	stale := q.create("hi")
+	q.setRunning(stale, map[string]any{"token": "w", "pgid": 0})
+	want := "aits: cannot tell whether the worker of task " + stale + " is alive: its lock file is missing\n"
+	for args, stderr := range map[string]string{"": want + "session: sess-fake-1\n", "--json": want} {
+		id := q.create("hi")
+		out := q.run(strings.Fields("work " + args)...)
+		if out.code != 0 || out.stderr != stderr {
+			t.Errorf("work %s: code=%d stderr=%q, want %q", args, out.code, out.stderr, stderr)
+		}
+		if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "done" {
+			t.Errorf("work %s: task = %+v, want done", args, r)
+		}
+	}
+}
+
+// A worker whose task was reclaimed before it recorded the run fails with
+// internal and says so; the reclaim stopped its agent (#60).
+func TestTaskWorkReclaimed(t *testing.T) {
+	for _, mode := range []string{"text", "json"} {
+		t.Run(mode, func(t *testing.T) {
+			q := newQueue(t, "sleep")
+			id := q.create("hi")
+			args := []string{"task", "work"}
+			if mode == "json" {
+				args = append(args, "--json")
+			}
+			s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: args}.start(t)
+			waitFile(t, filepath.Join(q.path, "child.pid"))
+			q.waitLease(id, readPID(t, filepath.Join(q.path, "child.pid")))
+			// A new lock file is not the one the worker holds, so list takes
+			// the worker for dead.
+			if err := os.Remove(q.lockFile(id)); err != nil {
+				t.Fatal(err)
+			}
+			q.writeLockFile(id)
+			if out := q.run("list"); out.code != 0 {
+				t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+			}
+			out := s.waitOrKill(t, 10*time.Second)
+			msg := "task " + id + " was reclaimed before its run was recorded"
+			if mode == "text" {
+				if out.code != 1 || out.stdout != "" || out.stderr != "aits: "+msg+"\n" {
+					t.Errorf("work: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+				}
+			} else if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || e.Message != msg {
+				t.Errorf("work: code=%d stdout=%q", out.code, out.stdout)
+			}
+			if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+				t.Errorf("task = %+v, want failed by worker_died", r)
+			}
+			assertGone(t, readPID(t, filepath.Join(q.path, "child.pid")))
+			assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
+		})
+	}
+}
+
 // A lock that cannot be tried fails list and work with internal and changes
 // no task (P6).
 func TestTaskLockError(t *testing.T) {
