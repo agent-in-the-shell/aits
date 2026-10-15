@@ -165,12 +165,15 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		ExitCode:   &code,
 		DurationMS: &ms,
 		Message:    msg,
+		// Reported on every status, like the session id: a refusal can explain
+		// a failure too.
+		DeniedTools: obs.events.denied,
 	}
 	switch status {
 	case StatusOK:
-		res.Answer, res.DeniedTools = obs.events.answer, obs.events.denied
+		res.Answer = obs.events.answer
 	case StatusAgentFailed:
-		res.StderrTail, res.DeniedTools = obs.stderrTail, obs.events.denied
+		res.StderrTail = obs.stderrTail
 	}
 	return res, nil
 }

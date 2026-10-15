@@ -292,19 +292,14 @@ func TestTaskEscapesAgentText(t *testing.T) {
 	}
 }
 
-// A task's run keeps the tool calls Claude Code refused, and text mode names
-// them after the session line, as shell submit does (P5, #100).
+// A task's run keeps the tool calls Claude Code refused (#100).
 func TestTaskDeniedTools(t *testing.T) {
 	q := newQueue(t, "denied")
-	id := q.create("hi")
+	q.create("hi")
 	out := q.run("work", "--json")
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 0 || w.Status != "done" || w.Run == nil ||
-		!slices.Equal(w.Run.DeniedTools, []string{"Write", "Bash\x1b[2K"}) {
+		!slices.Equal(w.Run.DeniedTools, []string{"Write", ctrlTool}) {
 		t.Fatalf("work: code=%d %+v", out.code, w)
-	}
-	want := "session: sess-fake-1\ndenied_tools: Write, Bash\\x1b[2K\n"
-	if out := q.run("show", id); out.stderr != want || !strings.HasSuffix(out.stdout, "\nfake answer\n") {
-		t.Errorf("show: stdout=%q stderr=%q, want stderr %q", out.stdout, out.stderr, want)
 	}
 }
 

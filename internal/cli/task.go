@@ -35,14 +35,13 @@ const taskFields = `Task fields (--json):
   after        For a follow-up: the task whose session it continues.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
-  run          Once worked: the "shell submit" result (status, agent,
-               session_id, answer, exit_code, duration_ms, stderr_tail,
-               message, denied_tools) plus started_at and finished_at. run.status is a
-               shell status, not_started (the agent was never started: it
-               could not be started after the claim, or the task is a
-               follow-up whose parent does not exist, failed or has no
-               session when done), or worker_died (its worker exited first;
-               set by the next work or list). A not_started or worker_died
+  run          Once worked: the result fields of "shell submit --help"
+               plus started_at and finished_at. run.status is a shell
+               status, not_started (the agent was never started: it could
+               not be started after the claim, or the task is a follow-up
+               whose parent does not exist, failed or has no session when
+               done), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died
                run has no exit_code and no duration_ms, which are unknown;
                only a worker_died run whose agent started has started_at.
 
@@ -272,7 +271,7 @@ func writeTask(env *Env, t task.Task) error {
 	if t.Run == nil {
 		return nil
 	}
-	writeSession(env, t.Run.Result)
+	writeRunNotes(env, t.Run.Result)
 	if t.Status == task.Done {
 		fmt.Fprintln(env.Stdout, t.Run.Answer)
 	} else {

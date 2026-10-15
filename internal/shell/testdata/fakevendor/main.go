@@ -204,9 +204,9 @@ func play(d dialect, scenario, dir, exe string) {
 		d.start()
 		emit(withDenials(claudeResult(true, "fake failure", sessionID), denial("Write")))
 		os.Exit(1)
-	case "denials_not_objects": // Claude only
+	case "denied_empty_answer": // Claude only
 		d.start()
-		emit(withDenials(claudeResult(false, "fake answer", sessionID), "Write"))
+		emit(withDenials(claudeResult(false, "", sessionID), denial("Write")))
 	case "denial_without_tool": // Claude only
 		d.start()
 		emit(withDenials(claudeResult(false, "fake answer", sessionID), map[string]any{"tool_use_id": "toolu_1"}))

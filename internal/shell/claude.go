@@ -14,11 +14,9 @@ type claudeHeader struct {
 }
 
 type claudeResult struct {
-	IsError bool            `json:"is_error"`
-	Result  string          `json:"result"`
-	Errors  json.RawMessage `json:"errors"` // where some errors are reported instead of result
-	// The tool calls refused for want of the user's approval: claude -p never
-	// asks.
+	IsError           bool            `json:"is_error"`
+	Result            string          `json:"result"`
+	Errors            json.RawMessage `json:"errors"` // where some errors are reported instead of result
 	PermissionDenials []struct {
 		ToolName string `json:"tool_name"`
 	} `json:"permission_denials"`

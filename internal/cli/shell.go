@@ -43,8 +43,8 @@ Result fields:
   duration_ms  Always.
   stderr_tail  Only for agent_failed: the last 4 KiB of the agent's stderr.
   message      Every status but ok: one line explaining it.
-  denied_tools Only for ok and agent_failed, Claude Code only: the tool of
-               each call refused for want of your approval, in order.
+  denied_tools Claude Code only, on every status: the tool of each call
+               refused for want of your approval, in order.
                claude -p never stops to ask, and a refusal leaves the
                status as it is: the agent may have finished another way.
 
@@ -168,9 +168,9 @@ func submitError(err error) error {
 	}
 }
 
-// writeSession prints, in text mode, the run's session id and the tools the
+// writeRunNotes prints, in text mode, the run's session id and the tools the
 // agent was refused, if any, on stderr.
-func writeSession(env *Env, res shell.Result) {
+func writeRunNotes(env *Env, res shell.Result) {
 	if res.SessionID != "" {
 		fmt.Fprintf(env.Stderr, "session: %s\n", printable(res.SessionID))
 	}
@@ -195,7 +195,7 @@ func writeResult(env *Env, res shell.Result) (int, error) {
 		fmt.Fprintf(env.Stderr, "aits: %s: %s\n", res.Status, printable(res.Message))
 	}
 	if !env.JSON {
-		writeSession(env, res)
+		writeRunNotes(env, res)
 	}
 	if res.Status == shell.StatusOK {
 		return exitOK, nil
