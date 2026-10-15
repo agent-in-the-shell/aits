@@ -59,14 +59,14 @@ func TestWorkClaimOrder(t *testing.T) {
 	environ := env(t)
 	a := create(t, environ, "claude")
 	b := create(t, environ, "codex")
-	got, _, err := Work(context.Background(), environ, "codex")
+	got, _, err := Work(context.Background(), nil, environ, "codex")
 	if err != nil || got == nil || got.ID != b.ID {
 		t.Fatalf("Work(codex) = %+v, %v; want %s", got, err, b.ID)
 	}
-	if got, _, _ := Work(context.Background(), environ, ""); got == nil || got.ID != a.ID {
+	if got, _, _ := Work(context.Background(), nil, environ, ""); got == nil || got.ID != a.ID {
 		t.Fatalf("Work() claimed %+v, want %s", got, a.ID)
 	}
-	if got, _, err := Work(context.Background(), environ, ""); got != nil || err != nil {
+	if got, _, err := Work(context.Background(), nil, environ, ""); got != nil || err != nil {
 		t.Fatalf("Work on an empty queue = %+v, %v", got, err)
 	}
 }
@@ -77,7 +77,7 @@ func TestWorkNotStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := Work(context.Background(), environ, "")
+	got, _, err := Work(context.Background(), nil, environ, "")
 	if err != nil || got.ID != tk.ID || got.Status != Failed || got.Run == nil || got.Run.Status != NotStarted || got.Run.Message == "" || !got.Run.StartedAt.IsZero() || got.Lease != nil {
 		t.Fatalf("Work = %+v, %v", got, err)
 	}
@@ -120,7 +120,7 @@ func TestWorkStoppedBeforeClaim(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, _, err := Work(ctx, environ, ""); done <- err }()
+	go func() { _, _, err := Work(ctx, nil, environ, ""); done <- err }()
 	time.Sleep(100 * time.Millisecond) // let Work block on the lock
 	cancel()
 	unlock()
@@ -139,7 +139,7 @@ func TestEnvValuesNotStored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Work(context.Background(), environ, ""); err != nil {
+	if _, _, err := Work(context.Background(), nil, environ, ""); err != nil {
 		t.Fatal(err)
 	}
 	dir, err := store.Dir(environ, "task")
@@ -376,7 +376,7 @@ func TestClaimLockHeld(t *testing.T) {
 	dir, _ := store.Dir(environ, "task")
 	unlock := lock(t, dir, tk.ID)
 	defer unlock()
-	if got, _, err := Work(context.Background(), environ, ""); err == nil {
+	if got, _, err := Work(context.Background(), nil, environ, ""); err == nil {
 		t.Fatalf("Work = %+v, want an error", got)
 	}
 	if got, _ := Show(environ, tk.ID); got.Status != Queued || got.Lease != nil {

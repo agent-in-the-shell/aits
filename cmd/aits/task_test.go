@@ -277,13 +277,26 @@ func TestTaskWorkStopped(t *testing.T) {
 	if out := q.run("list", "--json"); out.code != 0 || decodeOne[taskList](t, out.stdout).Tasks[0].Status != "running" {
 		t.Errorf("list while the worker runs: code=%d stdout=%q", out.code, out.stdout)
 	}
-	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
+	s.signal(t, syscall.SIGTERM)
 	out := s.waitOrKill(t, 10*time.Second)
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run.Status != "stopped" || w.Run.SessionID != "sess-fake-1" {
 		t.Fatalf("code=%d %+v", out.code, w)
 	}
+}
+
+// A second signal kills a stopping worker's agent group at once (P10).
+func TestTaskWorkSecondSignalKills(t *testing.T) {
+	q := newQueue(t, "ignore_term")
+	q.create("hi")
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	s.signal(t, syscall.SIGINT, syscall.SIGTERM)
+	out := s.waitOrKill(t, 3*time.Second)
+	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run.Status != "stopped" {
+		t.Fatalf("code=%d %+v", out.code, w)
+	}
+	assertGone(t, readPID(t, filepath.Join(q.path, "child.pid")))
+	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
 }
 
 // A worker killed mid-run is found dead by the next list at once, not after
@@ -330,9 +343,7 @@ func TestTaskLockFileRemoved(t *testing.T) {
 	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "running" {
 		t.Errorf("task = %+v, want still running", r)
 	}
-	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
+	s.signal(t, syscall.SIGTERM)
 	out := s.waitOrKill(t, 10*time.Second)
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run == nil || w.Run.Status != "stopped" {
 		t.Errorf("work after SIGTERM: code=%d %+v", out.code, w)

@@ -76,19 +76,18 @@ func TestSubmitTimeoutEscalatesToKill(t *testing.T) {
 			t.Errorf("finished after %s; SIGKILL must wait for the 5s grace period", elapsed)
 		}
 		assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
+		assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
 	})
 }
 
-// stopWith runs a sleeping agent through aits submit with args, sends aits
-// sig once the agent has started, and checks that the agent's group is gone.
-func stopWith(t *testing.T, agent string, sig syscall.Signal, args ...string) output {
+// stopWith runs agent in scenario through aits submit with args, sends aits
+// sigs once the agent has started, and checks that the agent's group is gone.
+func stopWith(t *testing.T, agent, scenario string, sigs []syscall.Signal, args ...string) output {
 	t.Helper()
-	bin := vendorAs(t, agent, "sleep")
+	bin := vendorAs(t, agent, scenario)
 	s := call{path: bin, args: agentArgs(agent, args...)}.start(t)
 	waitFile(t, filepath.Join(bin, "child.pid"))
-	if err := s.cmd.Process.Signal(sig); err != nil {
-		t.Fatal(err)
-	}
+	s.signal(t, sigs...)
 	out := s.waitOrKill(t, 10*time.Second)
 	assertGone(t, readPID(t, filepath.Join(bin, "child.pid")))
 	assertGone(t, readPID(t, filepath.Join(bin, "grandchild.pid")))
@@ -99,7 +98,7 @@ func TestSubmitStopped(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP} {
 			t.Run(sig.String(), func(t *testing.T) {
-				out := stopWith(t, agent, sig, "--json", "hi")
+				out := stopWith(t, agent, "sleep", []syscall.Signal{sig}, "--json", "hi")
 				if r := decode(t, out.stdout); out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" || out.stderr != "" {
 					t.Fatalf("code=%d result=%+v stderr=%q", out.code, r, out.stderr)
 				}
@@ -107,12 +106,26 @@ func TestSubmitStopped(t *testing.T) {
 		}
 		// The text rendering does not depend on the signal.
 		t.Run("text", func(t *testing.T) {
-			out := stopWith(t, agent, syscall.SIGTERM, "hi")
+			out := stopWith(t, agent, "sleep", []syscall.Signal{syscall.SIGTERM}, "hi")
 			if out.code != 1 || out.stdout != "" ||
 				out.stderr != "aits: stopped: aits was stopped by a signal before the agent finished\nsession: sess-fake-1\n" {
 				t.Fatalf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 			}
 		})
+	})
+}
+
+// A second signal during the grace period kills the group at once (P10).
+func TestSubmitSecondSignalKills(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		start := time.Now()
+		out := stopWith(t, agent, "ignore_term", []syscall.Signal{syscall.SIGINT, syscall.SIGTERM}, "--json", "hi")
+		if r := decode(t, out.stdout); out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" {
+			t.Fatalf("code=%d result=%+v", out.code, r)
+		}
+		if elapsed := time.Since(start); elapsed > 3*time.Second {
+			t.Errorf("finished after %s; a second signal must not wait for the 5s grace period", elapsed)
+		}
 	})
 }
 
@@ -177,8 +190,11 @@ func TestSubmitStoppedWhileReadingPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(300 * time.Millisecond) // let aits block on the prompt
-	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
-		t.Fatal(err)
+	// A second signal changes nothing.
+	for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+		if err := cmd.Process.Signal(sig); err != nil {
+			t.Fatal(err)
+		}
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()

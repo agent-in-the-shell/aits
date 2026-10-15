@@ -182,7 +182,8 @@ otherwise) and exits 0. A worker whose task was reclaimed records nothing
 and fails with "task ID was reclaimed before its run was recorded". A task
 file that cannot be read is skipped and left as it is, with
 "aits: skipped task ID that could not be read" on stderr. Running tasks
-whose lock file is missing are reported as list does.
+whose lock file is missing are reported as list does. The agent is stopped
+as shell submit stops it.
 
 Exit codes:
   0  The task is done, or nothing was queued.
@@ -197,7 +198,7 @@ Errors: invalid_input (exit 2); stopped, internal (exit 1).
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "work takes no arguments")
 				}
-				t, notes, err := task.Work(ctx, env.Environ, *agent)
+				t, notes, err := task.Work(ctx, env.Kill, env.Environ, *agent)
 				reportNotes(env, notes)
 				if err != nil {
 					return 0, taskError(err)

@@ -23,8 +23,9 @@ type Env struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
-	Environ []string // KEY=VALUE entries, as os.Environ returns them
-	JSON    bool     // set from --json before the command runs
+	Environ []string        // KEY=VALUE entries, as os.Environ returns them
+	JSON    bool            // set from --json before the command runs
+	Kill    <-chan struct{} // closed on a second stop signal: see shell.Request.Kill
 }
 
 // Error is a failure reported to the caller under a stable code (P5).

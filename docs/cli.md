@@ -74,6 +74,10 @@ Statuses:
   timeout           --timeout elapsed; the agent was stopped.
   stopped           aits got SIGTERM, SIGINT or SIGHUP; the agent was stopped.
 
+Stopping: on a timeout or a signal, aits sends TERM to the agent's process
+group and KILL 5s later, or at once on a second signal. It still waits for
+the group to exit and prints the result.
+
 Errors (nothing was started):
   unknown_command     exit 2  No such command.
   unknown_flag        exit 2  No such flag for this command.
@@ -311,7 +315,8 @@ otherwise) and exits 0. A worker whose task was reclaimed records nothing
 and fails with "task ID was reclaimed before its run was recorded". A task
 file that cannot be read is skipped and left as it is, with
 "aits: skipped task ID that could not be read" on stderr. Running tasks
-whose lock file is missing are reported as list does.
+whose lock file is missing are reported as list does. The agent is stopped
+as shell submit stops it.
 
 Exit codes:
   0  The task is done, or nothing was queued.

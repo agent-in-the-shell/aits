@@ -156,7 +156,7 @@ func Show(environ []string, id string) (Task, error) {
 // returns the notes of the reclaim. The task is nil when nothing is queued;
 // the error is shell.ErrStopped when ctx is done before the claim, and
 // errReclaimed, wrapped with the task id, when the task was reclaimed.
-func Work(ctx context.Context, environ []string, agent string) (*Task, Notes, error) {
+func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent string) (*Task, Notes, error) {
 	if agent != "" && !slices.Contains(shell.Agents(), agent) {
 		return nil, Notes{}, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
 	}
@@ -172,6 +172,7 @@ func Work(ctx context.Context, environ []string, agent string) (*Task, Notes, er
 	token := t.Lease.Token
 	var started time.Time // stays zero unless the agent starts
 	req := t.request(environ)
+	req.Kill = kill
 	req.Started = func(pgid int) {
 		started = time.Now().UTC()
 		// Not update: waiting for the directory lock would leave a window, as
