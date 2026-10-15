@@ -99,8 +99,7 @@ func TestSearchHelpDocumentsErrors(t *testing.T) {
 
 // TestTaskHelpNamesParentFaults enforces P5 for follow-ups: the reasons
 // internal/task fails a follow-up whose parent cannot be resumed are all
-// named, in source order, in the help of show (task fields), list and create
-// (#79).
+// named, in source order, in the help of show, list and create (#79).
 func TestTaskHelpNamesParentFaults(t *testing.T) {
 	var faults []string
 	for _, m := range sourceMatches(t, "../../internal/task/task.go", `case p\b[^:]*:\s*return "([^"]+)"`) {

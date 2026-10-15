@@ -459,8 +459,8 @@ func claimable(t Task, byID map[string]*Task) bool {
 
 // parentFault says why a follow-up of p can never run, or "" if it may yet:
 // p failed, its file is gone, or it is done without a session. A parent whose
-// file cannot be read (skipped) is waited for (P10). Each reason is a string
-// literal returned by its own case on p: the task help test reads them here.
+// file cannot be read (skipped) is waited for (P10). cmd/aits/docs_test.go
+// reads the reasons from here: keep one string literal per case.
 func parentFault(p *Task, skipped bool) string {
 	switch {
 	case p == nil && skipped:
