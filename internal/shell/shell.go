@@ -31,14 +31,17 @@ const (
 
 // Request is one prompt to run.
 type Request struct {
-	Agent   string         // one of Agents()
-	Prompt  string         // sent on the agent's stdin, never in argv (P8)
-	Dir     string         // absolute working directory
-	Timeout time.Duration  // must be positive
-	Environ []string       // the caller's environment, KEY=VALUE; its PATH also finds the agent
-	Pass    []string       // variable names passed from Environ beyond the allowlist (P8)
-	Session string         // a session to continue; empty starts a new one
-	Started func(pgid int) // if set, called once with the agent's process group right after it starts
+	Agent   string        // one of Agents()
+	Prompt  string        // sent on the agent's stdin, never in argv (P8)
+	Dir     string        // absolute working directory
+	Timeout time.Duration // must be positive
+	Environ []string      // the caller's environment, KEY=VALUE; its PATH also finds the agent
+	Pass    []string      // variable names passed from Environ beyond the allowlist (P8)
+	Session string        // a session to continue; empty starts a new one
+	// Started, if set, is called once with the agent's process group right
+	// after it starts. If it fails, the group is killed at once and the run
+	// is stopped, with the error as its message.
+	Started func(pgid int) error
 	// Kill, once closed, makes a run being stopped or timed out kill the
 	// agent's group at once instead of after the grace period (P10).
 	Kill <-chan struct{}

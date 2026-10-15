@@ -1,6 +1,9 @@
 package shell
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestDecide(t *testing.T) {
 	okEvents := events{sessionID: "s1", answer: "answer", done: true}
@@ -10,6 +13,7 @@ func TestDecide(t *testing.T) {
 		want Status
 	}{
 		{"ok", observation{events: okEvents}, StatusOK},
+		{"aborted before timeout", observation{aborted: errors.New("x"), timedOut: true, exitCode: -1}, StatusStopped},
 		{"stopped first", observation{stopped: true, timedOut: true, exitCode: -1, events: events{tooLarge: true}}, StatusStopped},
 		{"timeout before too large", observation{timedOut: true, exitCode: -1, events: events{tooLarge: true}}, StatusTimeout},
 		{"too large before exit code", observation{exitCode: -1, events: events{tooLarge: true}}, StatusTooLarge},

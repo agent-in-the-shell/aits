@@ -56,10 +56,17 @@ func run(ctx context.Context, ag agent, path string, env []string, req Request) 
 	if err != nil {
 		return observation{}, fmt.Errorf("start %s: %w", ag.name, err)
 	}
+	var aborted error
 	if req.Started != nil {
-		req.Started(cmd.Process.Pid) // the agent leads its own group (Setpgid)
+		// The agent leads its own group (Setpgid). Kill it at once if the
+		// caller cannot keep track of it (P10).
+		if aborted = req.Started(cmd.Process.Pid); aborted != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
 	}
-	return supervise(ctx, cmd, outR, errR, req.Timeout, req.Kill, ag.parse), nil
+	o := supervise(ctx, cmd, outR, errR, req.Timeout, req.Kill, ag.parse)
+	o.aborted = aborted
+	return o, nil
 }
 
 // supervise waits for three things: the agent to exit, its stdout to reach

@@ -173,13 +173,16 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 	var started time.Time // stays zero unless the agent starts
 	req := t.request(environ)
 	req.Kill = kill
-	req.Started = func(pgid int) {
+	req.Started = func(pgid int) error {
 		started = time.Now().UTC()
 		// Not update: waiting for the directory lock would leave a window, as
 		// long as another command holds it, in which a killed worker's agent
 		// is unrecorded and never stopped (P10). As holder of the task's lock
 		// the worker is the only writer of its running record.
-		_, _ = modify(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid })
+		if _, err := modify(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid }); err != nil {
+			return fmt.Errorf("the agent's process group could not be recorded: %w", err)
+		}
+		return nil
 	}
 	res, err := shell.Submit(ctx, req)
 	if err != nil {
