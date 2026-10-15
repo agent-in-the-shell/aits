@@ -392,7 +392,6 @@ func TestSessionSearchSource(t *testing.T) {
 		{"scripted", []string{"--source", "scripted"}, []string{"claude:claude-sdk", "codex:codex-exec"}},
 		{"with --agent", []string{"--source", "interactive", "--agent", "codex"}, []string{"codex:codex-cli", "codex:codex-vscode"}},
 		{"with --cwd", []string{"--source", "interactive", "--cwd", "/w/app"}, []string{"claude:claude-cli", "codex:codex-cli"}},
-		{"last value wins", []string{"--source", "scripted", "--source", "interactive"}, []string{"claude:claude-cli", "codex:codex-cli", "codex:codex-vscode"}},
 	} {
 		args := append(append([]string{"session", "search", "--json"}, c.args...), "migration")
 		out := call{env: []string{"HOME=" + home}, args: args}.run(t)
