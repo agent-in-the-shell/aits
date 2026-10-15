@@ -511,3 +511,29 @@ func TestSessionSearchVendorRootsFromEnv(t *testing.T) {
 		}
 	}
 }
+
+// Without HOME or an agent's own root variable, the search cannot know where
+// that agent's transcripts are: it fails with invalid_input rather than
+// return an empty result that reads as "no match" (P6, #82). An agent whose
+// root is known can still be searched alone.
+func TestSessionSearchNoRoot(t *testing.T) {
+	claude := "CLAUDE_CONFIG_DIR=" + t.TempDir()
+	for name, tt := range map[string]struct {
+		env  []string
+		args []string
+		want string
+	}{
+		"no root at all":  {[]string{"HOME="}, nil, "neither CLAUDE_CONFIG_DIR nor HOME is set"},
+		"codex's unknown": {[]string{"HOME=", claude}, nil, "neither CODEX_HOME nor HOME is set"},
+		"codex alone":     {[]string{"HOME=", claude}, []string{"--agent", "codex"}, "neither CODEX_HOME nor HOME is set"},
+	} {
+		out := call{env: tt.env, args: append([]string{"session", "search", "--json", "x"}, tt.args...)}.run(t)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != tt.want {
+			t.Errorf("%s: code=%d stdout=%q, want invalid_input %q", name, out.code, out.stdout, tt.want)
+		}
+	}
+	out := call{env: []string{"HOME=", claude}, args: []string{"session", "search", "--json", "--agent", "claude", "x"}}.run(t)
+	if out.code != 0 {
+		t.Errorf("claude alone with its root: code=%d stdout=%q", out.code, out.stdout)
+	}
+}

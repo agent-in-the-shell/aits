@@ -39,16 +39,21 @@ var vendors = map[string]vendor{
 		kinds: map[string]string{"cli": "interactive", "vscode": "interactive", "exec": "scripted"}},
 }
 
-// files lists the vendor's transcript files. A missing root lists nothing.
-func (v vendor) files(environ []string) []string {
-	root := store.Lookup(environ, v.rootVar)
-	if root == "" {
-		home := store.Lookup(environ, "HOME")
-		if home == "" {
-			return nil
-		}
-		root = filepath.Join(home, v.rootHome)
+// root is the vendor's transcript directory: its own variable, else under
+// HOME. With neither set it cannot be known, which is an error, not an empty
+// search (P6).
+func (v vendor) root(environ []string) (string, error) {
+	if root := store.Lookup(environ, v.rootVar); root != "" {
+		return root, nil
 	}
+	if home := store.Lookup(environ, "HOME"); home != "" {
+		return filepath.Join(home, v.rootHome), nil
+	}
+	return "", invalid("neither %s nor HOME is set", v.rootVar)
+}
+
+// files lists the transcript files under root. A missing root lists nothing.
+func (v vendor) files(root string) []string {
 	// The pattern is fixed, so Glob cannot fail; it skips unreadable
 	// directories without saying so (a documented limit).
 	paths, _ := filepath.Glob(filepath.Join(escapeGlob(root), v.pattern))
@@ -91,12 +96,13 @@ func Search(ctx context.Context, q Query) (Output, error) {
 		cutoff = time.Now().Add(-q.Since)
 	}
 	var jobs []job
-	for _, name := range Agents() {
-		if q.Agent != "" && q.Agent != name {
-			continue
-		}
+	for _, name := range q.agents() {
 		v := vendors[name]
-		for _, p := range v.files(q.Environ) {
+		root, err := v.root(q.Environ) // validate checked it; never glob a relative pattern
+		if err != nil {
+			return Output{}, err
+		}
+		for _, p := range v.files(root) {
 			fi, err := os.Stat(p) // follows symlinks: the target is what would be read
 			if err != nil {
 				out.Skipped.Files++

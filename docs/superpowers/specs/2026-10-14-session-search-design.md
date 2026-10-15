@@ -106,6 +106,9 @@ user turn). Neither layout is a documented contract. Known limits, stated in hel
 - If a vendor changes its directory depth, that agent returns no results
   rather than an error.
 
+A root that cannot be named at all (neither the agent's variable nor `HOME`
+is set) is `invalid_input`, before anything is read: an empty result would
+read as "no match" (P6, #82).
 A missing root or `projects`/`sessions` directory is not an error: that agent
 contributes nothing.
 
