@@ -911,6 +911,40 @@ func TestTaskFollowUpWaitsForParent(t *testing.T) {
 	}
 }
 
+// With neither AITS_HOME nor HOME set, every task command is invalid_input,
+// says so in its help, and writes nothing; other root failures stay internal
+// (#98).
+func TestTaskNoRoot(t *testing.T) {
+	const msg = "neither AITS_HOME nor HOME is set"
+	wd := t.TempDir()
+	for _, args := range [][]string{
+		{"create", "--agent", "claude", "hi"},
+		{"list"},
+		{"show", "20000101T000000-000000"},
+		{"work"},
+	} {
+		c := call{dir: wd, env: []string{"HOME=", "AITS_HOME="}, args: append([]string{"task"}, args...)}
+		if out := c.run(t); out.code != 2 || out.stdout != "" || out.stderr != "aits: "+msg+"\n" {
+			t.Errorf("%v: code=%d stdout=%q stderr=%q", args, out.code, out.stdout, out.stderr)
+		}
+		c.args = append(c.args, "--json")
+		out := c.run(t)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != msg {
+			t.Errorf("%v --json: code=%d stdout=%q, want invalid_input %q", args, out.code, out.stdout, msg)
+		}
+		if !strings.Contains(helpLine(t, "task", args[0]), "neither AITS_HOME nor HOME set") {
+			t.Errorf("task %s --help does not say what happens without AITS_HOME and HOME", args[0])
+		}
+	}
+	if names, err := os.ReadDir(wd); err != nil || len(names) != 0 {
+		t.Errorf("working directory holds %v, %v", names, err)
+	}
+	out := call{env: []string{"AITS_HOME=/dev/null"}, args: []string{"task", "list", "--json"}}.run(t)
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
+		t.Errorf("AITS_HOME a file: code=%d stdout=%q, want internal", out.code, out.stdout)
+	}
+}
+
 // One list fails every queued follow-up that can never run, a whole chain at
 // once (#78, follow-up spec §4, §6).
 func TestTaskFollowUpOrphans(t *testing.T) {

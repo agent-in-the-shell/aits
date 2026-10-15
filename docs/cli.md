@@ -222,6 +222,9 @@ Flags:
   --json              Print the result, or the error, as JSON on stdout.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
 
+The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
+neither AITS_HOME nor HOME set, every task command fails (invalid_input).
+
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
 invalid_input.
 
@@ -256,6 +259,9 @@ List tasks, oldest first.
 Flags:
   --json  Print the result, or the error, as JSON on stdout.
 
+The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
+neither AITS_HOME nor HOME set, every task command fails (invalid_input).
+
 Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
 {"tasks":[{"id","status","agent","cwd","created_at","after"}],"skipped":["ID"]},
 with after only for a follow-up. Tasks of dead workers are reclaimed first,
@@ -276,7 +282,7 @@ of a task whose file cannot be read stays queued.
 Exit codes:
   0  Listed.
   1  The queue could not be read or updated.
-  2  Usage error.
+  2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```
@@ -290,6 +296,9 @@ Show one task and its run.
 
 Flags:
   --json  Print the result, or the error, as JSON on stdout.
+
+The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
+neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 
 Task fields (--json):
   id           Created by "task create".
@@ -317,7 +326,7 @@ characters shown as Go escapes (\x1b, \r).
 Exit codes:
   0  The task exists, whatever its status.
   1  It could not be read.
-  2  Unknown id or usage error.
+  2  Unknown id, usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```
@@ -332,6 +341,9 @@ Claim the oldest claimable task, run it, record the result, exit.
 Flags:
   --agent AGENT  Only claim tasks for AGENT.
   --json         Print the result, or the error, as JSON on stdout.
+
+The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
+neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 
 Task fields (--json):
   id           Created by "task create".
@@ -372,7 +384,7 @@ then reclaims the task.
 Exit codes:
   0  The task is done, or nothing was claimable.
   1  The task failed, or work could not finish.
-  2  Usage error.
+  2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 ```

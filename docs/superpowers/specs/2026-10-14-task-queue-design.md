@@ -34,7 +34,8 @@ Follow-ups on a task's session: `2026-10-15-task-follow-up-design.md` (#63).
 - `internal/store`: the storage package P7 names, four functions:
   - `Dir(environ []string, group string) (string, error)` — resolves
     `$AITS_HOME/<group>` (default `$HOME/.local/share/aits/<group>`), creates
-    it 0700 and tightens an existing one to 0700;
+    it 0700 and tightens an existing one to 0700. With neither variable set it
+    returns `ErrNoRoot` (task: `invalid_input`, exit 2; #98);
   - `WriteFile(path string, data []byte) error` — temp file in the same
     directory, then rename; mode 0600;
   - `Lock(dir string) (unlock func(), err error)` — `flock` on `<dir>/.lock`;

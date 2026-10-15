@@ -20,6 +20,12 @@ func taskGroup() *Command {
 	}
 }
 
+// taskQueue says where the queue lives, for every task command (P5, #98).
+const taskQueue = `The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
+neither AITS_HOME nor HOME set, every task command fails (invalid_input).
+
+`
+
 // taskFields documents the task record printed by show and work (P5).
 const taskFields = `Task fields (--json):
   id           Created by "task create".
@@ -50,7 +56,7 @@ func taskCreate() *Command {
 		Name:    "create",
 		Args:    "(PROMPT | -)",
 		Summary: "Queue a prompt for an agent; prints the task id.",
-		Details: promptDetails + `The prompt, --cwd and --env names must be valid UTF-8: a task is stored as
+		Details: taskQueue + promptDetails + `The prompt, --cwd and --env names must be valid UTF-8: a task is stored as
 JSON text.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
@@ -103,7 +109,7 @@ func taskList() *Command {
 	return &Command{
 		Name:    "list",
 		Summary: "List tasks, oldest first.",
-		Details: `Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
+		Details: taskQueue + `Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
 {"tasks":[{"id","status","agent","cwd","created_at","after"}],"skipped":["ID"]},
 with after only for a follow-up. Tasks of dead workers are reclaimed first,
 and queued follow-ups whose parent does not exist, failed or has no session
@@ -123,7 +129,7 @@ of a task whose file cannot be read stays queued.
 Exit codes:
   0  Listed.
   1  The queue could not be read or updated.
-  2  Usage error.
+  2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 `,
@@ -171,11 +177,11 @@ func taskShow() *Command {
 		Name:    "show",
 		Args:    "ID",
 		Summary: "Show one task and its run.",
-		Details: taskFields + `
+		Details: taskQueue + taskFields + `
 Exit codes:
   0  The task exists, whatever its status.
   1  It could not be read.
-  2  Unknown id or usage error.
+  2  Unknown id, usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 `,
@@ -201,7 +207,7 @@ func taskWork() *Command {
 	return &Command{
 		Name:    "work",
 		Summary: "Claim the oldest claimable task, run it, record the result, exit.",
-		Details: taskFields + `
+		Details: taskQueue + taskFields + `
 With nothing claimable (no task queued, none for AGENT with --agent, or only
 follow-ups whose parent is not done or cannot be read), work exits 0,
 printing {"status":"empty"} with --json and nothing otherwise. A worker whose
@@ -218,7 +224,7 @@ then reclaims the task.
 Exit codes:
   0  The task is done, or nothing was claimable.
   1  The task failed, or work could not finish.
-  2  Usage error.
+  2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 `,
