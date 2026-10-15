@@ -83,6 +83,16 @@ func invalid(format string, a ...any) error {
 	return &shell.InvalidRequestError{Reason: fmt.Sprintf(format, a...)}
 }
 
+// taskDir is the queue's directory. A root that cannot be found is the
+// caller's invalid input, as session search reports its own (P5).
+func taskDir(environ []string) (string, error) {
+	dir, err := store.Dir(environ, "task")
+	if errors.Is(err, store.ErrNoRoot) {
+		return "", invalid("%v", err)
+	}
+	return dir, err
+}
+
 // errReclaimed means another caller failed the task, its worker being gone,
 // before this worker recorded its run.
 var errReclaimed = errors.New("reclaimed before its run was recorded")
@@ -110,7 +120,7 @@ func Create(environ []string, s Spec) (Task, error) {
 			return Task{}, err
 		}
 	}
-	dir, err := store.Dir(environ, "task")
+	dir, err := taskDir(environ)
 	if err != nil {
 		return Task{}, err
 	}
@@ -220,7 +230,7 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 // List reclaims tasks of dead workers and returns every readable task, oldest
 // first, and its notes.
 func List(environ []string) ([]Task, Notes, error) {
-	dir, err := store.Dir(environ, "task")
+	dir, err := taskDir(environ)
 	if err != nil {
 		return nil, Notes{}, err
 	}
@@ -236,7 +246,7 @@ func List(environ []string) ([]Task, Notes, error) {
 
 // Show returns one task (see find).
 func Show(environ []string, id string) (Task, error) {
-	dir, err := store.Dir(environ, "task")
+	dir, err := taskDir(environ)
 	if err != nil {
 		return Task{}, err
 	}
@@ -261,7 +271,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 	if agent != "" && !slices.Contains(shell.Agents(), agent) {
 		return nil, Notes{}, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
 	}
-	dir, err := store.Dir(environ, "task")
+	dir, err := taskDir(environ)
 	if err != nil {
 		return nil, Notes{}, err
 	}

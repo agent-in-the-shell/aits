@@ -911,6 +911,40 @@ func TestTaskFollowUpWaitsForParent(t *testing.T) {
 	}
 }
 
+// Without AITS_HOME or HOME the queue cannot be found: every task command
+// says so as invalid input, in the working directory nothing is written, and a
+// root that cannot be made is still internal (#98).
+func TestTaskNoRoot(t *testing.T) {
+	wd := t.TempDir()
+	for _, args := range [][]string{
+		{"create", "--agent", "claude", "--cwd", wd, "hi"},
+		{"list"},
+		{"show", "20000101T000000-000000"},
+		{"work"},
+	} {
+		const msg = "neither AITS_HOME nor HOME is set"
+		out := call{dir: wd, env: []string{"HOME=", "AITS_HOME="}, args: append([]string{"task", "--json"}, args...)}.run(t)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != msg {
+			t.Errorf("%v --json: code=%d stdout=%q, want invalid_input %q", args, out.code, out.stdout, msg)
+		}
+		out = call{dir: wd, env: []string{"HOME=", "AITS_HOME="}, args: append([]string{"task"}, args...)}.run(t)
+		if out.code != 2 || out.stdout != "" || out.stderr != "aits: "+msg+"\n" {
+			t.Errorf("%v: code=%d stdout=%q stderr=%q", args, out.code, out.stdout, out.stderr)
+		}
+	}
+	if names, err := os.ReadDir(wd); err != nil || len(names) != 0 {
+		t.Errorf("working directory holds %v, %v", names, err)
+	}
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := call{env: []string{"AITS_HOME=" + file}, args: []string{"task", "list", "--json"}}.run(t)
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
+		t.Errorf("AITS_HOME a file: code=%d stdout=%q, want internal", out.code, out.stdout)
+	}
+}
+
 // One list fails every queued follow-up that can never run, a whole chain at
 // once (#78, follow-up spec §4, §6).
 func TestTaskFollowUpOrphans(t *testing.T) {

@@ -13,6 +13,10 @@ import (
 	"syscall"
 )
 
+// ErrNoRoot means the root cannot be found: neither AITS_HOME nor HOME is set.
+// The caller's environment is at fault, not the file system.
+var ErrNoRoot = errors.New("neither AITS_HOME nor HOME is set")
+
 // Dir returns the directory of group under the root, creating it 0700 and
 // tightening the root and the directory to 0700 if they exist.
 func Dir(environ []string, group string) (string, error) {
@@ -20,7 +24,7 @@ func Dir(environ []string, group string) (string, error) {
 	if root == "" {
 		home := Lookup(environ, "HOME")
 		if home == "" {
-			return "", errors.New("neither AITS_HOME nor HOME is set")
+			return "", ErrNoRoot
 		}
 		root = filepath.Join(home, ".local", "share", "aits")
 	}
