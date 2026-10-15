@@ -911,6 +911,66 @@ func TestTaskFollowUpWaitsForParent(t *testing.T) {
 	}
 }
 
+// One list fails every queued follow-up that can never run, a whole chain at
+// once, even when the chain's last task reads as the oldest (#63, #78,
+// follow-up spec §4).
+func TestTaskFollowUpOrphans(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		parent func(q queue, p string, finished time.Time)
+		why    string
+	}{
+		{"failed", func(q queue, p string, finished time.Time) {
+			q.patch(p, map[string]any{"status": "failed", "run": map[string]any{"status": "agent_failed", "agent": "claude", "finished_at": finished}})
+		}, "failed"},
+		{"gone", func(q queue, p string, _ time.Time) {
+			if err := os.Remove(q.taskFile(p)); err != nil {
+				q.t.Fatal(err)
+			}
+		}, "does not exist"},
+		{"done without a session id", func(q queue, p string, finished time.Time) {
+			q.patch(p, map[string]any{"status": "done", "run": map[string]any{"status": "ok", "agent": "claude", "answer": "a", "finished_at": finished}})
+		}, "has no session"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			q := newQueue(t, "ok")
+			p := q.create("parent")
+			f := q.after(p, "follow")
+			g := q.after(f, "follow again")
+			q.patch(g, map[string]any{"created_at": "2000-01-01T00:00:00Z"})
+			tt.parent(q, p, time.Now().UTC())
+			if out := q.run("list", "--json"); out.code != 0 {
+				t.Fatalf("list: code=%d stdout=%q", out.code, out.stdout)
+			}
+			for id, msg := range map[string]string{f: "its parent task " + p + " " + tt.why, g: "its parent task " + f + " failed"} {
+				if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "failed" || r.Run == nil ||
+					r.Run.Status != "not_started" || r.Run.Message != msg {
+					t.Errorf("%s = %+v; want not_started %q", id, r, msg)
+				}
+			}
+		})
+	}
+}
+
+// A parent whose worker died fails its queued follow-up in the same list that
+// reclaims it (#78, follow-up spec §4).
+func TestTaskFollowUpParentWorkerDied(t *testing.T) {
+	q := newQueue(t, "ok")
+	p := q.create("parent")
+	f := q.after(p, "follow")
+	q.deadWorker(p, `: > "$0"; exec sleep 60`)
+	if out := q.run("list"); out.code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", p, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+		t.Errorf("parent = %+v; want worker_died", r)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", f, "--json").stdout); r.Status != "failed" || r.Run == nil ||
+		r.Run.Status != "not_started" || r.Run.Message != "its parent task "+p+" failed" {
+		t.Errorf("follow-up = %+v; want not_started, its parent task %s failed", r, p)
+	}
+}
+
 // A follow-up whose worker died does not count against its parent's one
 // follow-up once failed, but only after its agent is gone: while list is
 // still stopping that agent, a retry is refused, so two agents never resume
@@ -981,4 +1041,6 @@ func TestTaskCreateAfterInvalid(t *testing.T) {
 	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || e.Message != want || q.count() != before {
 		t.Errorf("unreadable file: code=%d stdout=%q; want internal %q", out.code, out.stdout, want)
 	}
+	// A plain create does not look for follow-ups, so it still succeeds (#78).
+	q.create("plain")
 }
