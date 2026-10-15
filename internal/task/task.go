@@ -187,7 +187,7 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 			return invalid("task %s already has a follow-up: %s; follow up on %s instead", p.ID, o.ID, o.ID)
 		}
 		if o.Run == nil || o.Run.Status != WorkerDied {
-			continue // its agent was stopped before it was recorded failed
+			continue // its agent had ended, or never ran, before it was recorded failed
 		}
 		// Its agent may still be running until the reclaim that failed it has
 		// stopped it; that reclaim holds its lock until then.
@@ -197,7 +197,7 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 			return invalid("task %s, a follow-up of %s, failed but its agent is still being stopped; try again in a few seconds", o.ID, p.ID)
 		case err == nil:
 			release()
-		case !errors.Is(err, os.ErrNotExist): // a lock file removed by hand: nothing to wait for
+		case !errors.Is(err, os.ErrNotExist): // (no lock file: removed by hand, nothing to wait for)
 			return fmt.Errorf("task %s: %w", o.ID, err)
 		}
 	}
@@ -344,9 +344,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 // judged and is noted (P6); any other error stops it. It then fails each
 // queued follow-up that can never run (parentFault). It returns what it
 // loaded and stop, for the caller to run once the directory lock is free:
-// stop ends the dead workers' agent groups and only then releases their
-// tasks' locks, so a failed task whose lock is held may still have its agent
-// running (P10, #76).
+// stop ends the dead workers' agent groups, then releases their tasks' locks.
 func reclaim(dir string) (snapshot, func(), error) {
 	var groups []int
 	var locks []func()
