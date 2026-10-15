@@ -484,7 +484,8 @@ func TestClaimFollowUp(t *testing.T) {
 
 // A queued follow-up whose parent failed, is gone, or is done without a
 // session is failed by the next reclaim, down the whole chain, whatever the
-// order of created_at (spec §2, §4).
+// order of created_at (spec §2, §4). A parent whose worker died fails in that
+// same reclaim, and so does its chain (#78).
 func TestReclaimFailsOrphans(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -503,6 +504,11 @@ func TestReclaimFailsOrphans(t *testing.T) {
 		{"done without a run", func(t *testing.T, environ []string, p Task) {
 			setStatus(t, environ, p, Done, nil)
 		}, "has no session"},
+		{"worker died", func(t *testing.T, environ []string, p Task) {
+			dir, _ := store.Dir(environ, "task")
+			running(t, dir, p, `{"token":"w","pgid":0}`)
+			lock(t, dir, p.ID)() // the lock file a claim leaves, now free
+		}, "failed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
