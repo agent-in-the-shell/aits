@@ -77,12 +77,14 @@ names as a failure to avoid. The task-queue spec deferred this (§1).
 - Help (P5, P13):
   - `create`: `--after` and the rules of §2; `--agent` reads "required
     unless --after";
-  - `work`: it claims "the oldest claimable task"; `{"status":"empty"}` means
-    nothing is claimable, which includes follow-ups waiting on their parent;
-  - `list`: reclaim also fails follow-ups of failed tasks;
-  - the task fields: `after`; `not_started` now reads "the agent was never
-    started: it could not be started after the claim, or the task's parent
-    failed";
+  - `work`: it claims "the oldest claimable task"; `{"status":"empty"}` and
+    its exit-code row mean nothing is claimable, which includes follow-ups
+    waiting on their parent;
+  - the task fields: `after`;
+  - `not_started` (task fields) and the `list` and `create` help name every
+    reason a follow-up is failed (its parent does not exist, failed or has
+    no session when done); `list` says a follow-up of an unreadable task
+    stays queued (#79);
   - `list --json` items gain `after` when set. Text output is unchanged.
 - `show` does not reclaim, so a follow-up of a failed parent shows `queued`
   until the next `list` or `work`; the `create` help says so.

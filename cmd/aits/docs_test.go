@@ -97,6 +97,22 @@ func TestSearchHelpDocumentsErrors(t *testing.T) {
 	}
 }
 
+// TestTaskHelpNamesParentFaults enforces P5 for follow-ups: the reasons
+// internal/task fails a follow-up whose parent cannot be resumed are all
+// named, in source order, in the help of show, list and create (#79).
+func TestTaskHelpNamesParentFaults(t *testing.T) {
+	var faults []string
+	for _, m := range sourceMatches(t, "../../internal/task/task.go", `case p\b[^:]*:\s*return "([^"]+)"`) {
+		faults = append(faults, m[1])
+	}
+	want := "parent " + strings.Join(faults[:len(faults)-1], ", ") + " or " + faults[len(faults)-1]
+	for _, cmd := range []string{"show", "list", "create"} {
+		if help := strings.Join(strings.Fields(call{args: []string{"task", cmd, "--help"}}.run(t).stdout), " "); !strings.Contains(help, want) {
+			t.Errorf("task %s --help does not say %q", cmd, want)
+		}
+	}
+}
+
 // helpErrors maps each error code that the help of the command at path lists
 // to its exit code, e.g. "exit 2". It reads both forms of the Errors section:
 // one line, "Errors: a, b (exit 2); c (exit 1).", or a heading followed by
