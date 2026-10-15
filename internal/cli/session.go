@@ -71,7 +71,9 @@ Transcripts:
   claude  $CLAUDE_CONFIG_DIR/projects/*/*.jsonl (default ~/.claude)
   codex   $CODEX_HOME/sessions/*/*/*/rollout-*.jsonl (default ~/.codex)
   Subdirectories that cannot be read are passed over without a count; if a
-  vendor changes this layout, its sessions are not found.
+  vendor changes this layout, its sessions are not found. If neither the
+  variable nor HOME is set for an agent searched, the search fails
+  (invalid_input).
 
 Exit codes:
   0  The search ran, with or without results.
