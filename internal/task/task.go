@@ -180,8 +180,22 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 		return fmt.Errorf("cannot tell whether task %s already has a follow-up: task %s could not be read", p.ID, s.Skipped[0])
 	}
 	for _, o := range s.tasks {
-		if o.After == p.ID && o.Status != Failed {
+		if o.After != p.ID {
+			continue
+		}
+		if o.Status != Failed {
 			return invalid("task %s already has a follow-up: %s; follow up on %s instead", p.ID, o.ID, o.ID)
+		}
+		// A follow-up whose worker died may still have its agent running until
+		// the reclaim that failed it has stopped it; that reclaim holds its lock.
+		release, err := store.TryLock(lockPath(dir, o.ID), false)
+		switch {
+		case errors.Is(err, store.ErrLocked):
+			return invalid("task %s, a follow-up of %s, failed but its agent is still being stopped; try again in a few seconds", o.ID, p.ID)
+		case err == nil:
+			release()
+		case !errors.Is(err, os.ErrNotExist): // no lock file: the follow-up never ran
+			return fmt.Errorf("task %s: %w", o.ID, err)
 		}
 	}
 	return nil
@@ -198,9 +212,9 @@ func List(environ []string) ([]Task, Notes, error) {
 	if err != nil {
 		return nil, Notes{}, err
 	}
-	s, groups, err := reclaim(dir)
+	s, st, err := reclaim(dir)
 	unlock()
-	shell.Stop(groups...)
+	st.stop()
 	return s.tasks, s.Notes, err
 }
 
@@ -288,7 +302,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 		unlock()
 		return nil, "", nil, Notes{}, shell.ErrStopped
 	}
-	s, groups, err := reclaim(dir)
+	s, st, err := reclaim(dir)
 	byID := index(s.tasks)
 	var claimed *Task
 	var session string
@@ -317,7 +331,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 		}
 	}
 	unlock()
-	shell.Stop(groups...)
+	st.stop()
 	return claimed, session, release, s.Notes, err
 }
 
@@ -326,13 +340,13 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 // lock is a live worker, whatever its age (P10); a missing lock file cannot be
 // judged and is noted (P6); any other error stops it. It then fails each
 // queued follow-up that can never run (parentFault). It returns what it
-// loaded and the agent process groups to stop once the lock is free.
-func reclaim(dir string) (snapshot, []int, error) {
+// loaded and the agent groups to stop once the directory lock is free.
+func reclaim(dir string) (snapshot, stopping, error) {
+	var st stopping
 	s, err := load(dir)
 	if err != nil {
-		return s, nil, err
+		return s, st, err
 	}
-	var groups []int
 	for i := range s.tasks {
 		t := &s.tasks[i]
 		if t.Status != Running {
@@ -346,7 +360,7 @@ func reclaim(dir string) (snapshot, []int, error) {
 			s.Unknown = append(s.Unknown, t.ID)
 			continue
 		case err != nil:
-			return s, groups, fmt.Errorf("task %s: %w", t.ID, err)
+			return s, st, fmt.Errorf("task %s: %w", t.ID, err)
 		}
 		// Re-read: the worker writes its pgid without the directory lock, so it
 		// may have done so since load. (The error branch has no test: a write
@@ -354,29 +368,45 @@ func reclaim(dir string) (snapshot, []int, error) {
 		cur, err := read(dir, t.ID)
 		if err != nil {
 			release()
-			return s, groups, err
+			return s, st, err
 		}
 		if *t = cur; t.Status != Running {
 			release()
 			continue
 		}
-		groups = append(groups, t.Lease.PGID)
 		t.Run = &Run{Result: shell.Result{
 			Status: WorkerDied, Agent: t.Agent,
 			Message: "the worker exited before it recorded a result",
 		}, StartedAt: t.Lease.StartedAt, FinishedAt: time.Now().UTC()}
+		pgid := t.Lease.PGID
 		t.Status, t.Lease = Failed, nil
-		err = write(dir, *t)
-		release()
-		if err != nil {
-			return s, groups, err
+		if err := write(dir, *t); err != nil {
+			release()
+			return s, st, err
 		}
+		st.groups, st.locks = append(st.groups, pgid), append(st.locks, release)
 	}
 	if err := failOrphans(dir, s); err != nil {
-		return s, groups, err
+		return s, st, err
 	}
 	slices.Sort(s.Unknown)
-	return s, groups, nil
+	return s, st, nil
+}
+
+// stopping is the agent groups of the workers a reclaim found dead, and those
+// tasks' locks, which it keeps until the groups are stopped: a task whose
+// lock is held may still have its agent running (P10).
+type stopping struct {
+	groups []int
+	locks  []func()
+}
+
+// stop ends the groups, then releases the locks.
+func (st stopping) stop() {
+	shell.Stop(st.groups...)
+	for _, release := range st.locks {
+		release()
+	}
 }
 
 // failOrphans fails each queued follow-up in s that can never run

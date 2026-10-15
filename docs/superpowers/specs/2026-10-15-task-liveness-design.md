@@ -101,9 +101,10 @@ task, `TryLock(<id>.lock, create=false)`:
 - **lock obtained**: the worker is gone. Re-read the record (the worker may
   have written its pgid since the load; a failed re-read is returned as an
   error and leaves the task unchanged). Set `failed`, `lease: null`, `run`
-  with status `worker_died`, its message and `finished_at`. Write the task,
-  release L, and collect its non-zero `pgid` to stop after D is released
-  (`shell.Stop`, as today).
+  with status `worker_died`, its message and `finished_at`. Write the task
+  and collect its non-zero `pgid` to stop after D is released (`shell.Stop`,
+  as today). L is kept until that stop returns, so a held lock still means
+  the task's agent may be running (#76).
 - **`ErrLocked`**: a live worker holds it; leave the task.
 - **missing**: leave the task `running`; add its id to `Unknown`.
 - **any other error**: stop and return it. `list` and `work` fail with

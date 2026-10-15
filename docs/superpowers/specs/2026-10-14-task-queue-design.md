@@ -152,7 +152,7 @@ creating it: obtained, the worker is gone and the task becomes `failed` with
 run status `worker_died`; held, a live worker keeps it, however old; missing,
 the task stays `running` and is reported on stderr; any other error fails
 `list` and `work`. After unlocking, the recorded `pgid`s are passed to
-`shell.Stop` (§3; P10). Known limits: a worker that dies between claim and
+`shell.Stop` (§3; P10); each such task's lock is held until then (#76). Known limits: a worker that dies between claim and
 agent start leaves no pgid; a pgid can be reused by an unrelated process
 group in the meantime; a running task whose file cannot be read is not
 reclaimed and its agent is not stopped (§5); a stopped (Ctrl-Z) worker keeps
