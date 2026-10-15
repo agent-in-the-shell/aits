@@ -13,6 +13,7 @@ func TestDecide(t *testing.T) {
 		want Status
 	}{
 		{"ok", observation{events: okEvents}, StatusOK},
+		{"aborted first", observation{aborted: errors.New("x"), stopped: true, timedOut: true, exitCode: -1}, StatusStopped},
 		{"stopped first", observation{stopped: true, timedOut: true, exitCode: -1, events: events{tooLarge: true}}, StatusStopped},
 		{"timeout before too large", observation{timedOut: true, exitCode: -1, events: events{tooLarge: true}}, StatusTimeout},
 		{"too large before exit code", observation{exitCode: -1, events: events{tooLarge: true}}, StatusTooLarge},
@@ -34,15 +35,6 @@ func TestDecide(t *testing.T) {
 				t.Errorf("status %s with message %q", got, msg)
 			}
 		})
-	}
-}
-
-// A run whose Started hook failed is stopped, whatever else happened, with
-// the hook's error as its message.
-func TestDecideAborted(t *testing.T) {
-	o := observation{aborted: errors.New("cannot record"), timedOut: true, exitCode: -1, events: events{tooLarge: true}}
-	if got, msg := decide(o); got != StatusStopped || msg != "cannot record" {
-		t.Errorf("decide = %s %q, want stopped with the hook's error", got, msg)
 	}
 }
 

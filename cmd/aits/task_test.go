@@ -506,6 +506,25 @@ func (q queue) lockDir() func() {
 	return func() { f.Close() }
 }
 
+// deadWorker makes task id running as a dead worker leaves it: unlocked, its
+// pgid a leftover group running script (sh -c) with $0 a file the script
+// creates once ready, and args. It returns the group.
+func (q queue) deadWorker(id, script string, args ...string) int {
+	q.t.Helper()
+	ready := filepath.Join(q.t.TempDir(), "ready")
+	g := exec.Command("sh", append([]string{"-c", script, ready}, args...)...)
+	g.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := g.Start(); err != nil {
+		q.t.Fatal(err)
+	}
+	go func() { _ = g.Wait() }()
+	q.t.Cleanup(func() { _ = syscall.Kill(-g.Process.Pid, syscall.SIGKILL) })
+	waitFile(q.t, ready) // a signal before the script's trap would end it at once
+	q.setRunning(id, map[string]any{"token": "dead", "pgid": g.Process.Pid})
+	q.writeLockFile(id)
+	return g.Process.Pid
+}
+
 // claimThenHoldDir queues task a (with flags), oldest, and a dead worker's
 // task whose leftover group ignores SIGTERM, so that work's claim, after
 // marking a running, waits to stop that group before it starts a's agent. It
@@ -515,24 +534,14 @@ func (q queue) lockDir() func() {
 func claimThenHoldDir(t *testing.T, q queue, flags ...string) (string, *started, func()) {
 	t.Helper()
 	a := q.create("hi", flags...)
-	b := q.create("dead")
-	ready := filepath.Join(t.TempDir(), "ready")
-	g := exec.Command("sh", "-c", `trap '' TERM; : > "$0"; exec sleep 60`, ready)
-	g.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := g.Start(); err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = g.Wait() }()
-	waitFile(t, ready) // SIGTERM before the trap would end the group at once
-	q.setRunning(b, map[string]any{"token": "dead", "pgid": g.Process.Pid})
-	q.writeLockFile(b)
+	g := q.deadWorker(q.create("dead"), `trap '' TERM; : > "$0"; exec sleep 60`)
 	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
 	q.waitLease(a, 0)
 	unlock := q.lockDir()
 	if r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout); r.Lease == nil || r.Lease.PGID != 0 {
 		t.Fatalf("the agent started before the test held the directory lock: %+v", r.Lease)
 	}
-	if err := syscall.Kill(-g.Process.Pid, syscall.SIGKILL); err != nil {
+	if err := syscall.Kill(-g, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
 	return a, s, unlock
@@ -567,30 +576,19 @@ func TestTaskWorkerKilledBeforePgid(t *testing.T) {
 // later command could have stopped it (P10, #56).
 func TestTaskWorkPgidNotRecorded(t *testing.T) {
 	q := newQueue(t, "ignore_term")
-	t.Cleanup(func() { assertNoneRunning(t, q.path) }) // also when work hangs
+	t.Cleanup(func() { assertNoneRunning(t, q.path) }) // the agent was killed, even if before its pid file
 	a := q.create("hi")
-	b := q.create("dead")
 	dir := filepath.Join(q.home, "task")
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
-	// A dead worker's leftover group that, stopped by work's claim after the
-	// claim is written, makes the task directory read-only.
-	ready := filepath.Join(t.TempDir(), "ready")
-	g := exec.Command("sh", "-c", `trap 'chmod 500 "$1"; exit 0' TERM; : > "$0"; sleep 60 & wait`, ready, dir)
-	g.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := g.Start(); err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = g.Wait() }()
-	waitFile(t, ready)
-	q.setRunning(b, map[string]any{"token": "dead", "pgid": g.Process.Pid})
-	q.writeLockFile(b)
+	// Stopped by work's claim once the claim is written, the leftover group
+	// makes the task directory read-only.
+	q.deadWorker(q.create("dead"), `trap 'chmod 500 "$1"; exit 0' TERM; : > "$0"; sleep 60 & wait`, dir)
 
 	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
 	out := s.waitOrKill(t, 3*time.Second) // under the 5 s grace
 	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || !strings.Contains(e.Message, a) {
 		t.Errorf("work: code=%d stdout=%q", out.code, out.stdout)
 	}
-	assertNoneRunning(t, q.path)
 
 	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
