@@ -94,7 +94,8 @@ output or a zero value never means success.
 read as success; arguments parsed wrongly without an error.
 
 **Guard.** Each feature issue's acceptance includes binary tests for its main
-failure paths. Result types reject an empty `status` at construction.
+failure paths. The CLI refuses to print a result with an empty `status`, and
+fails with `internal` instead; a unit test and a binary test check it.
 
 ## P7 — One storage root, safe writes
 
@@ -126,7 +127,8 @@ prompts visible in `ps`; upstream error bodies (which can echo prompt content)
 written to logs; unbounded output buffered in memory.
 
 **Guard.** Tests plant a canary secret and assert it is absent from the child
-environment, argv and logs; a test asserts oversized output is truncated.
+environment and argv and from aits's stdout and stderr, on success and on a
+failure path; a test asserts oversized output is truncated.
 
 ## P9 — Safe defaults for exposure and privilege
 
@@ -202,8 +204,8 @@ Supported platforms are Linux and macOS on amd64 and arm64.
 
 **Prevents.** Help, docs and behaviour drifting apart.
 
-**Guard.** CI runs `go generate` and fails on any diff; the CI matrix covers
-Linux and macOS.
+**Guard.** `TestCLIDocs`, run by `go test ./...` in CI, fails when
+`docs/cli.md` differs from the help; the CI matrix covers Linux and macOS.
 
 ## P14 — Small binary, no over-engineering
 

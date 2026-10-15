@@ -220,6 +220,26 @@ func TestTaskCreateTimeoutMilliseconds(t *testing.T) {
 	}
 }
 
+// A recorded run without a status is refused rather than printed, in both
+// modes (P6, #61).
+func TestTaskShowRunWithoutStatus(t *testing.T) {
+	q := newQueue(t, "")
+	id := q.create("hi")
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &rec); err != nil {
+		t.Fatal(err)
+	}
+	rec["status"], rec["run"] = "failed", map[string]any{"agent": "claude", "finished_at": time.Now()}
+	b, _ := json.Marshal(rec)
+	q.writeTaskFile(id, string(b), 0o600)
+	if out := q.run("show", id); out.code != 1 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") {
+		t.Errorf("text: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+	}
+	if out := q.run("show", id, "--json"); out.code != 1 || decode(t, out.stdout).Error == nil || decode(t, out.stdout).Error.Code != "internal" {
+		t.Errorf("json: code=%d stdout=%q", out.code, out.stdout)
+	}
+}
+
 // A run whose agent never started has no started_at (help, spec §4).
 func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	q := newQueue(t, "ok")
