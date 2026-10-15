@@ -168,7 +168,9 @@ Errors: invalid_input (exit 2); internal (exit 1).
 				if err != nil {
 					return 0, taskError(err)
 				}
-				writeTask(env, t)
+				if err := writeTask(env, t); err != nil {
+					return 0, err
+				}
 				return exitOK, nil
 			}
 		},
@@ -215,7 +217,9 @@ Errors: invalid_input (exit 2); stopped, internal (exit 1).
 					}
 					return exitOK, nil
 				}
-				writeTask(env, *t)
+				if err := writeTask(env, *t); err != nil {
+					return 0, err
+				}
 				if t.Status != task.Done {
 					return exitFailure, nil
 				}
@@ -226,15 +230,19 @@ Errors: invalid_input (exit 2); stopped, internal (exit 1).
 }
 
 // writeTask prints a task: the record with --json; otherwise a summary line,
-// the session and the answer of a done run, or why it failed.
-func writeTask(env *Env, t task.Task) {
+// the session and the answer of a done run, or why it failed. A run without a
+// status is refused (P6).
+func writeTask(env *Env, t task.Task) error {
+	if t.Run != nil && t.Run.Status == "" {
+		return failure("internal", "task %s has a run without a status", t.ID)
+	}
 	if env.JSON {
 		writeJSON(env.Stdout, t)
-		return
+		return nil
 	}
 	fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n", t.ID, t.Status, t.Agent, t.Cwd)
 	if t.Run == nil {
-		return
+		return nil
 	}
 	if t.Run.SessionID != "" {
 		fmt.Fprintf(env.Stderr, "session: %s\n", t.Run.SessionID)
@@ -244,6 +252,7 @@ func writeTask(env *Env, t task.Task) {
 	} else {
 		fmt.Fprintf(env.Stderr, "aits: task %s failed: %s: %s\n", t.ID, t.Run.Status, t.Run.Message)
 	}
+	return nil
 }
 
 // reportNotes names, on stderr, each task file that could not be read and

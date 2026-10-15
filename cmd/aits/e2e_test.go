@@ -351,6 +351,21 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 	}
 }
 
+// The canary is a secret in aits's environment that reaches neither the agent
+// nor aits's own output (P8). The fake agent prints it on stderr if it gets it.
+const (
+	canaryName   = "AITS_TEST_CANARY"
+	canarySecret = "secret-canary"
+	canary       = canaryName + "=" + canarySecret
+)
+
+func assertNoCanary(t *testing.T, out output) {
+	t.Helper()
+	if strings.Contains(out.stdout+out.stderr, canarySecret) {
+		t.Errorf("the canary secret is in aits's output: stdout=%q stderr=%q", out.stdout, out.stderr)
+	}
+}
+
 func TestSubmitEnvironment(t *testing.T) {
 	own := map[string][]string{
 		"claude": {"ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"},
@@ -358,7 +373,7 @@ func TestSubmitEnvironment(t *testing.T) {
 	}
 	eachAgent(t, func(t *testing.T, agent string) {
 		bin := vendorAs(t, agent, "ok")
-		env := []string{"AITS_TEST_CANARY=secret-canary", "AITS_TEST_PASSED=passed-value"}
+		env := []string{canary, "AITS_TEST_PASSED=passed-value"}
 		for _, names := range own {
 			for _, n := range names {
 				env = append(env, n+"=v-"+n)
@@ -368,12 +383,13 @@ func TestSubmitEnvironment(t *testing.T) {
 		if out.code != 0 {
 			t.Fatalf("exit %d: %s", out.code, out.stdout)
 		}
+		assertNoCanary(t, out)
 		got := readRecord(t, bin).Env
 		if !slices.Contains(got, "AITS_TEST_PASSED=passed-value") {
 			t.Errorf("--env variable missing from %q", got)
 		}
 		for _, kv := range got {
-			if strings.HasPrefix(kv, "AITS_TEST_CANARY=") || strings.HasPrefix(kv, "AITS_HOME=") {
+			if strings.HasPrefix(kv, canaryName+"=") || strings.HasPrefix(kv, "AITS_HOME=") {
 				t.Errorf("variable outside the allowlist reached the agent: %s", kv)
 			}
 		}
@@ -392,7 +408,8 @@ func TestSubmitEnvironment(t *testing.T) {
 
 func TestSubmitAgentFailed(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
-		out := call{path: vendorAs(t, agent, "exit_nonzero"), args: agentArgs(agent, "--json", "hi")}.run(t)
+		out := call{path: vendorAs(t, agent, "exit_nonzero"), env: []string{canary}, args: agentArgs(agent, "--json", "hi")}.run(t)
+		assertNoCanary(t, out)
 		r := decode(t, out.stdout)
 		if out.code != 1 || r.Status != "agent_failed" || r.ExitCode == nil || *r.ExitCode != 3 ||
 			r.SessionID != "sess-fake-1" || r.Answer != "" || r.Message != "the agent exited with code 3" {

@@ -100,7 +100,7 @@ func submitCommand() *Command {
 				if err != nil {
 					return 0, submitError(err)
 				}
-				return writeResult(env, res), nil
+				return writeResult(env, res)
 			}
 		},
 	}
@@ -168,8 +168,13 @@ func submitError(err error) error {
 	}
 }
 
-// writeResult prints a run that started and returns its exit code (P5).
-func writeResult(env *Env, res shell.Result) int {
+// writeResult prints a run that started and returns its exit code (P5). A
+// result without a status, which would read as nothing happened, is refused
+// (P6).
+func writeResult(env *Env, res shell.Result) (int, error) {
+	if res.Status == "" {
+		return 0, failure("internal", "the run ended without a status")
+	}
 	switch {
 	case env.JSON:
 		writeJSON(env.Stdout, res)
@@ -182,7 +187,7 @@ func writeResult(env *Env, res shell.Result) int {
 		fmt.Fprintf(env.Stderr, "session: %s\n", res.SessionID)
 	}
 	if res.Status == shell.StatusOK {
-		return exitOK
+		return exitOK, nil
 	}
-	return exitFailure
+	return exitFailure, nil
 }

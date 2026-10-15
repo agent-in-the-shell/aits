@@ -129,7 +129,8 @@ func play(d dialect, scenario, dir, exe string) {
 	case "exit_nonzero":
 		d.start()
 		os.Stderr.Write(bytes.Repeat([]byte("x"), 100<<10))
-		os.Stderr.WriteString("\nboom\n")
+		// Within the kept tail, so that a canary passed by mistake shows (P8).
+		os.Stderr.WriteString("\n" + os.Getenv("AITS_TEST_CANARY") + "\nboom\n")
 		os.Exit(3)
 	case "agent_error":
 		// What both CLIs do when not logged in: report the error, exit 1.
