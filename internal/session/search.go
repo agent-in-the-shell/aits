@@ -181,10 +181,16 @@ func examine(ctx context.Context, j job, terms []string, source string, ns [][]b
 		return outcome{badFile: true}
 	}
 	t := newTranscript(terms)
-	parse := vendors[j.agent].parse
+	v := vendors[j.agent]
+	inDir := func() bool {
+		return len(dirs) == 0 || slices.ContainsFunc(dirs, func(d string) bool { return within(t.cwd, d) })
+	}
+	// A session of unknown source (no value, or one not in kinds) passes no
+	// source filter: its kind cannot be told (P6).
+	kindOK := func() bool { return source == "" || v.kinds[t.source] == source }
 	notSession, sawMessage, first := false, false, true
-	bad, err := eachLine(ctx, f, b, func(line []byte) bool {
-		p, ok := parse(line, first)
+	bad, err := eachLine(ctx, f, b, func(line []byte) (bool, bool) {
+		p, ok := v.parse(line, first)
 		first = false
 		t.identify(p)
 		notSession = notSession || p.notSession
@@ -192,7 +198,11 @@ func examine(ctx context.Context, j job, terms []string, source string, ns [][]b
 		for _, s := range p.texts {
 			t.add(s)
 		}
-		return ok
+		// The cwd and source are first values: once the session is named and
+		// either rules it out, no later line can make it a result, so its
+		// later lines are not read, nor counted in skipped.lines (#51).
+		excluded := t.sessionID != "" && t.cwd != "" && (!inDir() || t.source != "" && !kindOK())
+		return ok, !excluded
 	})
 	switch {
 	case err != nil:
@@ -204,10 +214,7 @@ func examine(ctx context.Context, j job, terms []string, source string, ns [][]b
 	case t.sessionID == "" || t.cwd == "":
 		return outcome{lines: bad, badFile: true}
 	}
-	inDir := len(dirs) == 0 || slices.ContainsFunc(dirs, func(d string) bool { return within(t.cwd, d) })
-	// A session of unknown source (no value, or one not in kinds) passes no
-	// source filter: its kind cannot be told (P6).
-	if !t.matched() || !inDir || (source != "" && vendors[j.agent].kinds[t.source] != source) {
+	if !t.matched() || !inDir() || !kindOK() {
 		return outcome{lines: bad}
 	}
 	return outcome{lines: bad, result: &Result{
@@ -220,11 +227,12 @@ func examine(ctx context.Context, j job, terms []string, source string, ns [][]b
 }
 
 // eachLine calls fn for every non-blank line of r and returns how many lines
-// were unusable: fn returned false, or the line exceeded maxLine. A line over
-// maxLine is passed as nil, so that fn still sees each line's place (the
+// were unusable: fn returned ok false, or the line exceeded maxLine. A line
+// over maxLine is passed as nil, so that fn still sees each line's place (the
 // first line matters to a parser); it counts as unusable whatever fn
-// returns. It returns ctx's error as soon as ctx is cancelled, between lines.
-func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool) (int, error) {
+// returns. It stops after a line for which fn returns more false, and returns
+// ctx's error as soon as ctx is cancelled, between lines.
+func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func(line []byte) (ok, more bool)) (int, error) {
 	b.reader.Reset(r)
 	line := b.line[:0]
 	defer func() {
@@ -248,15 +256,19 @@ func eachLine(ctx context.Context, r io.Reader, b *buffers, fn func([]byte) bool
 		if err == bufio.ErrBufferFull {
 			continue
 		}
+		more := true
 		switch l := bytes.TrimSpace(line); {
 		case tooLong:
-			fn(nil)
+			_, more = fn(nil)
 			bad++
-		case len(l) > 0 && !fn(l):
-			bad++
+		case len(l) > 0:
+			var ok bool
+			if ok, more = fn(l); !ok {
+				bad++
+			}
 		}
 		line, tooLong = line[:0], false
-		if err == io.EOF {
+		if err == io.EOF || !more {
 			return bad, nil
 		}
 		if err != nil {

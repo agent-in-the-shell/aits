@@ -319,3 +319,44 @@ func TestSourceFirstValue(t *testing.T) {
 		}
 	}
 }
+
+// A file that --cwd or --source rules out is read no further, so an
+// unreadable line after the deciding one is not counted. Until the session
+// id, cwd and (for --source) source are known, reading goes on (#51).
+func TestSearchStopsReadingExcludedFile(t *testing.T) {
+	h := newHome(t)
+	h.write(".claude/projects/-other/c.jsonl", time.Now(),
+		`{"type":"user","sessionId":"c","cwd":"/other","entrypoint":"sdk-cli","message":{"content":"needle"}}`,
+		`needle not json`)
+	h.write(".codex/sessions/2026/10/14/rollout-x.jsonl", time.Now(),
+		`{"type":"session_meta","payload":{"id":"x","cwd":"/other","source":"exec"}}`,
+		codexLines("x", "/other", "needle")[1],
+		`needle not json`)
+	late := newHome(t) // the source comes after a bad line
+	late.write(".claude/projects/-w/late.jsonl", time.Now(),
+		claudeLine("late", "/w", "user", "needle"),
+		`needle not json`,
+		`{"type":"user","sessionId":"late","cwd":"/w","entrypoint":"sdk-cli","message":{"content":"needle"}}`)
+	noID := newHome(t)
+	noID.write(".claude/projects/-other/noid.jsonl", time.Now(),
+		`{"type":"user","cwd":"/other","message":{"content":"needle"}}`,
+		`needle not json`)
+	for _, c := range []struct {
+		name    string
+		h       home
+		q       Query
+		results int
+		want    Skipped
+	}{
+		{"no filter", h, Query{}, 2, Skipped{Lines: 2}},
+		{"--cwd", h, Query{Cwd: "/w"}, 0, Skipped{}},
+		{"--source", h, Query{Source: "interactive"}, 0, Skipped{}},
+		{"source not yet known", late, Query{Source: "interactive"}, 0, Skipped{Lines: 1}},
+		{"id never known", noID, Query{Cwd: "/w"}, 0, Skipped{Files: 1, Lines: 1}},
+	} {
+		c.q.Terms, c.q.Environ = []string{"needle"}, c.h.env()
+		if out := search(t, c.q); len(out.Results) != c.results || out.Skipped != c.want {
+			t.Errorf("%s: results %q, skipped %+v; want %d results, %+v", c.name, ids(out), out.Skipped, c.results, c.want)
+		}
+	}
+}

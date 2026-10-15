@@ -141,7 +141,9 @@ Skipped:
   files        Transcript paths that could not be read or are not regular files
                (pipes, devices, directories; never opened), and transcripts
                that hold messages but name no session or cwd.
-  lines        Lines that were not JSON or were longer than 64 MiB.
+  lines        Lines that were not JSON or were longer than 64 MiB. A file that
+               --cwd or --source rules out is read no further, so its later
+               lines are not counted.
 
 Searched:
   User and assistant message text, and prompts queued while the agent was
