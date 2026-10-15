@@ -75,8 +75,7 @@ func run(ctx context.Context, ag agent, path string, env []string, req Request) 
 // timed out, a closed kill sends SIGKILL to the group without waiting for the
 // grace period.
 func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, kill <-chan struct{}, parse parser) observation {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+	deadline := time.After(timeout)
 	g := &group{pgid: cmd.Process.Pid, pipes: []*os.File{out, errOut}}
 
 	evCh := make(chan events, 1)
@@ -103,7 +102,7 @@ func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout
 			}
 		case <-tailCh:
 			pending--
-		case <-timer.C:
+		case <-deadline:
 			o.timedOut = true
 			g.terminate()
 			armed = kill

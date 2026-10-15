@@ -158,8 +158,8 @@ func TestSubmitStoppedAfterTimeout(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		start := time.Now()
 		// The agent wrote child.pid after it started, so the 1s timeout has
-		// fired 1.5s later, and the grace period ends at 6s at the earliest.
-		out := stopWith(t, agent, "ignore_term", 1500*time.Millisecond, []syscall.Signal{syscall.SIGINT}, "--timeout", "1s", "--json", "hi")
+		// fired 3s later, and the grace period ends at 6s at the earliest.
+		out := stopWith(t, agent, "ignore_term", 3*time.Second, []syscall.Signal{syscall.SIGINT}, "--timeout", "1s", "--json", "hi")
 		if r := decode(t, out.stdout); out.code != 1 || r.Status != "stopped" || r.SessionID != "sess-fake-1" {
 			t.Fatalf("code=%d result=%+v", out.code, r)
 		}
