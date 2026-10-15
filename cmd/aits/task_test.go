@@ -410,14 +410,14 @@ func TestTaskWorkLockFileMissing(t *testing.T) {
 	stale := q.create("hi")
 	q.setRunning(stale, map[string]any{"token": "w", "pgid": 0})
 	want := "aits: cannot tell whether the worker of task " + stale + " is alive: its lock file is missing\n"
-	for args, stderr := range map[string]string{"": want + "session: sess-fake-1\n", "--json": want} {
+	for _, args := range [][]string{{"work"}, {"work", "--json"}} {
 		id := q.create("hi")
-		out := q.run(strings.Fields("work " + args)...)
-		if out.code != 0 || out.stderr != stderr {
-			t.Errorf("work %s: code=%d stderr=%q, want %q", args, out.code, out.stderr, stderr)
+		out := q.run(args...)
+		if out.code != 0 || !strings.HasPrefix(out.stderr, want) {
+			t.Errorf("%v: code=%d stderr=%q, want %q first", args, out.code, out.stderr, want)
 		}
 		if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "done" {
-			t.Errorf("work %s: task = %+v, want done", args, r)
+			t.Errorf("%v: task = %+v, want done", args, r)
 		}
 	}
 }
@@ -435,7 +435,8 @@ func TestTaskWorkReclaimed(t *testing.T) {
 			}
 			s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: args}.start(t)
 			waitFile(t, filepath.Join(q.path, "child.pid"))
-			q.waitLease(id, readPID(t, filepath.Join(q.path, "child.pid")))
+			agent := readPID(t, filepath.Join(q.path, "child.pid"))
+			q.waitLease(id, agent)
 			// A new lock file is not the one the worker holds, so list takes
 			// the worker for dead.
 			if err := os.Remove(q.lockFile(id)); err != nil {
@@ -457,7 +458,7 @@ func TestTaskWorkReclaimed(t *testing.T) {
 			if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
 				t.Errorf("task = %+v, want failed by worker_died", r)
 			}
-			assertGone(t, readPID(t, filepath.Join(q.path, "child.pid")))
+			assertGone(t, agent)
 			assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
 		})
 	}

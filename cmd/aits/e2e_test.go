@@ -299,7 +299,7 @@ func TestSubmitAgentStartFailed(t *testing.T) {
 			t.Fatal(err)
 		}
 		out := call{path: bin, args: agentArgs(agent, "--json", "hi")}.run(t)
-		if r := decode(t, out.stdout); out.code != 1 || r.Error == nil || r.Error.Code != "agent_start_failed" {
+		if r := decode(t, out.stdout); out.code != 1 || r.Error == nil || r.Error.Code != "agent_start_failed" || r.Status != "" {
 			t.Fatalf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 		}
 	})
