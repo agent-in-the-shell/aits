@@ -17,7 +17,7 @@ func walk(c *cli.Command, path []string, fn func(path []string, c *cli.Command))
 }
 
 // TestGrammarUnknownFlag enforces P4 on every command: an unknown flag is
-// exit 2, never ignored.
+// exit 2, never ignored, and the command's help lists it (P5).
 func TestGrammarUnknownFlag(t *testing.T) {
 	walk(cli.Root(), nil, func(path []string, _ *cli.Command) {
 		args := append(slices.Clone(path), "--no-such-flag", "--json")
@@ -25,20 +25,27 @@ func TestGrammarUnknownFlag(t *testing.T) {
 		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "unknown_flag" {
 			t.Errorf("aits %s: code=%d stdout=%q", strings.Join(args, " "), out.code, out.stdout)
 		}
+		if got := helpErrors(t, path)["unknown_flag"]; got != "exit 2" {
+			t.Errorf("aits %s --help lists unknown_flag with %q, want exit 2", strings.Join(path, " "), got)
+		}
 	})
 }
 
-// TestGrammarUnknownCommand enforces P4 on every group: an unknown command
-// is exit 2, never guessed and never sent to an agent.
+// TestGrammarUnknownCommand enforces P4 on every group, and on help, which
+// takes a command: an unknown command is exit 2, never guessed and never sent
+// to an agent, and the help lists it (P5).
 func TestGrammarUnknownCommand(t *testing.T) {
 	walk(cli.Root(), nil, func(path []string, c *cli.Command) {
-		if c.Setup != nil {
+		if c.Setup != nil && c.Name != "help" {
 			return
 		}
 		args := append(slices.Clone(path), "no-such-command", "--json")
 		out := call{args: args}.run(t)
 		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "unknown_command" {
 			t.Errorf("aits %s: code=%d stdout=%q", strings.Join(args, " "), out.code, out.stdout)
+		}
+		if got := helpErrors(t, path)["unknown_command"]; got != "exit 2" {
+			t.Errorf("aits %s --help lists unknown_command with %q, want exit 2", strings.Join(path, " "), got)
 		}
 	})
 }

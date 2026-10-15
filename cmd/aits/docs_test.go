@@ -75,8 +75,9 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 			t.Errorf("status %q is not documented in help", m[1])
 		}
 	}
+	documented := helpErrors(t, []string{"shell", "submit"})
 	for code, exit := range errorCodes(t, "../../internal/cli/*.go") {
-		if !strings.Contains(rows["Errors "+code], exit) {
+		if documented[code] != exit {
 			t.Errorf("error code %q is not documented in help with %s", code, exit)
 		}
 	}

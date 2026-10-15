@@ -358,4 +358,6 @@ Show help for aits or one of its commands.
 
 Flags:
   --json  Print the result, or the error, as JSON on stdout.
+
+Errors: unknown_command, unknown_flag (exit 2).
 ```

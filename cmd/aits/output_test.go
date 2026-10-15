@@ -36,8 +36,6 @@ func TestOutputChannels(t *testing.T) {
 	tests := []outputCase{
 		{name: "unknown flag", scenario: "ok", args: submitArgs("--bogus", "hi"), code: 2, errCode: "unknown_flag"},
 		{name: "unknown command", scenario: "ok", args: []string{"nope"}, code: 2, errCode: "unknown_command"},
-		{name: "unknown command in a group", scenario: "ok", args: []string{"task", "nope"}, code: 2, errCode: "unknown_command"},
-		{name: "unknown flag of a group", scenario: "ok", args: []string{"task", "--bogus"}, code: 2, errCode: "unknown_flag"},
 		{name: "invalid input", scenario: "ok", args: []string{"shell", "submit", "hi"}, code: 2, errCode: "invalid_input"},
 		{name: "agent not found", args: submitArgs("hi"), code: 1, errCode: "agent_not_found"},
 		{name: "agent failed", scenario: "exit_nonzero", args: submitArgs("hi"), code: 1, result: submitIs("agent_failed"),
@@ -52,7 +50,6 @@ func TestOutputChannels(t *testing.T) {
 
 		{name: "task create", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"},
 			result: jsonIs(`{"id":"{ID}","status":"queued"}`), stdout: "{ID}\n"},
-		{name: "task create unknown flag", scenario: "ok", args: []string{"task", "create", "--bogus", "hi"}, code: 2, errCode: "unknown_flag"},
 		{name: "task create without agent", scenario: "ok", args: []string{"task", "create", "--cwd", "{DIR}", "hi"}, code: 2,
 			errCode: "invalid_input", errMsg: "agent is required (one of: claude, codex)"},
 		{name: "task create internal", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"}, code: 1,
@@ -61,7 +58,6 @@ func TestOutputChannels(t *testing.T) {
 		{name: "task list empty", scenario: "ok", args: []string{"task", "list"}, result: jsonIs(`{"tasks":[],"skipped":[]}`)},
 		{name: "task list", scenario: "ok", args: []string{"task", "list"}, setup: queued,
 			result: listIs, stdout: "{ID}  queued  claude  {CREATED_AT}\n"},
-		{name: "task list unknown flag", scenario: "ok", args: []string{"task", "list", "--bogus"}, code: 2, errCode: "unknown_flag"},
 		{name: "task list with an argument", scenario: "ok", args: []string{"task", "list", "extra"}, code: 2,
 			errCode: "invalid_input", errMsg: "list takes no arguments"},
 		{name: "task list internal", scenario: "ok", args: []string{"task", "list"}, code: 1, setup: homeIsFile, errCode: "internal"},
@@ -72,7 +68,6 @@ func TestOutputChannels(t *testing.T) {
 			result: taskIs("done", "ok"), stdout: "{ID}  done  claude  {DIR}\nfake answer\n", stderr: "session: sess-fake-1\n"},
 		{name: "task show failed", scenario: "exit_nonzero", args: []string{"task", "show", "{ID}"}, setup: worked,
 			result: taskIs("failed", "agent_failed"), stdout: "{ID}  failed  claude  {DIR}\n", stderr: "session: sess-fake-1\n" + failed},
-		{name: "task show unknown flag", scenario: "ok", args: []string{"task", "show", "--bogus", "x"}, code: 2, errCode: "unknown_flag"},
 		{name: "task show unknown", scenario: "ok", args: []string{"task", "show", "20000101T000000-000000"}, code: 2,
 			errCode: "invalid_input", errMsg: "no task 20000101T000000-000000"},
 		{name: "task show internal", scenario: "ok", args: []string{"task", "show", "20000101T000000-000000"}, code: 1,
@@ -86,7 +81,6 @@ func TestOutputChannels(t *testing.T) {
 		{name: "task work not started", args: []string{"task", "work"}, code: 1, setup: queued,
 			result: taskIs("failed", "not_started"), stdout: "{ID}  failed  claude  {DIR}\n",
 			stderr: "aits: task {ID} failed: not_started: agent executable not found: claude is not on PATH\n"},
-		{name: "task work unknown flag", scenario: "ok", args: []string{"task", "work", "--bogus"}, code: 2, errCode: "unknown_flag"},
 		{name: "task work with an argument", scenario: "ok", args: []string{"task", "work", "extra"}, code: 2,
 			errCode: "invalid_input", errMsg: "work takes no arguments"},
 		{name: "task work empty agent", scenario: "ok", args: []string{"task", "work", "--agent="}, code: 2, errCode: "invalid_input"},
@@ -95,7 +89,6 @@ func TestOutputChannels(t *testing.T) {
 		{name: "session search no match", args: []string{"session", "search", "nothing"},
 			result: jsonIs(`{"results":[],"skipped":{"files":0,"lines":0}}`)},
 		{name: "session search without terms", args: []string{"session", "search"}, code: 2, errCode: "invalid_input"},
-		{name: "session search unknown flag", args: []string{"session", "search", "--bogus", "x"}, code: 2, errCode: "unknown_flag"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,8 +122,9 @@ func TestOutputChannels(t *testing.T) {
 			}
 			msg := ""
 			if tt.errCode != "" {
-				if got, want := helpErrors(t, commandPath(tt.args))[tt.errCode], fmt.Sprintf("exit %d", tt.code); got != want {
-					t.Errorf("help of %q lists %s with %q, want %q", commandPath(tt.args), tt.errCode, got, want)
+				path := commandPath(tt.args)
+				if got, want := helpErrors(t, path)[tt.errCode], fmt.Sprintf("exit %d", tt.code); got != want {
+					t.Errorf("help of %q lists %s with %q, want %q", path, tt.errCode, got, want)
 				}
 				e := decode(t, out.stdout).Error
 				if e == nil || e.Code != tt.errCode || (tt.errMsg != "" && e.Message != tt.errMsg) {

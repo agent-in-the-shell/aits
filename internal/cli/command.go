@@ -160,6 +160,7 @@ func helpCommand(root *Command) *Command {
 		Name:    "help",
 		Args:    "[COMMAND...]",
 		Summary: "Show help for aits or one of its commands.",
+		Details: "Errors: unknown_command, unknown_flag (exit 2).\n",
 		Setup: func(*flag.FlagSet) Runner {
 			return func(_ context.Context, env *Env, args []string) (int, error) {
 				cmd, path, rest, err := resolve(root, args)
