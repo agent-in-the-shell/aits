@@ -368,8 +368,17 @@ func reclaim(dir string) (snapshot, []int, error) {
 			return s, groups, err
 		}
 	}
-	// Fail queued follow-ups that can never run, until a pass changes
-	// nothing, so a whole chain fails at once whatever its created_at order.
+	if err := failOrphans(dir, s); err != nil {
+		return s, groups, err
+	}
+	slices.Sort(s.Unknown)
+	return s, groups, nil
+}
+
+// failOrphans fails each queued follow-up in s that can never run
+// (parentFault), until a pass changes nothing, so a whole chain fails at once
+// whatever its created_at order.
+func failOrphans(dir string, s snapshot) error {
 	byID := index(s.tasks)
 	for changed := true; changed; {
 		changed = false
@@ -378,7 +387,8 @@ func reclaim(dir string) (snapshot, []int, error) {
 			if t.Status != Queued || t.After == "" {
 				continue
 			}
-			why := parentFault(byID[t.After], slices.Contains(s.Skipped, t.After))
+			p := byID[t.After]
+			why := parentFault(p, p == nil && gone(dir, t.After, s.Skipped))
 			if why == "" {
 				continue
 			}
@@ -387,13 +397,22 @@ func reclaim(dir string) (snapshot, []int, error) {
 				Status: NotStarted, Agent: t.Agent, Message: "its parent task " + t.After + " " + why,
 			}, FinishedAt: time.Now().UTC()}
 			if err := write(dir, *t); err != nil {
-				return s, groups, err
+				return err
 			}
 			changed = true
 		}
 	}
-	slices.Sort(s.Unknown)
-	return s, groups, nil
+	return nil
+}
+
+// gone reports whether task id, not loaded, has no file: neither skipped as
+// unreadable nor missed by a listing that raced a rename over it (P6).
+func gone(dir, id string, skipped []string) bool {
+	if slices.Contains(skipped, id) {
+		return false
+	}
+	_, err := os.Lstat(path(dir, id))
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // index maps each task's id to it.
@@ -406,11 +425,11 @@ func index(tasks []Task) map[string]*Task {
 }
 
 // parentFault says why a follow-up of p can never run, or "" if it may yet:
-// p failed, its file is gone, or it is done without a session. A parent whose
-// file cannot be read (skipped) is waited for (P10).
-func parentFault(p *Task, skipped bool) string {
+// p failed, is gone (p nil and its file gone), or is done without a session.
+// A parent not loaded but not gone is waited for (P10).
+func parentFault(p *Task, gone bool) string {
 	switch {
-	case p == nil && !skipped:
+	case p == nil && gone:
 		return "does not exist"
 	case p == nil:
 		return ""

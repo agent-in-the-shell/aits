@@ -559,3 +559,22 @@ func TestReclaimSparesFollowUpOfUnreadableParent(t *testing.T) {
 		t.Errorf("List = %+v %+v, %v; want %s queued and %s skipped", tasks, notes, err, f.ID, p.ID)
 	}
 }
+
+// A directory listing can miss a file that a worker is renaming over (its
+// pgid write takes no directory lock): a parent missing from the snapshot is
+// gone only if its file is, so its follow-up is not failed for a miss (P6).
+func TestFailOrphansRechecksMissingParent(t *testing.T) {
+	environ := env(t)
+	p := create(t, environ, "claude")
+	f, err := follow(environ, p.ID, Spec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := store.Dir(environ, "task")
+	if err := failOrphans(dir, snapshot{tasks: []Task{f}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := read(dir, f.ID); err != nil || got.Status != Queued {
+		t.Errorf("follow-up = %+v, %v; want queued while its parent's file exists", got, err)
+	}
+}

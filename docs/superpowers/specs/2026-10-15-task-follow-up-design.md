@@ -1,6 +1,6 @@
 # aits task follow-ups — design
 
-Issue: #63. Status: draft for review.
+Issue: #63. Status: approved.
 Revises: `2026-10-14-task-queue-design.md` §1, §4, §5, §6.
 Principles: P2, P4, P5, P6, P10, P11, P12, P13, P14.
 
@@ -58,8 +58,10 @@ names as a failure to avoid. The task-queue spec deferred this (§1).
   Without `After`, `Create` is unchanged: it validates before taking the
   lock.
 - `reclaim`, after failing the tasks of dead workers, fails each `queued`
-  follow-up whose parent is `failed`, absent from the directory (neither
-  loaded nor skipped), or `done` without a session id. It repeats until a
+  follow-up whose parent is `failed`, gone, or `done` without a session id.
+  A parent that was not loaded and not skipped is gone only if `lstat` of its
+  file also finds nothing: a directory listing can miss a file that a worker
+  is renaming over without the directory lock (its pgid write). It repeats until a
   pass changes nothing, so a whole chain fails in one call. It does not
   rely on `created_at` order, which follows the wall clock.
 - `claim` takes the oldest `queued` task matching `--agent` whose `after` is
@@ -114,6 +116,11 @@ change.
 - A worker of an earlier aits ignores `after`: it can claim a follow-up
   before its parent is done and run it in a new conversation, and its
   writes drop the field. As for #37, run one aits version per `AITS_HOME`.
+- The fan-out check at create lists the directory; a listing that misses a
+  running follow-up while its worker renames over it would let a second
+  follow-up be created. This needs a large directory on a file system where
+  listings can miss renamed files (observed on Linux tmpfs, not on APFS) and
+  the exact moment the agent starts; it is not guarded further (P14).
 - Whether Claude Code resumes in place, as Codex does, is not observed in
   this repo; fan-out is refused either way, because concurrent resumes of
   one session are undefined.
