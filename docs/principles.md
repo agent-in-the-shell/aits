@@ -95,7 +95,7 @@ read as success; arguments parsed wrongly without an error.
 
 **Guard.** Each feature issue's acceptance includes binary tests for its main
 failure paths. The CLI refuses to print a result with an empty `status`, and
-fails with `internal` instead; a unit test and a binary test check it.
+fails with `internal` instead; tests check each place that prints one.
 
 ## P7 — One storage root, safe writes
 

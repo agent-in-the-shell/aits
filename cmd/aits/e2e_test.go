@@ -351,13 +351,17 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 	}
 }
 
-// canary is a secret in aits's environment that reaches neither the agent nor
-// aits's own output (P8).
-const canary = "AITS_TEST_CANARY=secret-canary"
+// The canary is a secret in aits's environment that reaches neither the agent
+// nor aits's own output (P8). The fake agent prints it on stderr if it gets it.
+const (
+	canaryName   = "AITS_TEST_CANARY"
+	canarySecret = "secret-canary"
+	canary       = canaryName + "=" + canarySecret
+)
 
 func assertNoCanary(t *testing.T, out output) {
 	t.Helper()
-	if _, secret, _ := strings.Cut(canary, "="); strings.Contains(out.stdout+out.stderr, secret) {
+	if strings.Contains(out.stdout+out.stderr, canarySecret) {
 		t.Errorf("the canary secret is in aits's output: stdout=%q stderr=%q", out.stdout, out.stderr)
 	}
 }
@@ -385,7 +389,7 @@ func TestSubmitEnvironment(t *testing.T) {
 			t.Errorf("--env variable missing from %q", got)
 		}
 		for _, kv := range got {
-			if strings.HasPrefix(kv, "AITS_TEST_CANARY=") || strings.HasPrefix(kv, "AITS_HOME=") {
+			if strings.HasPrefix(kv, canaryName+"=") || strings.HasPrefix(kv, "AITS_HOME=") {
 				t.Errorf("variable outside the allowlist reached the agent: %s", kv)
 			}
 		}

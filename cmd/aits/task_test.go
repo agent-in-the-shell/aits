@@ -108,6 +108,12 @@ func (q queue) writeLockFile(id string) {
 // earlier aits) would have left it, and returns the bytes written.
 func (q queue) setRunning(id string, lease map[string]any) []byte {
 	q.t.Helper()
+	return q.patch(id, map[string]any{"status": "running", "lease": lease})
+}
+
+// patch sets fields of task id's record on disk and returns the bytes written.
+func (q queue) patch(id string, fields map[string]any) []byte {
+	q.t.Helper()
 	file := q.taskFile(id)
 	var rec map[string]any
 	b, err := os.ReadFile(file)
@@ -117,7 +123,7 @@ func (q queue) setRunning(id string, lease map[string]any) []byte {
 	if err != nil {
 		q.t.Fatal(err)
 	}
-	rec["status"], rec["lease"] = "running", lease
+	maps.Copy(rec, fields)
 	b, _ = json.Marshal(rec)
 	if err := os.WriteFile(file, b, 0o600); err != nil {
 		q.t.Fatal(err)
@@ -225,17 +231,12 @@ func TestTaskCreateTimeoutMilliseconds(t *testing.T) {
 func TestTaskShowRunWithoutStatus(t *testing.T) {
 	q := newQueue(t, "")
 	id := q.create("hi")
-	var rec map[string]any
-	if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &rec); err != nil {
-		t.Fatal(err)
-	}
-	rec["status"], rec["run"] = "failed", map[string]any{"agent": "claude", "finished_at": time.Now()}
-	b, _ := json.Marshal(rec)
-	q.writeTaskFile(id, string(b), 0o600)
+	q.patch(id, map[string]any{"status": "failed", "run": map[string]any{"agent": "claude"}})
 	if out := q.run("show", id); out.code != 1 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") {
 		t.Errorf("text: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 	}
-	if out := q.run("show", id, "--json"); out.code != 1 || decode(t, out.stdout).Error == nil || decode(t, out.stdout).Error.Code != "internal" {
+	out := q.run("show", id, "--json")
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
 		t.Errorf("json: code=%d stdout=%q", out.code, out.stdout)
 	}
 }
