@@ -911,6 +911,47 @@ func TestTaskFollowUpWaitsForParent(t *testing.T) {
 	}
 }
 
+// One list fails every queued follow-up that can never run, a whole chain at
+// once (#78, follow-up spec §4, §6).
+func TestTaskFollowUpOrphans(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		parent func(q queue, p string)
+		why    string
+	}{
+		{"failed", func(q queue, p string) {
+			q.patch(p, map[string]any{"status": "failed", "run": map[string]any{"status": "agent_failed", "agent": "claude", "finished_at": time.Now().UTC()}})
+		}, "failed"},
+		{"gone", func(q queue, p string) {
+			if err := os.Remove(q.taskFile(p)); err != nil {
+				q.t.Fatal(err)
+			}
+		}, "does not exist"},
+		{"done without a session id", func(q queue, p string) {
+			q.patch(p, map[string]any{"status": "done", "run": map[string]any{"status": "ok", "agent": "claude", "answer": "a", "finished_at": time.Now().UTC()}})
+		}, "has no session"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			q := newQueue(t, "ok")
+			p := q.create("parent")
+			f := q.after(p, "follow")
+			g := q.after(f, "follow again")
+			// g reads as older than f: the chain must not rely on created_at.
+			q.patch(g, map[string]any{"created_at": "2000-01-01T00:00:00Z"})
+			tt.parent(q, p)
+			if out := q.run("list", "--json"); out.code != 0 {
+				t.Fatalf("list: code=%d stdout=%q", out.code, out.stdout)
+			}
+			for id, msg := range map[string]string{f: "its parent task " + p + " " + tt.why, g: "its parent task " + f + " failed"} {
+				if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "failed" || r.Run == nil ||
+					r.Run.Status != "not_started" || r.Run.Message != msg {
+					t.Errorf("%s = %+v; want not_started %q", id, r, msg)
+				}
+			}
+		})
+	}
+}
+
 // A follow-up whose worker died does not count against its parent's one
 // follow-up once failed, but only after its agent is gone: while list is
 // still stopping that agent, a retry is refused, so two agents never resume
@@ -981,4 +1022,6 @@ func TestTaskCreateAfterInvalid(t *testing.T) {
 	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || e.Message != want || q.count() != before {
 		t.Errorf("unreadable file: code=%d stdout=%q; want internal %q", out.code, out.stdout, want)
 	}
+	// A plain create does not look for follow-ups, so it still succeeds (#78).
+	q.create("plain")
 }
