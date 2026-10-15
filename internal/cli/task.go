@@ -40,7 +40,8 @@ const taskFields = `Task fields (--json):
                worker_died run whose agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id and why a task failed on stderr.
+stdout; the session id and why a task failed on stderr, with control
+characters shown as Go escapes (\x1b, \r).
 `
 
 func taskCreate() *Command {
@@ -262,12 +263,12 @@ func writeTask(env *Env, t task.Task) error {
 		return nil
 	}
 	if t.Run.SessionID != "" {
-		fmt.Fprintf(env.Stderr, "session: %s\n", t.Run.SessionID)
+		fmt.Fprintf(env.Stderr, "session: %s\n", printable(t.Run.SessionID))
 	}
 	if t.Status == task.Done {
 		fmt.Fprintln(env.Stdout, t.Run.Answer)
 	} else {
-		fmt.Fprintf(env.Stderr, "aits: task %s failed: %s: %s\n", t.ID, t.Run.Status, t.Run.Message)
+		fmt.Fprintf(env.Stderr, "aits: task %s failed: %s: %s\n", t.ID, t.Run.Status, printable(t.Run.Message))
 	}
 	return nil
 }
