@@ -70,24 +70,57 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 			t.Errorf("result field %q is not documented in help", name)
 		}
 	}
-	for _, m := range sourceMatches(t, "../../internal/shell", `\bStatus\s*=\s*"(\w+)"`) {
+	for _, m := range sourceMatches(t, "../../internal/shell/*.go", `\bStatus\s*=\s*"(\w+)"`) {
 		if rows["Statuses "+m[1]] == "" {
 			t.Errorf("status %q is not documented in help", m[1])
 		}
 	}
-	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
-	for _, m := range sourceMatches(t, "../../internal/cli", `\b(usageError|failure)\(\s*"(\w+)"`) {
-		if !strings.Contains(rows["Errors "+m[2]], exit[m[1]]) {
-			t.Errorf("error code %q is not documented in help with %s", m[2], exit[m[1]])
+	for code, exit := range errorCodes(t, "../../internal/cli/*.go") {
+		if !strings.Contains(rows["Errors "+code], exit) {
+			t.Errorf("error code %q is not documented in help with %s", code, exit)
 		}
 	}
 }
 
-// sourceMatches returns the submatches of pattern in the non-test Go files of
-// dir, failing the test if there are none.
-func sourceMatches(t *testing.T, dir, pattern string) [][]string {
+// TestSearchHelpDocumentsErrors enforces P5 for "aits session search": every
+// error code internal/cli/session.go can produce is on the help's Errors line
+// with the exit code it causes (#62).
+func TestSearchHelpDocumentsErrors(t *testing.T) {
+	_, errs, _ := strings.Cut(call{args: []string{"session", "search", "--help"}}.run(t).stdout, "\nErrors: ")
+	errs, _, _ = strings.Cut(errs, "\n")
+	// exits maps each code to its group's exit, e.g. "stopped" to "exit 1"
+	// in "invalid_input (exit 2); stopped, internal (exit 1).".
+	exits := map[string]string{}
+	for _, group := range strings.Split(strings.TrimSuffix(errs, "."), "; ") {
+		codes, exit, _ := strings.Cut(strings.TrimSuffix(group, ")"), " (")
+		for _, c := range strings.Split(codes, ", ") {
+			exits[c] = exit
+		}
+	}
+	for code, exit := range errorCodes(t, "../../internal/cli/session.go") {
+		if exits[code] != exit {
+			t.Errorf("error code %q is not on the Errors line with %s: %q", code, exit, errs)
+		}
+	}
+}
+
+// errorCodes maps each error code that the files glob names pass to
+// usageError or failure to the exit code it causes.
+func errorCodes(t *testing.T, glob string) map[string]string {
 	t.Helper()
-	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
+	codes := map[string]string{}
+	for _, m := range sourceMatches(t, glob, `\b(usageError|failure)\(\s*"(\w+)"`) {
+		codes[m[2]] = exit[m[1]]
+	}
+	return codes
+}
+
+// sourceMatches returns the submatches of pattern in the non-test Go files
+// that glob names, failing the test if there are none.
+func sourceMatches(t *testing.T, glob, pattern string) [][]string {
+	t.Helper()
+	paths, err := filepath.Glob(glob)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +137,7 @@ func sourceMatches(t *testing.T, dir, pattern string) [][]string {
 		all = append(all, re.FindAllStringSubmatch(string(src), -1)...)
 	}
 	if len(all) == 0 {
-		t.Fatalf("no match for %s in %s", pattern, dir)
+		t.Fatalf("no match for %s in %s", pattern, glob)
 	}
 	return all
 }

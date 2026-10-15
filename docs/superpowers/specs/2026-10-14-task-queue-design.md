@@ -106,8 +106,9 @@ invalid input (P5).
   `internal`, exit 1, `task ID could not be read: REASON` (#35).
 
 `aits task show ID`
-- `--json`: the task record (§4); text: `ID  STATUS  AGENT  CWD`, then the
-  session id and shell status when there is a run, then the answer.
+- `--json`: the task record (§4); text: what `work` prints for the task
+  (table below), or only `ID  STATUS  AGENT  CWD` before it has a run.
+  Exit 0, whatever the task's status (#62).
 - Unknown id: `invalid_input` (`no task ID`), exit 2.
 
 `aits task work [--agent AGENT]`
@@ -118,7 +119,7 @@ invalid input (P5).
 |---|---|---|---|
 | nothing queued | `{"status":"empty"}` | nothing | 0 |
 | run status `ok` → task `done` | task record | `ID  STATUS  AGENT  CWD` and the answer on stdout; `session: ID` on stderr | 0 |
-| any other run status → task `failed` | task record | `ID  STATUS  AGENT  CWD` on stdout; `aits: task ID failed: STATUS: MESSAGE` on stderr | 1 |
+| any other run status → task `failed` | task record | `ID  STATUS  AGENT  CWD` on stdout; `session: ID` (when the run has one) and `aits: task ID failed: STATUS: MESSAGE` on stderr | 1 |
 
 Help for each command lists its output fields and statuses (P5); `docs/cli.md`
 is generated from help (P13).
