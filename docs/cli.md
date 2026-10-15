@@ -17,6 +17,8 @@ Commands:
   help     Show help for aits or one of its commands.
 
 Run 'aits COMMAND --help' for details.
+
+Errors: unknown_command, unknown_flag (exit 2).
 ```
 
 ## aits shell
@@ -30,6 +32,8 @@ Commands:
   submit  Run one prompt through an agent CLI and return the answer and session id.
 
 Run 'aits shell COMMAND --help' for details.
+
+Errors: unknown_command, unknown_flag (exit 2).
 ```
 
 ## aits shell submit
@@ -106,6 +110,8 @@ Commands:
   search  Find conversations that contain every term, with an id to continue them.
 
 Run 'aits session COMMAND --help' for details.
+
+Errors: unknown_command, unknown_flag (exit 2).
 ```
 
 ## aits session search
@@ -178,7 +184,7 @@ Exit codes:
   1  Stopped by a signal, or an unexpected failure.
   2  Usage error or invalid input.
 
-Errors: invalid_input (exit 2); stopped, internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 ```
 
 ## aits task
@@ -195,6 +201,8 @@ Commands:
   work    Claim the oldest queued task, run it, record the result, exit.
 
 Run 'aits task COMMAND --help' for details.
+
+Errors: unknown_command, unknown_flag (exit 2).
 ```
 
 ## aits task create
@@ -221,7 +229,7 @@ Exit codes:
   1  The task could not be written.
   2  Usage error or invalid input; nothing was written.
 
-Errors: invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).
 ```
 
 ## aits task list
@@ -252,7 +260,7 @@ Exit codes:
   1  The queue could not be read or updated.
   2  Usage error.
 
-Errors: invalid_input (exit 2); internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```
 
 ## aits task show
@@ -289,7 +297,7 @@ Exit codes:
   1  It could not be read.
   2  Unknown id or usage error.
 
-Errors: invalid_input (exit 2); internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```
 
 ## aits task work
@@ -338,7 +346,7 @@ Exit codes:
   1  The task failed, or work could not finish.
   2  Usage error.
 
-Errors: invalid_input (exit 2); stopped, internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 ```
 
 ## aits help
@@ -350,4 +358,6 @@ Show help for aits or one of its commands.
 
 Flags:
   --json  Print the result, or the error, as JSON on stdout.
+
+Errors: unknown_command, unknown_flag (exit 2).
 ```

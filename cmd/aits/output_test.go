@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -28,7 +29,8 @@ type outputCase struct {
 // TestOutputChannels enforces P5 for every kind of outcome of every command:
 // with --json, stdout is exactly one JSON object (an error envelope or a
 // result) and stderr is empty; in text mode, stdout carries only the result
-// and stderr the diagnostics, with an error printed as "aits: MESSAGE".
+// and stderr the diagnostics, with an error printed as "aits: MESSAGE". The
+// help of the command a row runs lists the row's error code with its exit.
 func TestOutputChannels(t *testing.T) {
 	const failed = "aits: task {ID} failed: agent_failed: the agent exited with code 3\n"
 	tests := []outputCase{
@@ -83,6 +85,10 @@ func TestOutputChannels(t *testing.T) {
 			errCode: "invalid_input", errMsg: "work takes no arguments"},
 		{name: "task work empty agent", scenario: "ok", args: []string{"task", "work", "--agent="}, code: 2, errCode: "invalid_input"},
 		{name: "task work internal", scenario: "ok", args: []string{"task", "work"}, code: 1, setup: homeIsFile, errCode: "internal"},
+
+		{name: "session search no match", args: []string{"session", "search", "nothing"},
+			result: jsonIs(`{"results":[],"skipped":{"files":0,"lines":0}}`)},
+		{name: "session search without terms", args: []string{"session", "search"}, code: 2, errCode: "invalid_input"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -116,6 +122,10 @@ func TestOutputChannels(t *testing.T) {
 			}
 			msg := ""
 			if tt.errCode != "" {
+				path := commandPath(tt.args)
+				if got, want := helpErrors(t, path)[tt.errCode], fmt.Sprintf("exit %d", tt.code); got != want {
+					t.Errorf("help of %q lists %s with %q, want %q", path, tt.errCode, got, want)
+				}
 				e := decode(t, out.stdout).Error
 				if e == nil || e.Code != tt.errCode || (tt.errMsg != "" && e.Message != tt.errMsg) {
 					t.Fatalf("--json: stdout=%q, want error %s %q", out.stdout, tt.errCode, tt.errMsg)

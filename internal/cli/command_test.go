@@ -59,7 +59,8 @@ func TestHelpText(t *testing.T) {
 	group := root.Children[0]
 	var b strings.Builder
 	writeHelp(&b, []string{"root", "group"}, group)
-	wantGroup := "Usage: root group COMMAND\n\nA group.\n\nCommands:\n  leaf  A leaf.\n\nRun 'root group COMMAND --help' for details.\n"
+	wantGroup := "Usage: root group COMMAND\n\nA group.\n\nCommands:\n  leaf  A leaf.\n\nRun 'root group COMMAND --help' for details.\n" +
+		"\nErrors: unknown_command, unknown_flag (exit 2).\n"
 	if b.String() != wantGroup {
 		t.Errorf("group help:\n%s\nwant:\n%s", b.String(), wantGroup)
 	}
