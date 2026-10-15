@@ -83,12 +83,24 @@ func TestMayMatchStopsWhenCancelled(t *testing.T) {
 func TestEachLineStopsWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
-	_, err := eachLine(ctx, strings.NewReader("a\nb\nc\n"), newBuffers(), func([]byte) bool {
+	_, err := eachLine(ctx, strings.NewReader("a\nb\nc\n"), newBuffers(), func([]byte) (bool, bool) {
 		calls++
 		cancel()
-		return true
+		return true, true
 	})
 	if calls != 1 || !errors.Is(err, context.Canceled) {
 		t.Errorf("eachLine called fn %d times, err %v; want 1 and context.Canceled", calls, err)
+	}
+}
+
+// fn ends the reading by returning more false; the line still counts (#51).
+func TestEachLineStopsWhenToldTo(t *testing.T) {
+	calls := 0
+	bad, err := eachLine(context.Background(), strings.NewReader("a\nb\nc\n"), newBuffers(), func([]byte) (bool, bool) {
+		calls++
+		return false, calls < 2
+	})
+	if calls != 2 || bad != 2 || err != nil {
+		t.Errorf("eachLine called fn %d times, bad %d, err %v; want 2, 2, nil", calls, bad, err)
 	}
 }

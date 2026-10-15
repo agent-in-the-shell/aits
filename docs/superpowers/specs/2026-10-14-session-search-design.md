@@ -71,7 +71,8 @@ Invalid input → `invalid_input`, exit 2, nothing read.
   is not a regular file (a pipe, a device or a directory, which are never
   opened: a pipe would block the search and a device would never end it), and
   transcripts that hold messages but no session id or cwd; `skipped.lines`: lines in examined files
-  that were not JSON or were longer than 64 MiB. Files that hold no
+  that were not JSON or were longer than 64 MiB, among the lines read: a file
+  that `--cwd` or `--source` rules out is read no further (§6). Files that hold no
   conversation (a metadata file without messages or cwd, a Codex subagent's
   rollout) are left out without being counted.
 
@@ -125,7 +126,11 @@ contributes nothing.
    cwd and the snippet. Lines that are not JSON or exceed 64 MiB are counted
    and skipped.
 4. **Filter** by `--cwd` and `--source`, **sort** by `updated_at` descending, ties by
-   session id, **cut** to `--limit`.
+   session id, **cut** to `--limit`. A session's cwd and source are first
+   values (the first one recorded wins), so the filter is decided as soon as its session id, cwd and,
+   for `--source`, source are known: a file it rules out is not read further
+   in step 3 (#51). A dropped file is never a result, so its unread lines
+   cannot hide one (P6); reading them would be work for nothing (P14).
 
 A signal stops the search between chunks and between lines (one line is
 still read whole, up to the 64 MiB limit) and is reported as the `stopped`
