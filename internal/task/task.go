@@ -290,12 +290,11 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 }
 
 // claim, under the lock, reclaims tasks of dead workers and marks the oldest
-// claimable queued task of agent running with a fresh lease: a follow-up is
-// claimable once its parent is done. It locks the task's lock file first, so
-// that a running task's lock is never free while its worker lives, and
-// returns the session the task continues ("" for a new one), the function
-// that releases the lock, and the notes of the reclaim. A signal that arrived
-// while it waited for the lock claims nothing.
+// claimable queued task of agent running with a fresh lease. It locks the
+// task's lock file first, so that a running task's lock is never free while
+// its worker lives, and returns the session the task continues ("" for a new
+// one), the function that releases the lock, and the notes of the reclaim. A
+// signal that arrived while it waited for the lock claims nothing.
 func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
@@ -311,16 +310,12 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 	var session string
 	var release func()
 	i := slices.IndexFunc(s.tasks, func(t Task) bool {
-		if t.Status != Queued || (agent != "" && t.Agent != agent) {
-			return false
-		}
-		p := byID[t.After]
-		return t.After == "" || (p != nil && p.Status == Done)
+		return t.Status == Queued && (agent == "" || t.Agent == agent) && claimable(t, byID)
 	})
 	if err == nil && i >= 0 {
 		t := &s.tasks[i]
 		if t.After != "" {
-			session = byID[t.After].Run.SessionID // reclaim failed any done parent without one
+			session = byID[t.After].Run.SessionID // claimable checked it
 		}
 		if release, err = store.TryLock(lockPath(dir, t.ID), true); err != nil {
 			err = fmt.Errorf("task %s: %w", t.ID, err)
@@ -440,6 +435,13 @@ func index(tasks []Task) map[string]*Task {
 		m[tasks[i].ID] = &tasks[i]
 	}
 	return m
+}
+
+// claimable reports whether queued task t may run now: a follow-up only once
+// its parent is done with a session to continue (parentFault).
+func claimable(t Task, byID map[string]*Task) bool {
+	p := byID[t.After]
+	return t.After == "" || (p != nil && p.Status == Done && parentFault(p, false) == "")
 }
 
 // parentFault says why a follow-up of p can never run, or "" if it may yet:
