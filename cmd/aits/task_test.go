@@ -256,13 +256,11 @@ func TestTaskCreateCannotCheckID(t *testing.T) {
 	if pathMax == 0 {
 		t.Skipf("PATH_MAX unknown on %s", runtime.GOOS)
 	}
-	// The task directory is $AITS_HOME/task; "/.lock" fits, "/<id>.json" does not.
-	home := t.TempDir()
-	for want := pathMax - 15 - len("/task"); len(home) < want; {
-		home = filepath.Join(home, strings.Repeat("d", min(200, want-len(home)-1)))
+	q := newQueue(t, "")
+	for want := pathMax - len("/task/20060102T150405-000000.json"); len(q.home) < want; {
+		q.home = filepath.Join(q.home, strings.Repeat("d", min(200, want-len(q.home)-1)))
 	}
-	q := queue{t: t, home: home, path: vendor(t, "ok")}
-	s := call{path: q.path, env: []string{"AITS_HOME=" + home}, args: []string{"task", "create", "--agent", "claude", "--cwd", t.TempDir(), "--json", "hi"}}.start(t)
+	s := call{env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "create", "--agent", "claude", "--cwd", t.TempDir(), "--json", "hi"}}.start(t)
 	out := s.waitOrKill(t, 10*time.Second)
 	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
 		t.Errorf("create: code=%d stdout=%q", out.code, out.stdout)

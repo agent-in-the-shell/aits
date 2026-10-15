@@ -129,8 +129,8 @@ func Create(environ []string, s Spec) (Task, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			break
 		}
-		if err != nil { // not a collision: another id would fail the same way (P6, #80)
-			return Task{}, fmt.Errorf("task %s could not be checked: %w", t.ID, err)
+		if err != nil { // not a collision: another id would fail the same way (P6)
+			return Task{}, fmt.Errorf("a new task could not be named: %w", err)
 		}
 	}
 	return t, write(dir, t)
