@@ -206,7 +206,7 @@ Flags:
   --cwd DIR           Run the agent in DIR (default: the current directory).
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
-  --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
+  --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
 
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
 invalid_input.
