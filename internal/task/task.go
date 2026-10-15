@@ -46,7 +46,8 @@ type Task struct {
 	Cwd       string    `json:"cwd"`
 	Prompt    string    `json:"prompt"`
 	TimeoutMS int64     `json:"timeout_ms"`
-	Env       []string  `json:"env,omitempty"` // names only (P8)
+	Env       []string  `json:"env,omitempty"`   // names only (P8)
+	After     string    `json:"after,omitempty"` // the task whose session this one continues (#63)
 	CreatedAt time.Time `json:"created_at"`
 	Lease     *Lease    `json:"lease"`
 	Run       *Run      `json:"run"`
@@ -67,11 +68,12 @@ type Run struct {
 	FinishedAt time.Time `json:"finished_at"`
 }
 
-// Spec is a task to create.
+// Spec is a task to create. With After set, an empty Agent or Cwd is taken
+// from that task.
 type Spec struct {
-	Agent, Cwd, Prompt string
-	Timeout            time.Duration
-	Env                []string
+	Agent, Cwd, Prompt, After string
+	Timeout                   time.Duration
+	Env                       []string
 }
 
 // invalid rejects input as shell does, so every invalid input of the group is
@@ -94,20 +96,18 @@ type Notes struct{ Skipped, Unknown []string }
 // one at the same path be locked by someone else.
 func lockPath(dir, id string) string { return filepath.Join(dir, id+".lock") }
 
-// Create validates s as the request it will be run as, and queues it.
+// Create validates s as the request it will be run as, and queues it. A
+// follow-up (s.After) is checked against its parent under the lock.
 func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, CreatedAt: now,
 	}
-	r := t.request(nil)
-	r.Timeout = s.Timeout // validate the value given, not its stored form (P6)
-	if err := r.Validate(); err != nil {
-		return Task{}, err
-	}
-	if s.Timeout%time.Millisecond != 0 {
-		return Task{}, invalid("a task's timeout must be a whole number of milliseconds, got %s", s.Timeout)
+	if s.After == "" {
+		if err := t.validate(s.Timeout); err != nil {
+			return Task{}, err
+		}
 	}
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
@@ -118,6 +118,11 @@ func Create(environ []string, s Spec) (Task, error) {
 		return Task{}, err
 	}
 	defer unlock()
+	if s.After != "" {
+		if err := t.follow(dir, s.Timeout); err != nil {
+			return Task{}, err
+		}
+	}
 	for {
 		t.ID = fmt.Sprintf("%s-%06x", now.Format("20060102T150405"), rand.Uint32()&0xffffff)
 		if _, err := os.Stat(path(dir, t.ID)); errors.Is(err, os.ErrNotExist) {
@@ -125,6 +130,58 @@ func Create(environ []string, s Spec) (Task, error) {
 		}
 	}
 	return t, write(dir, t)
+}
+
+// validate checks t as the request it will be run as, with timeout as given
+// rather than its stored form (P6).
+func (t Task) validate(timeout time.Duration) error {
+	r := t.request(nil)
+	r.Timeout = timeout
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if timeout%time.Millisecond != 0 {
+		return invalid("a task's timeout must be a whole number of milliseconds, got %s", timeout)
+	}
+	return nil
+}
+
+// follow makes t a follow-up of task t.After, under the directory lock: the
+// parent must exist and not have failed, t takes its agent and cwd, and the
+// parent may have no other follow-up that is not failed (#63).
+func (t *Task) follow(dir string, timeout time.Duration) error {
+	p, err := read(dir, t.After)
+	if errors.Is(err, os.ErrNotExist) {
+		return invalid("no task %s", t.After)
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case p.Status == Failed:
+		return invalid("task %s failed; only a done task can be followed up", p.ID)
+	case t.Agent != "" && t.Agent != p.Agent:
+		return invalid("agent %s is not task %s's agent %s", t.Agent, p.ID, p.Agent)
+	case t.Cwd != "" && t.Cwd != p.Cwd:
+		return invalid("working directory %q is not task %s's %q", t.Cwd, p.ID, p.Cwd)
+	}
+	t.Agent, t.Cwd = p.Agent, p.Cwd
+	if err := t.validate(timeout); err != nil {
+		return err
+	}
+	s, err := load(dir)
+	if err != nil {
+		return err
+	}
+	if len(s.Skipped) > 0 {
+		return fmt.Errorf("cannot tell whether task %s already has a follow-up: task %s could not be read", p.ID, s.Skipped[0])
+	}
+	for _, o := range s.tasks {
+		if o.After == p.ID && o.Status != Failed {
+			return invalid("task %s already has a follow-up: %s; follow up on %s instead", p.ID, o.ID, o.ID)
+		}
+	}
+	return nil
 }
 
 // List reclaims tasks of dead workers and returns every readable task, oldest
