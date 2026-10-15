@@ -71,6 +71,25 @@ func found(o searchOutput) []string {
 	return s
 }
 
+// searchJSON runs aits session search --json with env and args, and checks
+// that it exits 0 with nothing on stderr.
+func searchJSON(t *testing.T, env []string, args ...string) searchOutput {
+	t.Helper()
+	out := call{env: env, args: append([]string{"session", "search", "--json"}, args...)}.run(t)
+	if out.code != 0 || out.stderr != "" {
+		t.Fatalf("search %q: code=%d stderr=%q", args, out.code, out.stderr)
+	}
+	return decodeSearch(t, out.stdout)
+}
+
+// noResults is search --json finding nothing and skipping nothing.
+const noResults = `{"results":[],"skipped":{"files":0,"lines":0}}` + "\n"
+
+// claudeUser is a Claude user event of session id in /w with text.
+func claudeUser(id, text string) string {
+	return `{"type":"user","sessionId":"` + id + `","cwd":"/w","message":{"role":"user","content":"` + text + `"}}`
+}
+
 func TestSessionSearch(t *testing.T) {
 	home := transcripts(t)
 	tests := []struct {
@@ -91,10 +110,8 @@ func TestSessionSearch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out := call{env: []string{"HOME=" + home}, args: append([]string{"session", "search", "--json"}, tt.args...)}.run(t)
-			o := decodeSearch(t, out.stdout)
-			if out.code != 0 || out.stderr != "" || !slices.Equal(found(o), tt.want) {
-				t.Fatalf("code=%d stderr=%q results=%q, want %q", out.code, out.stderr, found(o), tt.want)
+			if got := found(searchJSON(t, []string{"HOME=" + home}, tt.args...)); !slices.Equal(got, tt.want) {
+				t.Fatalf("results=%q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -301,7 +318,7 @@ func TestSessionSearchQueuedBlocks(t *testing.T) {
 		t.Errorf("blockqueued: code=%d stdout=%q", out.code, out.stdout)
 	}
 	out = call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "iVBORw0KGgo"}}.run(t)
-	if out.code != 0 || out.stdout != `{"results":[],"skipped":{"files":0,"lines":0}}`+"\n" {
+	if out.code != 0 || out.stdout != noResults {
 		t.Errorf("image data: code=%d stdout=%q", out.code, out.stdout)
 	}
 }
@@ -402,25 +419,14 @@ func TestSessionSearchSourceBeforeLimit(t *testing.T) {
 	}
 }
 
-// searchJSON runs aits session search --json with env and args, and checks
-// that it exits 0 with nothing on stderr.
-func searchJSON(t *testing.T, env []string, args ...string) searchOutput {
-	t.Helper()
-	out := call{env: env, args: append([]string{"session", "search", "--json"}, args...)}.run(t)
-	if out.code != 0 || out.stderr != "" {
-		t.Fatalf("search %q: code=%d stderr=%q", args, out.code, out.stderr)
-	}
-	return decodeSearch(t, out.stdout)
-}
-
 // A session must hold every term. The second session's thinking holds
 // "alpha", so its file passes the prefilter and parsing must reject it (#22).
 func TestSessionSearchAllTerms(t *testing.T) {
 	home := t.TempDir()
 	writeTranscript(t, home, ".claude/projects/-w/both.jsonl", time.Now(),
-		`{"type":"user","sessionId":"both","cwd":"/w","message":{"role":"user","content":"needle alpha"}}`)
+		claudeUser("both", "needle alpha"))
 	writeTranscript(t, home, ".claude/projects/-w/one.jsonl", time.Now().Add(-time.Hour),
-		`{"type":"user","sessionId":"one","cwd":"/w","message":{"role":"user","content":"needle only"}}`,
+		claudeUser("one", "needle only"),
 		`{"type":"assistant","sessionId":"one","cwd":"/w","message":{"content":[{"type":"thinking","thinking":"alpha"}]}}`)
 	for _, c := range []struct{ terms, want []string }{
 		{[]string{"needle", "alpha"}, []string{"claude:both"}},
@@ -437,14 +443,14 @@ func TestSessionSearchAllTerms(t *testing.T) {
 func TestSessionSearchSubagentsNotSearched(t *testing.T) {
 	home := t.TempDir()
 	writeTranscript(t, home, ".claude/projects/-w/main/subagents/agent-x.jsonl", time.Now(),
-		`{"type":"user","sessionId":"main","cwd":"/w","message":{"role":"user","content":"subagent-word"}}`)
+		claudeUser("main", "subagent-word"))
 	writeTranscript(t, home, ".claude/projects/-w/side.jsonl", time.Now(),
 		`{"type":"user","isSidechain":true,"sessionId":"side","cwd":"/w","message":{"role":"user","content":"subagent-word"}}`)
 	writeTranscript(t, home, ".codex/sessions/2026/10/14/rollout-sub.jsonl", time.Now(),
 		`{"type":"session_meta","payload":{"id":"sub","cwd":"/w","source":{"subagent":"review"}}}`,
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"subagent-word"}]}}`)
 	out := call{env: []string{"HOME=" + home}, args: []string{"session", "search", "--json", "subagent-word"}}.run(t)
-	if out.code != 0 || out.stdout != `{"results":[],"skipped":{"files":0,"lines":0}}`+"\n" || out.stderr != "" {
+	if out.code != 0 || out.stdout != noResults || out.stderr != "" {
 		t.Errorf("code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 	}
 }
@@ -455,7 +461,7 @@ func TestSessionSearchFileWithoutID(t *testing.T) {
 	writeTranscript(t, home, ".claude/projects/-w/noid.jsonl", time.Now(),
 		`{"type":"user","message":{"content":"needle"}}`)
 	writeTranscript(t, home, ".claude/projects/-w/good.jsonl", time.Now(),
-		`{"type":"user","sessionId":"good","cwd":"/w","message":{"role":"user","content":"needle"}}`)
+		claudeUser("good", "needle"))
 	o := searchJSON(t, []string{"HOME=" + home}, "needle")
 	if !slices.Equal(found(o), []string{"claude:good"}) || o.Skipped.Files != 1 || o.Skipped.Lines != 0 {
 		t.Errorf("--json: %+v", o)
@@ -471,7 +477,7 @@ func TestSessionSearchFileWithoutID(t *testing.T) {
 func TestSessionSearchMissingVendorRoots(t *testing.T) {
 	empty := []string{"HOME=" + t.TempDir()}
 	out := call{env: empty, args: []string{"session", "search", "--json", "needle"}}.run(t)
-	if out.code != 0 || out.stdout != `{"results":[],"skipped":{"files":0,"lines":0}}`+"\n" || out.stderr != "" {
+	if out.code != 0 || out.stdout != noResults || out.stderr != "" {
 		t.Errorf("neither, --json: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
 	}
 	out = call{env: empty, args: []string{"session", "search", "needle"}}.run(t)
@@ -480,7 +486,7 @@ func TestSessionSearchMissingVendorRoots(t *testing.T) {
 	}
 	home := t.TempDir()
 	writeTranscript(t, home, ".claude/projects/-w/only.jsonl", time.Now(),
-		`{"type":"user","sessionId":"only","cwd":"/w","message":{"role":"user","content":"needle"}}`)
+		claudeUser("only", "needle"))
 	if o := searchJSON(t, []string{"HOME=" + home}, "needle"); !slices.Equal(found(o), []string{"claude:only"}) || o.Skipped.Files != 0 || o.Skipped.Lines != 0 {
 		t.Errorf("claude only: %+v", o)
 	}
@@ -488,16 +494,13 @@ func TestSessionSearchMissingVendorRoots(t *testing.T) {
 
 // CLAUDE_CONFIG_DIR and CODEX_HOME replace the roots under HOME (#22).
 func TestSessionSearchVendorRootsFromEnv(t *testing.T) {
-	home, claudeDir, codexDir := t.TempDir(), t.TempDir(), t.TempDir()
-	writeTranscript(t, claudeDir, "projects/-w/env-claude.jsonl", time.Now(),
-		`{"type":"user","sessionId":"env-claude","cwd":"/w","message":{"role":"user","content":"needle"}}`)
-	writeTranscript(t, codexDir, "sessions/2026/10/14/rollout-env-codex.jsonl", time.Now().Add(-time.Hour),
-		`{"type":"session_meta","payload":{"id":"env-codex","cwd":"/w"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"needle"}]}}`)
+	home, alt := t.TempDir(), t.TempDir()
+	writeTranscript(t, alt, ".claude/projects/-w/env-claude.jsonl", time.Now(), claudeUser("env-claude", "needle"))
+	codexRollout(t, alt, "env-codex", "/w", "", "needle", time.Now().Add(-time.Hour))
 	writeTranscript(t, home, ".claude/projects/-w/home-claude.jsonl", time.Now(),
-		`{"type":"user","sessionId":"home-claude","cwd":"/w","message":{"role":"user","content":"needle"}}`)
+		claudeUser("home-claude", "needle"))
 	codexRollout(t, home, "home-codex", "/w", "", "needle", time.Now())
-	env := []string{"HOME=" + home, "CLAUDE_CONFIG_DIR=" + claudeDir, "CODEX_HOME=" + codexDir}
+	env := []string{"HOME=" + home, "CLAUDE_CONFIG_DIR=" + filepath.Join(alt, ".claude"), "CODEX_HOME=" + filepath.Join(alt, ".codex")}
 	for _, c := range []struct{ args, want []string }{
 		{nil, []string{"claude:env-claude", "codex:env-codex"}},
 		{[]string{"--agent", "claude"}, []string{"claude:env-claude"}},
