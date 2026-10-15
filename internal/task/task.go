@@ -227,7 +227,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 	if err != nil {
 		return nil, Notes{}, err
 	}
-	t, release, notes, err := claim(ctx, dir, agent)
+	t, session, release, notes, err := claim(ctx, dir, agent)
 	if t == nil || err != nil {
 		return nil, notes, err
 	}
@@ -235,6 +235,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 	token := t.Lease.Token
 	var started time.Time // stays zero unless the agent starts
 	req := t.request(environ)
+	req.Session = session
 	req.Kill = kill
 	req.Started = func(pgid int) error {
 		started = time.Now().UTC()
@@ -264,25 +265,38 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 }
 
 // claim, under the lock, reclaims tasks of dead workers and marks the oldest
-// queued task of agent running with a fresh lease. It locks the task's lock
-// file first, so that a running task's lock is never free while its worker
-// lives, and returns the function that releases it, with the notes of the
-// reclaim. A signal that arrived while it waited for the lock claims nothing.
-func claim(ctx context.Context, dir, agent string) (*Task, func(), Notes, error) {
+// claimable queued task of agent running with a fresh lease: a follow-up is
+// claimable once its parent is done. It locks the task's lock file first, so
+// that a running task's lock is never free while its worker lives, and
+// returns the session the task continues ("" for a new one), the function
+// that releases the lock, and the notes of the reclaim. A signal that arrived
+// while it waited for the lock claims nothing.
+func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
-		return nil, nil, Notes{}, err
+		return nil, "", nil, Notes{}, err
 	}
 	if ctx.Err() != nil {
 		unlock()
-		return nil, nil, Notes{}, shell.ErrStopped
+		return nil, "", nil, Notes{}, shell.ErrStopped
 	}
 	s, groups, err := reclaim(dir)
+	byID := index(s.tasks)
 	var claimed *Task
+	var session string
 	var release func()
-	i := slices.IndexFunc(s.tasks, func(t Task) bool { return t.Status == Queued && (agent == "" || t.Agent == agent) })
+	i := slices.IndexFunc(s.tasks, func(t Task) bool {
+		if t.Status != Queued || (agent != "" && t.Agent != agent) {
+			return false
+		}
+		p := byID[t.After]
+		return t.After == "" || (p != nil && p.Status == Done)
+	})
 	if err == nil && i >= 0 {
 		t := &s.tasks[i]
+		if t.After != "" {
+			session = byID[t.After].Run.SessionID // reclaim failed any done parent without one
+		}
 		if release, err = store.TryLock(lockPath(dir, t.ID), true); err != nil {
 			err = fmt.Errorf("task %s: %w", t.ID, err)
 		} else {
@@ -296,7 +310,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, func(), Notes, error)
 	}
 	unlock()
 	shell.Stop(groups...)
-	return claimed, release, s.Notes, err
+	return claimed, session, release, s.Notes, err
 }
 
 // reclaim, under the lock, loads every task and fails each running one whose
@@ -349,8 +363,58 @@ func reclaim(dir string) (snapshot, []int, error) {
 			return s, groups, err
 		}
 	}
+	// Fail queued follow-ups that can never run, until a pass changes
+	// nothing, so a whole chain fails at once whatever its created_at order.
+	byID := index(s.tasks)
+	for changed := true; changed; {
+		changed = false
+		for i := range s.tasks {
+			t := &s.tasks[i]
+			if t.Status != Queued || t.After == "" {
+				continue
+			}
+			why := parentFault(byID[t.After], slices.Contains(s.Skipped, t.After))
+			if why == "" {
+				continue
+			}
+			t.Status = Failed
+			t.Run = &Run{Result: shell.Result{
+				Status: NotStarted, Agent: t.Agent, Message: "its parent task " + t.After + " " + why,
+			}, FinishedAt: time.Now().UTC()}
+			if err := write(dir, *t); err != nil {
+				return s, groups, err
+			}
+			changed = true
+		}
+	}
 	slices.Sort(s.Unknown)
 	return s, groups, nil
+}
+
+// index maps each task's id to it.
+func index(tasks []Task) map[string]*Task {
+	m := make(map[string]*Task, len(tasks))
+	for i := range tasks {
+		m[tasks[i].ID] = &tasks[i]
+	}
+	return m
+}
+
+// parentFault says why a follow-up of p can never run, or "" if it may yet:
+// p failed, its file is gone, or it is done without a session. A parent whose
+// file cannot be read (skipped) is waited for (P10).
+func parentFault(p *Task, skipped bool) string {
+	switch {
+	case p == nil && !skipped:
+		return "does not exist"
+	case p == nil:
+		return ""
+	case p.Status == Failed:
+		return "failed"
+	case p.Status == Done && (p.Run == nil || p.Run.SessionID == ""):
+		return "has no session"
+	}
+	return ""
 }
 
 // update applies fn to task id under the directory lock if the caller still

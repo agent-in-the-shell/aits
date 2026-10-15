@@ -521,3 +521,109 @@ func TestCreateFollowUpUnreadableFile(t *testing.T) {
 	}
 	create(t, environ, "claude")
 }
+
+// A follow-up is passed over until its parent is done, then run in the
+// parent's session. The fake PATH has no agent, so the run is not_started;
+// which task was claimed, and with which session, is what matters.
+func TestClaimFollowUp(t *testing.T) {
+	environ := env(t)
+	p := create(t, environ, "claude")
+	f, err := follow(environ, p.ID, Spec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, p, `{"token":"w","pgid":0}`)
+	unlock := lock(t, dir, p.ID) // a live worker
+	got, session, release, _, err := claim(context.Background(), dir, "")
+	if err != nil || got == nil || got.ID != x.ID || session != "" {
+		t.Fatalf("claim with the parent running = %+v %q, %v; want %s", got, session, err, x.ID)
+	}
+	release()
+	unlock()
+	setStatus(t, environ, p, Done, &Run{Result: shell.Result{Status: shell.StatusOK, SessionID: "sess-p"}})
+	got, session, release, _, err = claim(context.Background(), dir, "")
+	if err != nil || got == nil || got.ID != f.ID || session != "sess-p" {
+		t.Fatalf("claim with the parent done = %+v %q, %v; want %s in sess-p", got, session, err, f.ID)
+	}
+	release()
+}
+
+// A queued follow-up whose parent failed, is gone, or is done without a
+// session is failed by the next reclaim, down the whole chain, whatever the
+// order of created_at (spec §2, §4).
+func TestReclaimFailsOrphans(t *testing.T) {
+	tests := []struct {
+		name   string
+		parent func(t *testing.T, environ []string, p Task)
+		why    string
+	}{
+		{"failed", func(t *testing.T, environ []string, p Task) {
+			setStatus(t, environ, p, Failed, &Run{Result: shell.Result{Status: "agent_failed"}})
+		}, "failed"},
+		{"gone", func(t *testing.T, environ []string, p Task) {
+			dir, _ := store.Dir(environ, "task")
+			if err := os.Remove(path(dir, p.ID)); err != nil {
+				t.Fatal(err)
+			}
+		}, "does not exist"},
+		{"done without a run", func(t *testing.T, environ []string, p Task) {
+			setStatus(t, environ, p, Done, nil)
+		}, "has no session"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			environ := env(t)
+			p := create(t, environ, "claude")
+			f, err := follow(environ, p.ID, Spec{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, err := follow(environ, f.ID, Spec{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// g reads as older than f: the chain must not rely on created_at.
+			g.CreatedAt = p.CreatedAt.Add(-time.Hour)
+			setStatus(t, environ, g, Queued, nil)
+			tt.parent(t, environ, p)
+			tasks, _, err := List(environ)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{f.ID: p.ID + " " + tt.why, g.ID: f.ID + " failed"}
+			for _, tk := range tasks {
+				w, ok := want[tk.ID]
+				if !ok {
+					continue
+				}
+				if tk.Status != Failed || tk.Run == nil || tk.Run.Status != NotStarted || tk.Run.Message != "its parent task "+w {
+					t.Errorf("%s = %+v %+v; want failed, its parent task %s", tk.ID, tk, tk.Run, w)
+				}
+				delete(want, tk.ID)
+			}
+			if len(want) > 0 {
+				t.Errorf("not listed: %v", want)
+			}
+		})
+	}
+}
+
+// A follow-up whose parent cannot be read waits; nothing is failed (P10).
+func TestReclaimSparesFollowUpOfUnreadableParent(t *testing.T) {
+	environ := env(t)
+	p := create(t, environ, "claude")
+	f, err := follow(environ, p.ID, Spec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := store.Dir(environ, "task")
+	if err := store.WriteFile(path(dir, p.ID), []byte("not json")); err != nil {
+		t.Fatal(err)
+	}
+	tasks, notes, err := List(environ)
+	if err != nil || len(tasks) != 1 || tasks[0].ID != f.ID || tasks[0].Status != Queued || !slices.Equal(notes.Skipped, []string{p.ID}) {
+		t.Errorf("List = %+v %+v, %v; want %s queued and %s skipped", tasks, notes, err, f.ID, p.ID)
+	}
+}
