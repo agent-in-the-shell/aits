@@ -126,11 +126,11 @@ contributes nothing.
    cwd and the snippet. Lines that are not JSON or exceed 64 MiB are counted
    and skipped.
 4. **Filter** by `--cwd` and `--source`, **sort** by `updated_at` descending, ties by
-   session id, **cut** to `--limit`. A session's cwd and source are first
-   values (the first one recorded wins), so the filter is decided as soon as its session id, cwd and,
-   for `--source`, source are known: a file it rules out is not read further
-   in step 3 (#51). A dropped file is never a result, so its unread lines
-   cannot hide one (P6); reading them would be work for nothing (P14).
+   session id, **cut** to `--limit`. A session's cwd and source are its first
+   recorded values, so the filter is decided as soon as its session id, cwd
+   and, for `--source`, source are known: a file it rules out is not read
+   further in step 3 (#51). A dropped file is never a result, so its unread
+   lines cannot hide one (P6); reading them would be work for nothing (P14).
 
 A signal stops the search between chunks and between lines (one line is
 still read whole, up to the 64 MiB limit) and is reported as the `stopped`

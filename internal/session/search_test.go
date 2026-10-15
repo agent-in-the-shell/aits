@@ -334,7 +334,7 @@ func TestSearchStopsReadingExcludedFile(t *testing.T) {
 		`needle not json`)
 	late := newHome(t) // the source comes after a bad line
 	late.write(".claude/projects/-w/late.jsonl", time.Now(),
-		`{"type":"user","sessionId":"late","cwd":"/w","message":{"content":"needle"}}`,
+		claudeLine("late", "/w", "user", "needle"),
 		`needle not json`,
 		`{"type":"user","sessionId":"late","cwd":"/w","entrypoint":"sdk-cli","message":{"content":"needle"}}`)
 	noID := newHome(t)
