@@ -581,7 +581,7 @@ func TestCollectReadsRunningTaskMissedByListing(t *testing.T) {
 
 // A follow-up is claimable only once its parent is done with a session; a
 // done parent without a run is not followed and does not crash the check,
-// whether or not a reclaim has failed the follow-up yet (#77).
+// which decides alone, without a reclaim (#77).
 func TestClaimable(t *testing.T) {
 	ok := &Run{Result: shell.Result{Status: shell.StatusOK, SessionID: "s"}}
 	byID := map[string]*Task{
