@@ -88,6 +88,9 @@ invalid input (P5).
 - Validates as `shell submit` does (agent, `--cwd` an existing directory made
   absolute, timeout > 0, non-empty prompt, `--env` name syntax; explicitly
   empty values refused). Invalid input: exit 2, no file written.
+- The timeout is stored as `timeout_ms`, so it must also be a whole number of
+  milliseconds; another value is invalid input, quoting the value given, never
+  rounded (#59).
 - `--json`: `{"id":"…","status":"queued"}`; text: the id. Exit 0.
 
 `aits task list`

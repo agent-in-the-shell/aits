@@ -197,6 +197,29 @@ func TestTaskInvalidInput(t *testing.T) {
 	}
 }
 
+// A task stores its timeout in whole milliseconds: create refuses a value it
+// cannot keep, quoting the value given, and keeps a whole one exactly (P6, #59).
+func TestTaskCreateTimeoutMilliseconds(t *testing.T) {
+	q := newQueue(t, "ok")
+	for timeout, want := range map[string]string{
+		"500us":   "a task's timeout must be a whole number of milliseconds, got 500µs",
+		"1500us":  "a task's timeout must be a whole number of milliseconds, got 1.5ms",
+		"-1500us": "timeout must be positive, got -1.5ms",
+	} {
+		out := q.run("create", "--agent", "claude", "--cwd", t.TempDir(), "--timeout", timeout, "--json", "hi")
+		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" || r.Error.Message != want {
+			t.Errorf("%s: code=%d stdout=%q; want message %q", timeout, out.code, out.stdout, want)
+		}
+	}
+	if q.queuedAny() {
+		t.Fatalf("a timeout that cannot be stored was queued")
+	}
+	id := q.create("hi", "--timeout", "2ms")
+	if s := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); s.TimeoutMS != 2 {
+		t.Errorf("timeout_ms = %d, want 2", s.TimeoutMS)
+	}
+}
+
 // A run whose agent never started has no started_at (help, spec §4).
 func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	q := newQueue(t, "ok")

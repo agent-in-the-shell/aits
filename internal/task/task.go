@@ -101,8 +101,13 @@ func Create(environ []string, s Spec) (Task, error) {
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
 		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, CreatedAt: now,
 	}
-	if err := t.request(nil).Validate(); err != nil {
+	r := t.request(nil)
+	r.Timeout = s.Timeout // validate the value given, not its stored form (P6)
+	if err := r.Validate(); err != nil {
 		return Task{}, err
+	}
+	if s.Timeout%time.Millisecond != 0 {
+		return Task{}, invalid("a task's timeout must be a whole number of milliseconds, got %s", s.Timeout)
 	}
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
