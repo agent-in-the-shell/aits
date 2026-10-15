@@ -157,7 +157,7 @@ func (g *group) terminate() {
 	})
 }
 
-// killNow sends the SIGKILL that terminate scheduled at once, unless it was
+// killNow sends at once the SIGKILL that terminate scheduled, unless it was
 // already sent.
 func (g *group) killNow() {
 	if g.kill.Stop() {
