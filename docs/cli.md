@@ -58,7 +58,8 @@ Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
-  goes to stderr.
+  goes to stderr, with control characters in the message and session id
+  shown as Go escapes (\x1b, \r).
 
 Result fields:
   status       Always. One of the statuses below.
@@ -301,7 +302,8 @@ Task fields (--json):
                worker_died run whose agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id and why a task failed on stderr.
+stdout; the session id and why a task failed on stderr, with control
+characters shown as Go escapes (\x1b, \r).
 
 Exit codes:
   0  The task exists, whatever its status.
@@ -341,7 +343,8 @@ Task fields (--json):
                worker_died run whose agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id and why a task failed on stderr.
+stdout; the session id and why a task failed on stderr, with control
+characters shown as Go escapes (\x1b, \r).
 
 With nothing claimable (nothing queued, or only follow-ups whose parent is
 not done), work prints {"status":"empty"} with --json (nothing otherwise)

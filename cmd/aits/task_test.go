@@ -277,6 +277,20 @@ func TestTaskCreateCannotCheckID(t *testing.T) {
 	}
 }
 
+// task work and show print a failed run's message and session id escaped,
+// as shell submit does (P5, #83).
+func TestTaskEscapesAgentText(t *testing.T) {
+	q := newQueue(t, "control_chars")
+	id := q.create("hi")
+	want := "session: " + ctrlSessionShown + "\naits: task " + id + " failed: agent_failed: the agent reported an error: " + ctrlErrorShown + "\n"
+	if out := q.run("work"); out.code != 1 || out.stderr != want {
+		t.Errorf("work: code=%d stderr=%q, want %q", out.code, out.stderr, want)
+	}
+	if out := q.run("show", id); out.stderr != want {
+		t.Errorf("show: stderr=%q, want %q", out.stderr, want)
+	}
+}
+
 // A recorded run without a status is refused rather than printed, in both
 // modes (P6, #61).
 func TestTaskShowRunWithoutStatus(t *testing.T) {

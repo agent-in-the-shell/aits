@@ -31,7 +31,8 @@ const submitDetails = promptDetails + `Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
-  goes to stderr.
+  goes to stderr, with control characters in the message and session id
+  shown as Go escapes (\x1b, \r).
 
 Result fields:
   status       Always. One of the statuses below.
@@ -180,10 +181,10 @@ func writeResult(env *Env, res shell.Result) (int, error) {
 	case res.Status == shell.StatusOK:
 		fmt.Fprintln(env.Stdout, res.Answer)
 	default:
-		fmt.Fprintf(env.Stderr, "aits: %s: %s\n", res.Status, res.Message)
+		fmt.Fprintf(env.Stderr, "aits: %s: %s\n", res.Status, printable(res.Message))
 	}
 	if !env.JSON && res.SessionID != "" {
-		fmt.Fprintf(env.Stderr, "session: %s\n", res.SessionID)
+		fmt.Fprintf(env.Stderr, "session: %s\n", printable(res.SessionID))
 	}
 	if res.Status == shell.StatusOK {
 		return exitOK, nil

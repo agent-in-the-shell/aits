@@ -192,6 +192,11 @@ func play(d dialect, scenario, dir, exe string) {
 		emit(map[string]any{"type": "error", "message": "Reconnecting... 1/5"})
 		emit(map[string]any{"type": "error", "message": "Reconnecting... 2/5"})
 		d.answer("fake answer")
+	case "control_chars": // Claude only: an error and a session id that would drive a terminal
+		id := "sess-\x1b[2K"
+		emit(map[string]any{"type": "system", "subtype": "init", "session_id": id})
+		emit(claudeResult(true, "\x1b[2K\rall good\x1b]0;pwned\a", id))
+		os.Exit(1)
 	case "unknown_session":
 		d.missing(resumedID())
 		os.Exit(1)
