@@ -560,21 +560,24 @@ func TestReclaimSparesFollowUpOfUnreadableParent(t *testing.T) {
 	}
 }
 
-// A directory listing can miss a file that a worker is renaming over (its
-// pgid write takes no directory lock): a parent missing from the snapshot is
-// gone only if its file is, so its follow-up is not failed for a miss (P6).
-func TestFailOrphansRechecksMissingParent(t *testing.T) {
+// A listing can miss a record that a worker is renaming over (its pgid write
+// takes no directory lock). A running task always has its lock file, never
+// renamed or removed, so collect reads a task whose lock file is listed
+// without its record: neither a follow-up's parent nor a live follow-up is
+// overlooked (P6).
+func TestCollectReadsRunningTaskMissedByListing(t *testing.T) {
 	environ := env(t)
 	p := create(t, environ, "claude")
-	f, err := follow(environ, p.ID, Spec{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir, _ := store.Dir(environ, "task")
-	if err := failOrphans(dir, snapshot{tasks: []Task{f}}); err != nil {
+	running(t, dir, p, `{"token":"w","pgid":0}`)
+	lock(t, dir, p.ID)() // as a claim leaves it
+	gone := create(t, environ, "claude")
+	lock(t, dir, gone.ID)()
+	if err := os.Remove(path(dir, gone.ID)); err != nil { // a lock file whose record is gone
 		t.Fatal(err)
 	}
-	if got, err := read(dir, f.ID); err != nil || got.Status != Queued {
-		t.Errorf("follow-up = %+v, %v; want queued while its parent's file exists", got, err)
+	s := collect(dir, []string{p.ID + ".lock", gone.ID + ".lock"})
+	if len(s.tasks) != 1 || s.tasks[0].ID != p.ID || len(s.Skipped) != 0 {
+		t.Errorf("collect = %+v; want %s only", s, p.ID)
 	}
 }

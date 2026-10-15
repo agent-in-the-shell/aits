@@ -387,8 +387,7 @@ func failOrphans(dir string, s snapshot) error {
 			if t.Status != Queued || t.After == "" {
 				continue
 			}
-			p := byID[t.After]
-			why := parentFault(p, p == nil && gone(dir, t.After, s.Skipped))
+			why := parentFault(byID[t.After], slices.Contains(s.Skipped, t.After))
 			if why == "" {
 				continue
 			}
@@ -405,16 +404,6 @@ func failOrphans(dir string, s snapshot) error {
 	return nil
 }
 
-// gone reports whether task id, not loaded, has no file: neither skipped as
-// unreadable nor missed by a listing that raced a rename over it (P6).
-func gone(dir, id string, skipped []string) bool {
-	if slices.Contains(skipped, id) {
-		return false
-	}
-	_, err := os.Lstat(path(dir, id))
-	return errors.Is(err, os.ErrNotExist)
-}
-
 // index maps each task's id to it.
 func index(tasks []Task) map[string]*Task {
 	m := make(map[string]*Task, len(tasks))
@@ -425,11 +414,11 @@ func index(tasks []Task) map[string]*Task {
 }
 
 // parentFault says why a follow-up of p can never run, or "" if it may yet:
-// p failed, is gone (p nil and its file gone), or is done without a session.
-// A parent not loaded but not gone is waited for (P10).
-func parentFault(p *Task, gone bool) string {
+// p failed, its file is gone, or it is done without a session. A parent whose
+// file cannot be read (skipped) is waited for (P10).
+func parentFault(p *Task, skipped bool) string {
 	switch {
-	case p == nil && gone:
+	case p == nil && !skipped:
 		return "does not exist"
 	case p == nil:
 		return ""
@@ -476,24 +465,44 @@ type snapshot struct {
 // as it is (P10); a directory that cannot be listed is an error.
 // (Readdirnames rather than os.ReadDir keeps the binary smaller, P14.)
 func load(dir string) (snapshot, error) {
-	var s snapshot
 	f, err := os.Open(dir)
 	if err != nil {
-		return s, err
+		return snapshot{}, err
 	}
 	names, err := f.Readdirnames(-1)
 	f.Close()
 	if err != nil {
-		return s, err
+		return snapshot{}, err
+	}
+	return collect(dir, names), nil
+}
+
+// collect reads the tasks that names, a listing of dir, holds. A listing can
+// miss a record that a worker is renaming over, since its running record is
+// written without the directory lock (modify). A running task always has its
+// lock file, never renamed or removed, so a task whose lock file is listed
+// without its record is read all the same (P6).
+func collect(dir string, names []string) snapshot {
+	var s snapshot
+	listed := make(map[string]bool, len(names))
+	for _, name := range names {
+		listed[name] = true
 	}
 	for _, name := range names {
-		id, ok := strings.CutSuffix(name, ".json")
-		if !ok || strings.HasPrefix(name, ".") {
+		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		if t, err := read(dir, id); err == nil {
+		id, record := strings.CutSuffix(name, ".json")
+		if !record {
+			var ok bool
+			if id, ok = strings.CutSuffix(name, ".lock"); !ok || listed[id+".json"] {
+				continue
+			}
+		}
+		switch t, err := read(dir, id); {
+		case err == nil:
 			s.tasks = append(s.tasks, t)
-		} else {
+		case record || !errors.Is(err, os.ErrNotExist): // else a lock file whose record is gone
 			s.Skipped = append(s.Skipped, id)
 		}
 	}
@@ -501,7 +510,7 @@ func load(dir string) (snapshot, error) {
 		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
 	})
 	slices.Sort(s.Skipped)
-	return s, nil
+	return s
 }
 
 // request is the shell request that runs t in environ.

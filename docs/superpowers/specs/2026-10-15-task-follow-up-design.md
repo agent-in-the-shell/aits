@@ -59,9 +59,12 @@ names as a failure to avoid. The task-queue spec deferred this (§1).
   lock.
 - `reclaim`, after failing the tasks of dead workers, fails each `queued`
   follow-up whose parent is `failed`, gone, or `done` without a session id.
-  A parent that was not loaded and not skipped is gone only if `lstat` of its
-  file also finds nothing: a directory listing can miss a file that a worker
-  is renaming over without the directory lock (its pgid write). It repeats until a
+- Loading the directory: a listing can miss a record that a worker is
+  renaming over without the directory lock (its pgid write). A running task
+  always has its lock file, never renamed or removed, so a task whose lock
+  file is listed without its record is read all the same. Neither a parent
+  (taken for gone) nor a live follow-up (missed by the fan-out check) is
+  overlooked. It repeats until a
   pass changes nothing, so a whole chain fails in one call. It does not
   rely on `created_at` order, which follows the wall clock.
 - `claim` takes the oldest `queued` task matching `--agent` whose `after` is
@@ -116,11 +119,6 @@ change.
 - A worker of an earlier aits ignores `after`: it can claim a follow-up
   before its parent is done and run it in a new conversation, and its
   writes drop the field. As for #37, run one aits version per `AITS_HOME`.
-- The fan-out check at create lists the directory; a listing that misses a
-  running follow-up while its worker renames over it would let a second
-  follow-up be created. This needs a large directory on a file system where
-  listings can miss renamed files (observed on Linux tmpfs, not on APFS) and
-  the exact moment the agent starts; it is not guarded further (P14).
 - Whether Claude Code resumes in place, as Codex does, is not observed in
   this repo; fan-out is refused either way, because concurrent resumes of
   one session are undefined.
