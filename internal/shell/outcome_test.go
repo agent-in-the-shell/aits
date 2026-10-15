@@ -1,6 +1,9 @@
 package shell
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestDecide(t *testing.T) {
 	okEvents := events{sessionID: "s1", answer: "answer", done: true}
@@ -31,6 +34,15 @@ func TestDecide(t *testing.T) {
 				t.Errorf("status %s with message %q", got, msg)
 			}
 		})
+	}
+}
+
+// A run whose Started hook failed is stopped, whatever else happened, with
+// the hook's error as its message.
+func TestDecideAborted(t *testing.T) {
+	o := observation{aborted: errors.New("cannot record"), timedOut: true, exitCode: -1, events: events{tooLarge: true}}
+	if got, msg := decide(o); got != StatusStopped || msg != "cannot record" {
+		t.Errorf("decide = %s %q, want stopped with the hook's error", got, msg)
 	}
 }
 

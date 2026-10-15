@@ -3,7 +3,9 @@ package main
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,6 +51,25 @@ func assertGone(t *testing.T, pid int) {
 	}
 	_ = syscall.Kill(pid, syscall.SIGKILL)
 	t.Errorf("process %d is still running", pid)
+}
+
+// assertNoneRunning fails unless every process started from the fake agent
+// in dir has exited within a few seconds, for a run whose agent may have been
+// killed before it wrote its pid; it kills survivors.
+func assertNoneRunning(t *testing.T, dir string) {
+	t.Helper()
+	pattern := regexp.QuoteMeta(dir)
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		var exit *exec.ExitError
+		switch err := exec.Command("pgrep", "-f", pattern).Run(); {
+		case errors.As(err, &exit) && exit.ExitCode() == 1: // no match
+			return
+		case err != nil && exit == nil:
+			t.Fatal(err)
+		}
+	}
+	_ = exec.Command("pkill", "-KILL", "-f", pattern).Run()
+	t.Errorf("a process started from %s is still running", dir)
 }
 
 func TestSubmitTimeout(t *testing.T) {

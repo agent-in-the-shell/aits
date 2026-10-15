@@ -7,6 +7,7 @@ import (
 
 // observation is everything aits saw of one run.
 type observation struct {
+	aborted    error // Request.Started failed, and the agent was killed
 	stopped    bool
 	timedOut   bool
 	exitCode   int
@@ -19,6 +20,8 @@ type observation struct {
 func decide(o observation) (Status, string) {
 	ev := o.events
 	switch {
+	case o.aborted != nil:
+		return StatusStopped, o.aborted.Error()
 	case o.stopped:
 		return StatusStopped, "aits was stopped by a signal before the agent finished"
 	case o.timedOut:

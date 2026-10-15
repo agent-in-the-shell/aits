@@ -140,3 +140,20 @@ func TestSubmitIgnoresProcessPATH(t *testing.T) {
 		t.Fatalf("Submit = %+v, %v; want ErrAgentNotFound", res, err)
 	}
 }
+
+// A failing Started hook kills the agent's group at once, grace or not, and
+// the run is stopped with the hook's error as its message (P10, #56).
+func TestSubmitStartedFails(t *testing.T) {
+	bin := t.TempDir()
+	writeExe(t, bin, "claude", "trap '' TERM; sleep 60", 0o755)
+	req := Request{Agent: "claude", Prompt: "hi", Dir: t.TempDir(), Timeout: 3 * time.Second, Environ: []string{"PATH=" + bin},
+		Started: func(int) error { return errors.New("cannot record") }}
+	begin := time.Now()
+	res, err := Submit(context.Background(), req)
+	if err != nil || res.Status != StatusStopped || res.Message != "cannot record" {
+		t.Fatalf("Submit = %+v, %v; want stopped with the hook's error", res, err)
+	}
+	if d := time.Since(begin); d > 2*time.Second {
+		t.Errorf("Submit took %s; want the group killed at once", d)
+	}
+}

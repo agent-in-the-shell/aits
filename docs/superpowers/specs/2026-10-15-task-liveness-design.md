@@ -137,6 +137,12 @@ ignored, and a running record with a lease stays valid.
 - A worker killed during `cmd.Start` or during its pgid write (well under a
   millisecond, measured in #44) still leaves no pgid, and its agent is not
   stopped; `os/exec` cannot name the group before the child exists.
+- A pgid write that fails (for example, the task directory became
+  unwritable) kills the agent's group at once, without the grace period, so
+  that no agent runs unrecorded. The run is recorded as `stopped`, with the
+  failed write as its message; if that write fails too, `work` fails
+  (`internal`) and the task is reclaimed as `worker_died` once the worker has
+  exited (#56).
 - Without D, the pgid write's token check and write are not atomic: if a
   lock file is removed by hand, a reclaim or claim that writes the record
   during that write can be undone by it.

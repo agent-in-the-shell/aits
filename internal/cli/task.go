@@ -183,7 +183,10 @@ and fails with "task ID was reclaimed before its run was recorded". A task
 file that cannot be read is skipped and left as it is, with
 "aits: skipped task ID that could not be read" on stderr. Running tasks
 whose lock file is missing are reported as list does. The agent is stopped
-as shell submit stops it.
+as shell submit stops it. If its process group cannot be recorded in the
+task, the agent is killed at once, so that it never runs unrecorded: the run
+is stopped, with the reason as its message, or work fails (internal) if the
+run cannot be recorded either; the next list or work then reclaims the task.
 
 Exit codes:
   0  The task is done, or nothing was queued.

@@ -562,6 +562,47 @@ func TestTaskWorkerKilledBeforePgid(t *testing.T) {
 	assertGone(t, readPID(t, filepath.Join(q.path, "grandchild.pid")))
 }
 
+// A worker that cannot record its agent's group kills the agent at once,
+// grace or not, instead of leaving it unrecorded: had the worker died, no
+// later command could have stopped it (P10, #56).
+func TestTaskWorkPgidNotRecorded(t *testing.T) {
+	q := newQueue(t, "ignore_term")
+	t.Cleanup(func() { assertNoneRunning(t, q.path) }) // also when work hangs
+	a := q.create("hi")
+	b := q.create("dead")
+	dir := filepath.Join(q.home, "task")
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	// A dead worker's leftover group that, stopped by work's claim after the
+	// claim is written, makes the task directory read-only.
+	ready := filepath.Join(t.TempDir(), "ready")
+	g := exec.Command("sh", "-c", `trap 'chmod 500 "$1"; exit 0' TERM; : > "$0"; sleep 60 & wait`, ready, dir)
+	g.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := g.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = g.Wait() }()
+	waitFile(t, ready)
+	q.setRunning(b, map[string]any{"token": "dead", "pgid": g.Process.Pid})
+	q.writeLockFile(b)
+
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	out := s.waitOrKill(t, 3*time.Second) // under the 5 s grace
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || !strings.Contains(e.Message, a) {
+		t.Errorf("work: code=%d stdout=%q", out.code, out.stdout)
+	}
+	assertNoneRunning(t, q.path)
+
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if out := q.run("list"); out.code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", a, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+		t.Errorf("after the worker exited: %+v", r)
+	}
+}
+
 // A run's timeout counts from its agent's start, however long another command
 // holds the directory lock (#44).
 func TestTaskTimeoutWhileDirLocked(t *testing.T) {
