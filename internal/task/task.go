@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/agent-in-the-shell/aits/internal/shell"
 	"github.com/agent-in-the-shell/aits/internal/store"
@@ -137,8 +138,20 @@ func Create(environ []string, s Spec) (Task, error) {
 }
 
 // validate checks t as the request it will be run as, with timeout as given
-// rather than its stored form (P6).
+// rather than its stored form (P6). The record is JSON text, which would
+// replace bytes that are not UTF-8 with U+FFFD, so they are refused.
 func (t Task) validate(timeout time.Duration) error {
+	if !utf8.ValidString(t.Prompt) {
+		return invalid("the prompt is not valid UTF-8")
+	}
+	if !utf8.ValidString(t.Cwd) {
+		return invalid("working directory %q is not valid UTF-8", t.Cwd)
+	}
+	for _, name := range t.Env {
+		if !utf8.ValidString(name) {
+			return invalid("environment variable name %q is not valid UTF-8", name)
+		}
+	}
 	r := t.request(nil)
 	r.Timeout = timeout
 	if err := r.Validate(); err != nil {

@@ -291,6 +291,30 @@ func TestTaskEscapesAgentText(t *testing.T) {
 	}
 }
 
+// A task is stored as JSON text, which cannot hold bytes that are not UTF-8:
+// create refuses them, naming which input, rather than store U+FFFD in their
+// place and run the agent with a different prompt (P6, #84).
+func TestTaskCreateRefusesInvalidUTF8(t *testing.T) {
+	q := newQueue(t, "ok")
+	bad := "caf\xe9"
+	for name, tt := range map[string]struct {
+		args []string
+		want string
+	}{
+		"prompt": {[]string{"--agent", "claude", "--cwd", t.TempDir(), bad}, "the prompt is not valid UTF-8"},
+		"cwd":    {[]string{"--agent", "claude", "--cwd", "/tmp/" + bad, "hi"}, `working directory "/tmp/caf\xe9" is not valid UTF-8`},
+		"env":    {[]string{"--agent", "claude", "--cwd", t.TempDir(), "--env", bad, "hi"}, `environment variable name "caf\xe9" is not valid UTF-8`},
+	} {
+		out := q.run(append([]string{"create", "--json"}, tt.args...)...)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != tt.want {
+			t.Errorf("%s: code=%d stdout=%q, want invalid_input %q", name, out.code, out.stdout, tt.want)
+		}
+	}
+	if q.queuedAny() {
+		t.Errorf("a task with invalid UTF-8 was queued")
+	}
+}
+
 // A recorded run without a status is refused rather than printed, in both
 // modes (P6, #61).
 func TestTaskShowRunWithoutStatus(t *testing.T) {
