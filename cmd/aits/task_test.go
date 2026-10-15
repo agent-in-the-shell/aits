@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -244,6 +245,30 @@ func TestTaskCreateTimeoutMilliseconds(t *testing.T) {
 	id := q.create("hi", "--timeout", "2ms")
 	if s := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); s.TimeoutMS != 2 {
 		t.Errorf("timeout_ms = %d, want 2", s.TimeoutMS)
+	}
+}
+
+// A task file that cannot even be checked for (here its path is too long,
+// while the queue's lock file is not) fails create with internal at once,
+// rather than retrying new ids forever under the lock (P6, P10, #80).
+func TestTaskCreateCannotCheckID(t *testing.T) {
+	pathMax := map[string]int{"darwin": 1024, "linux": 4096}[runtime.GOOS]
+	if pathMax == 0 {
+		t.Skipf("PATH_MAX unknown on %s", runtime.GOOS)
+	}
+	// The task directory is $AITS_HOME/task; "/.lock" fits, "/<id>.json" does not.
+	home := t.TempDir()
+	for want := pathMax - 15 - len("/task"); len(home) < want; {
+		home = filepath.Join(home, strings.Repeat("d", min(200, want-len(home)-1)))
+	}
+	q := queue{t: t, home: home, path: vendor(t, "ok")}
+	s := call{path: q.path, env: []string{"AITS_HOME=" + home}, args: []string{"task", "create", "--agent", "claude", "--cwd", t.TempDir(), "--json", "hi"}}.start(t)
+	out := s.waitOrKill(t, 10*time.Second)
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" {
+		t.Errorf("create: code=%d stdout=%q", out.code, out.stdout)
+	}
+	if out := q.run("list", "--json"); out.code != 0 {
+		t.Errorf("list after create: code=%d stdout=%q", out.code, out.stdout)
 	}
 }
 
