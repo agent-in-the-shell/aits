@@ -57,7 +57,6 @@ group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
 
 Errors (nothing was started):
-  unknown_command     exit 2  No such command.
   unknown_flag        exit 2  No such flag for this command.
   invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
   agent_not_found     exit 1  The agent CLI is not on PATH.
