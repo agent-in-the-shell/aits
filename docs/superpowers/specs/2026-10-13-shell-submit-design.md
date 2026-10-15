@@ -65,14 +65,12 @@ All input is validated before anything is started; any failure exits 2 with
   guessed, no prefix matching, no "did you mean".
 - A flag that takes one value may be given once; a second one is
   `invalid_input`, never a silent override. Flags marked "Repeatable." in
-  help (`--env`) may repeat. So may boolean flags, today only `--json`, and
-  the last one wins: the error channel is chosen from the raw line before it
-  is parsed, so a conflict there could not be reported on a known channel
-  (#85).
+  help (`--env`) may repeat. So may boolean flags (`--json`); the last one
+  wins, since a conflict could not be reported on a known channel (#85).
 - `--help` prints help only once the whole line parses: an unknown flag or a
   bad value anywhere on it is still a usage error, at a group as at a leaf
   (#85).
-- Errors: with `--json` anywhere before `--`, the error is
+- Errors: when the last `--json` before `--` is true, the error is
   `{"error":{"code":"…","message":"…"}}` on stdout; otherwise
   `aits: <message>` on stderr. Exit 2 for input errors, 1 for runtime
   errors. A `--json` that another flag took as its value still selects JSON,

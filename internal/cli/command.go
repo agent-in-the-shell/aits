@@ -101,8 +101,7 @@ func dispatch(ctx context.Context, root *Command, args []string, env *Env) (int,
 		return 0, err
 	}
 	fs, run := cmd.flags(path)
-	// env.JSON stays as Run set it from the whole line (wantsJSON), so that a
-	// --json another flag took as its value still selects JSON.
+	// fs's --json is ignored: env.JSON comes from the whole line (wantsJSON).
 	positional, err := parseArgs(fs, rest)
 	if err != nil && err != errHelp {
 		return 0, err
