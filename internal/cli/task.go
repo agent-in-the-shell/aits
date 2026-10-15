@@ -52,7 +52,8 @@ func taskCreate() *Command {
 
 Follow-ups (--after ID): --agent and --cwd, if given, must be ID's (--cwd
 is made absolute, symlinks not resolved). ID must not have failed or ended
-without a session, and may have only one follow-up that has not failed. If
+without a session, and may have only one follow-up that has not failed (one
+whose worker died counts until its agent is stopped; try again then). If
 ID fails, the next list or work fails the follow-up (run status
 not_started); until then show reports it queued. An unreadable task file
 makes create fail (internal).

@@ -139,12 +139,19 @@ func (q queue) patch(id string, fields map[string]any) []byte {
 // waitLease waits until task id records the agent's process group pgid.
 func (q queue) waitLease(id string, pgid int) {
 	q.t.Helper()
+	q.waitShow(id, func(r taskRecord) bool { return r.Lease != nil && r.Lease.PGID == pgid })
+}
+
+// waitShow waits until task id, as show prints it, satisfies ok.
+func (q queue) waitShow(id string, ok func(taskRecord) bool) {
+	q.t.Helper()
+	var r taskRecord
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		if r := decodeOne[taskRecord](q.t, q.run("show", id, "--json").stdout); r.Lease != nil && r.Lease.PGID == pgid {
+		if r = decodeOne[taskRecord](q.t, q.run("show", id, "--json").stdout); ok(r) {
 			return
 		}
 	}
-	q.t.Fatalf("task %s never recorded pgid %d", id, pgid)
+	q.t.Fatalf("task %s never matched; last %+v", id, r)
 }
 
 // queuedAny reports whether any task record exists.
@@ -864,6 +871,29 @@ func TestTaskFollowUpWaitsForParent(t *testing.T) {
 		r.Run.Status != "not_started" || r.Run.Message != "its parent task "+p+" failed" {
 		t.Errorf("follow-up of a failed parent = %+v", r)
 	}
+}
+
+// A follow-up whose worker died does not count against its parent's one
+// follow-up once failed, but only after its agent is gone: while list is
+// still stopping that agent, a retry is refused, so two agents never resume
+// the parent's session at once (P10, #76).
+func TestTaskFollowUpRetryWaitsForStop(t *testing.T) {
+	q := newQueue(t, "ok")
+	p := q.create("parent")
+	q.patch(p, map[string]any{"status": "done", "run": map[string]any{"status": "ok", "agent": "claude", "session_id": "sess-p", "answer": "a", "finished_at": time.Now().UTC()}})
+	f := q.after(p, "first try")
+	g := q.deadWorker(f, `trap '' TERM; : > "$0"; exec sleep 60`) // ignores TERM for the 5s grace
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "list", "--json"}}.start(t)
+	q.waitShow(f, func(r taskRecord) bool { return r.Status == "failed" })
+	out := q.run("create", "--after", p, "--json", "retry")
+	if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || !strings.Contains(e.Message, f) {
+		t.Errorf("retry while %s's agent is being stopped: code=%d stdout=%q", f, out.code, out.stdout)
+	}
+	_ = syscall.Kill(-g, syscall.SIGKILL) // end the grace period early
+	if out := s.waitOrKill(t, 15*time.Second); out.code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+	}
+	q.after(p, "retry")
 }
 
 // create --after refuses what it cannot run as asked, and writes nothing

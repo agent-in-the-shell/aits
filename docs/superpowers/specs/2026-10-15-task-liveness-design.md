@@ -101,9 +101,10 @@ task, `TryLock(<id>.lock, create=false)`:
 - **lock obtained**: the worker is gone. Re-read the record (the worker may
   have written its pgid since the load; a failed re-read is returned as an
   error and leaves the task unchanged). Set `failed`, `lease: null`, `run`
-  with status `worker_died`, its message and `finished_at`. Write the task,
-  release L, and collect its non-zero `pgid` to stop after D is released
-  (`shell.Stop`, as today).
+  with status `worker_died`, its message and `finished_at`. Write the task
+  and collect its non-zero `pgid` to stop after D is released (`shell.Stop`,
+  as today). L is kept until that stop returns, so a held lock still means
+  the task's agent may be running (#76).
 - **`ErrLocked`**: a live worker holds it; leave the task.
 - **missing**: leave the task `running`; add its id to `Unknown`.
 - **any other error**: stop and return it. `list` and `work` fail with
@@ -143,6 +144,15 @@ ignored, and a running record with a lease stays valid.
   failed write as its message; if that write fails too, `work` fails
   (`internal`) and the task is reclaimed as `worker_died` once the worker has
   exited (#56).
+- A reclaim whose process is killed after it records a dead worker's task
+  `failed` and before its stop is done releases that task's lock early. No
+  later reclaim stops the agent: one not yet sent TERM, or one that ignores
+  TERM (its SIGKILL timer died with the reclaim), keeps running, and a
+  retried follow-up can run beside it (#76). Only SIGKILL or a crash does
+  this; aits catches the other signals. Recording `failed` only after the
+  stop would close it, but the stop runs without D, so a lock file replaced
+  by hand would give the record two writers, and the record would depend on
+  the stop's side effects.
 - Without D, the pgid write's token check and write are not atomic: if a
   lock file is removed by hand, a reclaim or claim that writes the record
   during that write can be undone by it.

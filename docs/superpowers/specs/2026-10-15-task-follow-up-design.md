@@ -32,7 +32,7 @@ names as a failure to avoid. The task-queue spec deferred this (§1).
 | A parent that fails | The follow-up becomes `failed` the next time `list` or `work` reclaims, with run status `not_started` and the message `its parent task ID failed`. This also covers a parent that cannot have been followed: its file is gone (`does not exist`), or it is `done` with no session id (`has no session`) | P6; no new status (P14): `not_started` already means the agent never ran |
 | Parent already `failed`, or `done` without a session id, at create | `invalid_input`: `task ID failed; only a done task with a session can be followed up` (or `has no session; …`) | P6: refuse at once rather than queue a task that can only fail |
 | Chains | A follow-up of a follow-up works the same way. `--after` names a task that exists, so no cycle can be built | — |
-| Fan-out | A task has at most one follow-up that is not `failed`. A second `--after` on the same parent is `invalid_input`, naming the existing one. A failed follow-up does not count, so it can be retried with another `--after` on the same parent | Codex resumes a session in place (shell-codex spec §4). Two follow-ups of one parent could run at once in two workers and write one conversation concurrently; that is undefined, so it is refused (P6). A failed follow-up never runs again, so it cannot race. **This narrows #63**, whose out-of-scope note said fan-out "needs no extra work" (P11: the deviation is stated here) |
+| Fan-out | A task has at most one follow-up that is not `failed`. A second `--after` on the same parent is `invalid_input`, naming the existing one. A failed follow-up does not count, except a `worker_died` one until its reclaim has stopped its agent (#76), so it can be retried with another `--after` on the same parent | Codex resumes a session in place (shell-codex spec §4). Two follow-ups of one parent could run at once in two workers and write one conversation concurrently; that is undefined, so it is refused (P6). **This narrows #63**, whose out-of-scope note said fan-out "needs no extra work" (P11: the deviation is stated here) |
 | An unreadable task file at create | `--after` fails with `internal`, naming the file, and writes nothing: whether it is a follow-up of the same parent cannot be told | P6: cannot determine is not allowed through. `list` and `work` are unaffected |
 | A parent that cannot be read at work | The follow-up stays `queued` and is passed over; the parent is reported as skipped, as today | P10: an unreadable task file is left as it is |
 | New error codes | None | P14 |
@@ -118,6 +118,10 @@ change.
 - A worker of an earlier aits ignores `after`: it can claim a follow-up
   before its parent is done and run it in a new conversation, and its
   writes drop the field. As for #37, run one aits version per `AITS_HOME`.
+- A worker that dies after its agent started but before it recorded the
+  pgid, or a reclaim killed while it stops a dead worker's agent (liveness
+  spec §5), leaves an agent nobody stops; a retry of that follow-up can run
+  beside it.
 - A lock file removed by hand (liveness spec §5) loses that fallback: if a
   listing then also misses its running task's record, a follow-up of it can
   be failed as `does not exist`, or a second follow-up created.
