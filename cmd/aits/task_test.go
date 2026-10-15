@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,8 +27,9 @@ type taskRecord struct {
 	Env       []string `json:"env"`
 	CreatedAt string   `json:"created_at"`
 	Lease     *struct {
-		Token string `json:"token"`
-		PGID  int    `json:"pgid"`
+		Token     string `json:"token"`
+		PGID      int    `json:"pgid"`
+		StartedAt string `json:"started_at"`
 	} `json:"lease"`
 	Run *struct {
 		Status     string `json:"status"`
@@ -203,6 +205,22 @@ func TestTaskNotStartedHasNoStartedAt(t *testing.T) {
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Run == nil || w.Run.Status != "not_started" || w.Run.StartedAt != "" {
 		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
+	// No exit code or duration: an agent that never ran has neither (P6, #57).
+	if got := runKeys(t, out.stdout); !slices.Equal(got, []string{"agent", "finished_at", "message", "status"}) {
+		t.Errorf("run keys = %v", got)
+	}
+}
+
+// runKeys returns the sorted keys of a task record's run.
+func runKeys(t *testing.T, stdout string) []string {
+	t.Helper()
+	var r struct{ Run map[string]any }
+	if err := json.Unmarshal([]byte(stdout), &r); err != nil {
+		t.Fatal(err)
+	}
+	keys := slices.Collect(maps.Keys(r.Run))
+	slices.Sort(keys)
+	return keys
 }
 
 // Claims are atomic: as many workers as tasks, started together, run each
@@ -270,9 +288,9 @@ func TestTaskWorkStopped(t *testing.T) {
 	var raw struct {
 		Lease map[string]any `json:"lease"`
 	}
-	if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &raw); err != nil || len(raw.Lease) != 2 ||
-		raw.Lease["token"] == nil || raw.Lease["pgid"] == nil {
-		t.Errorf("lease = %v, want exactly token and pgid", raw.Lease)
+	if err := json.Unmarshal([]byte(q.run("show", id, "--json").stdout), &raw); err != nil || len(raw.Lease) != 3 ||
+		raw.Lease["token"] == nil || raw.Lease["pgid"] == nil || raw.Lease["started_at"] == nil {
+		t.Errorf("lease = %v, want exactly token, pgid and started_at", raw.Lease)
 	}
 	if out := q.run("list", "--json"); out.code != 0 || decodeOne[taskList](t, out.stdout).Tasks[0].Status != "running" {
 		t.Errorf("list while the worker runs: code=%d stdout=%q", out.code, out.stdout)
@@ -281,6 +299,10 @@ func TestTaskWorkStopped(t *testing.T) {
 	out := s.waitOrKill(t, 10*time.Second)
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 1 || w.Status != "failed" || w.Run.Status != "stopped" || w.Run.SessionID != "sess-fake-1" {
 		t.Fatalf("code=%d %+v", out.code, w)
+	}
+	// A run whose agent ran keeps every field of the shell result (#57).
+	if got := runKeys(t, out.stdout); !slices.Equal(got, []string{"agent", "duration_ms", "exit_code", "finished_at", "message", "session_id", "started_at", "status"}) {
+		t.Errorf("run keys = %v", got)
 	}
 }
 
@@ -316,8 +338,14 @@ func TestTaskWorkerKilled(t *testing.T) {
 	if out := q.run("list"); out.code != 0 {
 		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
 	}
-	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+	show := q.run("show", id, "--json").stdout
+	if r := decodeOne[taskRecord](t, show); r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
 		t.Errorf("after the worker was killed: %+v", r)
+	}
+	// When its agent started is known; its exit code and duration are not
+	// (P6, #57).
+	if got := runKeys(t, show); !slices.Equal(got, []string{"agent", "finished_at", "message", "started_at", "status"}) {
+		t.Errorf("run keys = %v", got)
 	}
 	assertGone(t, pgid)
 }

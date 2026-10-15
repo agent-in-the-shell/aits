@@ -266,13 +266,16 @@ Task fields (--json):
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
-  lease        While running: token, pgid.
-  run          Once worked: the "shell submit" result (status, session_id,
-               answer, exit_code, duration_ms, stderr_tail, message) plus
-               started_at and finished_at. run.status is a shell status,
-               not_started (the agent was never started; no started_at), or
+  lease        While running: token, pgid and, once the agent has started,
+               started_at.
+  run          Once worked: the "shell submit" result (status, agent,
+               session_id, answer, exit_code, duration_ms, stderr_tail,
+               message) plus started_at and finished_at. run.status is a
+               shell status, not_started (the agent was never started), or
                worker_died (its worker exited first; set by the next work or
-               list).
+               list). A not_started or worker_died run has no exit_code and
+               no duration_ms, which are unknown; only a worker_died run whose
+               agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
@@ -301,13 +304,16 @@ Task fields (--json):
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
-  lease        While running: token, pgid.
-  run          Once worked: the "shell submit" result (status, session_id,
-               answer, exit_code, duration_ms, stderr_tail, message) plus
-               started_at and finished_at. run.status is a shell status,
-               not_started (the agent was never started; no started_at), or
+  lease        While running: token, pgid and, once the agent has started,
+               started_at.
+  run          Once worked: the "shell submit" result (status, agent,
+               session_id, answer, exit_code, duration_ms, stderr_tail,
+               message) plus started_at and finished_at. run.status is a
+               shell status, not_started (the agent was never started), or
                worker_died (its worker exited first; set by the next work or
-               list).
+               list). A not_started or worker_died run has no exit_code and
+               no duration_ms, which are unknown; only a worker_died run whose
+               agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.

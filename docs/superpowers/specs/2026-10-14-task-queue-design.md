@@ -68,13 +68,16 @@ ordered by `created_at` (nanoseconds), since several can share a second.
 - `status`: `queued`, `running`, `done`, `failed`.
 - `env`: variable names only; values are read from the worker's environment
   at `work` time (P8).
-- `lease` (while `running`): `{"token","pgid"}`; `pgid` is 0 until the agent
-  has started.
+- `lease` (while `running`): `{"token","pgid","started_at"}`; `pgid` is 0
+  and `started_at` absent until the agent has started (#57).
 - `run`: the fields of `shell.Result`, so answer and stderr are bounded as in
   `shell`; `run.status` is a shell status, or `not_started` when the agent
   could not be started after the claim (agent not on `PATH`, an `--env`
   variable unset in the worker's environment, start failure), or
   `worker_died` when the worker died (§6), with the reason in `message`.
+  These two have no `exit_code` or `duration_ms`, which are unknown, rather
+  than zeros that read as success (P6). A `worker_died` run has the lease's
+  `started_at` if its agent had started (#57).
 
 ## 5. Commands
 

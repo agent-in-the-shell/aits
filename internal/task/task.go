@@ -55,8 +55,9 @@ type Task struct {
 // Lease is a worker's claim on a running task. Whether the worker is alive is
 // not recorded: it holds the task's lock file while it runs (lockPath).
 type Lease struct {
-	Token string `json:"token"`
-	PGID  int    `json:"pgid"` // the agent's process group; 0 until it starts
+	Token     string    `json:"token"`
+	PGID      int       `json:"pgid"`                // the agent's process group; 0 until it starts
+	StartedAt time.Time `json:"started_at,omitzero"` // when the agent started, recorded with PGID
 }
 
 // Run is the outcome of working a task.
@@ -179,7 +180,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 		// long as another command holds it, in which a killed worker's agent
 		// is unrecorded and never stopped (P10). As holder of the task's lock
 		// the worker is the only writer of its running record.
-		if _, err := modify(dir, t.ID, token, func(t *Task) { t.Lease.PGID = pgid }); err != nil {
+		if _, err := modify(dir, t.ID, token, func(t *Task) { t.Lease.PGID, t.Lease.StartedAt = pgid, started }); err != nil {
 			return fmt.Errorf("the agent's process group could not be recorded: %w", err)
 		}
 		return nil
@@ -275,11 +276,11 @@ func reclaim(dir string) (snapshot, []int, error) {
 			continue
 		}
 		groups = append(groups, t.Lease.PGID)
-		t.Status, t.Lease = Failed, nil
 		t.Run = &Run{Result: shell.Result{
 			Status: WorkerDied, Agent: t.Agent,
 			Message: "the worker exited before it recorded a result",
-		}, FinishedAt: time.Now().UTC()}
+		}, StartedAt: t.Lease.StartedAt, FinishedAt: time.Now().UTC()}
+		t.Status, t.Lease = Failed, nil
 		err = write(dir, *t)
 		release()
 		if err != nil {
