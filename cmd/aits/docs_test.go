@@ -46,7 +46,7 @@ func TestCLIDocs(t *testing.T) {
 }
 
 // TestSubmitHelpDocumentsOutput enforces the P5 rule that output shapes are
-// documented in help: every result field, status and error code the code can
+// documented in help: every result field, status and error code submit can
 // produce has a row in "aits shell submit --help", and each error code's row
 // names the exit code it causes.
 func TestSubmitHelpDocumentsOutput(t *testing.T) {
@@ -76,7 +76,9 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 		}
 	}
 	documented := helpErrors(t, []string{"shell", "submit"})
-	for code, exit := range errorCodes(t, "../../internal/cli/*.go") {
+	// The files on submit's path: its command, flag parsing, and the error
+	// report. Group-level codes (command.go) are not submit's (#72).
+	for code, exit := range errorCodes(t, "../../internal/cli/shell.go", "../../internal/cli/parse.go", "../../internal/cli/cli.go") {
 		if documented[code] != exit {
 			t.Errorf("error code %q is not documented in help with %s", code, exit)
 		}
@@ -138,14 +140,16 @@ func commandPath(args []string) []string {
 	return args[:n]
 }
 
-// errorCodes maps each error code that the files glob names pass to
+// errorCodes maps each error code that the files the globs name pass to
 // usageError or failure to the exit code it causes.
-func errorCodes(t *testing.T, glob string) map[string]string {
+func errorCodes(t *testing.T, globs ...string) map[string]string {
 	t.Helper()
 	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
 	codes := map[string]string{}
-	for _, m := range sourceMatches(t, glob, `\b(usageError|failure)\(\s*"(\w+)"`) {
-		codes[m[2]] = exit[m[1]]
+	for _, glob := range globs {
+		for _, m := range sourceMatches(t, glob, `\b(usageError|failure)\(\s*"(\w+)"`) {
+			codes[m[2]] = exit[m[1]]
+		}
 	}
 	return codes
 }
