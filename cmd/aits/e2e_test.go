@@ -290,18 +290,24 @@ func TestSubmitAgentNotFound(t *testing.T) {
 	})
 }
 
+// What the fake's control_chars scenario reports, raw and as text mode shows
+// it (#83).
+const (
+	ctrlSession, ctrlSessionShown = "sess-\x1b[2K", `sess-\x1b[2K`
+	ctrlError, ctrlErrorShown     = "\x1b[2K\rall good\x1b]0;pwned\a", `\x1b[2K\rall good\x1b]0;pwned\a`
+)
+
 // In text mode, the agent's error and session id reach the terminal with
 // their control characters spelled as Go escapes, as session search prints
 // transcript text; --json keeps them as the agent sent them (P5, #83).
 func TestSubmitEscapesAgentText(t *testing.T) {
-	const raw, shown = "\x1b[2K\rall good\x1b]0;pwned\a", `\x1b[2K\rall good\x1b]0;pwned\a`
 	bin := vendor(t, "control_chars")
 	out := call{path: bin, args: submitArgs("hi")}.run(t)
-	if want := "aits: agent_failed: the agent reported an error: " + shown + "\nsession: sess-\\x1b[2K\n"; out.code != 1 || out.stderr != want {
+	if want := "aits: agent_failed: the agent reported an error: " + ctrlErrorShown + "\nsession: " + ctrlSessionShown + "\n"; out.code != 1 || out.stderr != want {
 		t.Errorf("text: code=%d stderr=%q, want %q", out.code, out.stderr, want)
 	}
 	out = call{path: bin, args: submitArgs("--json", "hi")}.run(t)
-	if r := decode(t, out.stdout); r.Message != "the agent reported an error: "+raw || r.SessionID != "sess-\x1b[2K" {
+	if r := decode(t, out.stdout); r.Message != "the agent reported an error: "+ctrlError || r.SessionID != ctrlSession {
 		t.Errorf("--json: %+v", r)
 	}
 }

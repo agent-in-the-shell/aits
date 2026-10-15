@@ -282,7 +282,7 @@ func TestTaskCreateCannotCheckID(t *testing.T) {
 func TestTaskEscapesAgentText(t *testing.T) {
 	q := newQueue(t, "control_chars")
 	id := q.create("hi")
-	want := "session: sess-\\x1b[2K\naits: task " + id + " failed: agent_failed: the agent reported an error: \\x1b[2K\\rall good\\x1b]0;pwned\\a\n"
+	want := "session: " + ctrlSessionShown + "\naits: task " + id + " failed: agent_failed: the agent reported an error: " + ctrlErrorShown + "\n"
 	if out := q.run("work"); out.code != 1 || out.stderr != want {
 		t.Errorf("work: code=%d stderr=%q, want %q", out.code, out.stderr, want)
 	}
