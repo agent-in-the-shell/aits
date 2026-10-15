@@ -125,8 +125,12 @@ func Create(environ []string, s Spec) (Task, error) {
 	}
 	for {
 		t.ID = fmt.Sprintf("%s-%06x", now.Format("20060102T150405"), rand.Uint32()&0xffffff)
-		if _, err := os.Stat(path(dir, t.ID)); errors.Is(err, os.ErrNotExist) {
+		_, err := os.Stat(path(dir, t.ID))
+		if errors.Is(err, os.ErrNotExist) {
 			break
+		}
+		if err != nil { // not a collision: another id would fail the same way (P6)
+			return Task{}, fmt.Errorf("a new task could not be named: %w", err)
 		}
 	}
 	return t, write(dir, t)
