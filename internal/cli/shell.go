@@ -83,11 +83,7 @@ func submitCommand() *Command {
 			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory).", "a directory")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
 			session := nonEmpty(fs, "session", "Continue the conversation `ID`: the session_id of an earlier result.", "a session id")
-			var pass []string
-			fs.Func("env", "Pass the variable `NAME` from this environment to the agent. Repeatable.", func(v string) error {
-				pass = append(pass, v)
-				return nil
-			})
+			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to the agent.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
@@ -95,7 +91,7 @@ func submitCommand() *Command {
 				}
 				res, err := shell.Submit(ctx, shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: pass, Session: *session, Kill: env.Kill,
+					Environ: env.Environ, Pass: *pass, Session: *session, Kill: env.Kill,
 				})
 				if err != nil {
 					return 0, submitError(err)

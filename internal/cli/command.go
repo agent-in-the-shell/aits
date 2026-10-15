@@ -45,11 +45,15 @@ func (c *Command) child(name string) *Command {
 	return nil
 }
 
-// leafFlags returns the flag set a leaf parses: its own flags plus --json.
-func (c *Command) leafFlags(path []string) (*flag.FlagSet, *bool, Runner) {
+// flags returns the flag set c parses: --json, and for a leaf its own flags
+// and its Runner. A group takes no other flag (isGlobalFlag).
+func (c *Command) flags(path []string) (*flag.FlagSet, Runner) {
 	fs := newFlagSet(strings.Join(path, " "))
-	jsonOut := fs.Bool("json", false, "Print the result, or the error, as JSON on stdout.")
-	return fs, jsonOut, c.Setup(fs)
+	fs.Bool("json", false, "Print the result, or the error, as JSON on stdout.")
+	if c.Setup == nil {
+		return fs, nil
+	}
+	return fs, c.Setup(fs)
 }
 
 // isGlobalFlag reports whether a may appear before the command path reaches a
@@ -96,20 +100,16 @@ func dispatch(ctx context.Context, root *Command, args []string, env *Env) (int,
 	if err != nil {
 		return 0, err
 	}
-	if cmd.Setup == nil {
-		writeHelp(env.Stdout, path, cmd)
-		return exitOK, nil
-	}
-	fs, jsonOut, run := cmd.leafFlags(path)
+	fs, run := cmd.flags(path)
+	// fs's --json is ignored: env.JSON comes from the whole line (wantsJSON).
 	positional, err := parseArgs(fs, rest)
-	if err == errHelp {
-		writeHelp(env.Stdout, path, cmd)
-		return exitOK, nil
-	}
-	if err != nil {
+	if err != nil && err != errHelp {
 		return 0, err
 	}
-	env.JSON = *jsonOut
+	if err == errHelp || run == nil {
+		writeHelp(env.Stdout, path, cmd)
+		return exitOK, nil
+	}
 	return run(ctx, env, positional)
 }
 
@@ -130,7 +130,7 @@ func writeHelp(w io.Writer, path []string, cmd *Command) {
 			usage += " " + cmd.Args
 		}
 		fmt.Fprintf(tw, "%s\n\n%s\n\nFlags:\n", usage, cmd.Summary)
-		fs, _, _ := cmd.leafFlags(path)
+		fs, _ := cmd.flags(path)
 		fs.VisitAll(func(f *flag.Flag) {
 			typ, text := flag.UnquoteUsage(f)
 			left := "  --" + f.Name

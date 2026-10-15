@@ -76,8 +76,8 @@ func writeJSON(w io.Writer, v any) {
 	_ = enc.Encode(v)
 }
 
-// wantsJSON reports whether --json is set before "--". It picks the error
-// channel for failures that happen before the flags are fully parsed.
+// wantsJSON reports whether the last --json before "--" is true. It selects
+// JSON for the error and the result, even when the line does not parse.
 func wantsJSON(args []string) bool {
 	on := false
 	for _, a := range args {

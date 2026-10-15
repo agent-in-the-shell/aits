@@ -33,10 +33,14 @@ func flagName(a string) (name, value string, hasValue, ok bool) {
 func isHelp(name string) bool { return name == "h" || name == "help" }
 
 // parseArgs parses args against fs, allowing flags before, between and after
-// positional arguments; "--" ends flag parsing (P4). It returns the
-// positional arguments in order.
+// positional arguments; "--" ends flag parsing (P4). A flag that takes one
+// value may be given once (P6: the last one does not silently win). --help
+// is honoured only once the whole line parses. It returns the positional
+// arguments in order.
 func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 	var flags, positional []string
+	seen := map[string]bool{}
+	help := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -49,12 +53,18 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 			continue
 		}
 		if isHelp(name) {
-			return nil, errHelp
+			help = true
+			continue
 		}
 		f := fs.Lookup(name)
 		if f == nil {
 			return nil, usageError("unknown_flag", "unknown flag %s", a)
 		}
+		_, many := f.Value.(*list)
+		if seen[f.Name] && !many && !isBoolFlag(f) {
+			return nil, usageError("invalid_input", "flag --%s is given more than once", f.Name)
+		}
+		seen[f.Name] = true
 		flags = append(flags, a)
 		if hasValue || isBoolFlag(f) {
 			continue
@@ -68,7 +78,24 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 	if err := fs.Parse(flags); err != nil {
 		return nil, usageError("invalid_input", "%v", err)
 	}
+	if help {
+		return nil, errHelp
+	}
 	return positional, nil
+}
+
+// list is the value of a flag that may be given more than once.
+type list []string
+
+func (l *list) String() string     { return "" }
+func (l *list) Set(s string) error { *l = append(*l, s); return nil }
+
+// repeated declares a flag that may be given more than once, and says so in
+// its help; each value is appended to the returned list.
+func repeated(fs *flag.FlagSet, name, usage string) *[]string {
+	l := new(list)
+	fs.Var(l, name, usage+" Repeatable.")
+	return (*[]string)(l)
 }
 
 func isBoolFlag(f *flag.Flag) bool {
