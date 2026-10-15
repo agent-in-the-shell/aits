@@ -46,10 +46,10 @@ func (c *Command) child(name string) *Command {
 }
 
 // leafFlags returns the flag set a leaf parses: its own flags plus --json.
-func (c *Command) leafFlags(path []string) (*flag.FlagSet, *bool, Runner) {
+func (c *Command) leafFlags(path []string) (*flag.FlagSet, Runner) {
 	fs := newFlagSet(strings.Join(path, " "))
-	jsonOut := fs.Bool("json", false, "Print the result, or the error, as JSON on stdout.")
-	return fs, jsonOut, c.Setup(fs)
+	fs.Bool("json", false, "Print the result, or the error, as JSON on stdout.")
+	return fs, c.Setup(fs)
 }
 
 // isGlobalFlag reports whether a may appear before the command path reaches a
@@ -96,20 +96,22 @@ func dispatch(ctx context.Context, root *Command, args []string, env *Env) (int,
 	if err != nil {
 		return 0, err
 	}
-	if cmd.Setup == nil {
-		writeHelp(env.Stdout, path, cmd)
-		return exitOK, nil
+	fs, run := newFlagSet(strings.Join(path, " ")), Runner(nil)
+	if cmd.Setup != nil {
+		fs, run = cmd.leafFlags(path)
+	} else {
+		fs.Bool("json", false, "") // a group's only flags are --json and --help
 	}
-	fs, jsonOut, run := cmd.leafFlags(path)
+	// env.JSON stays as Run set it from the whole line (wantsJSON), so that a
+	// --json another flag took as its value still selects the error channel.
 	positional, err := parseArgs(fs, rest)
-	if err == errHelp {
+	if err == errHelp || (err == nil && run == nil) {
 		writeHelp(env.Stdout, path, cmd)
 		return exitOK, nil
 	}
 	if err != nil {
 		return 0, err
 	}
-	env.JSON = *jsonOut
 	return run(ctx, env, positional)
 }
 
@@ -130,7 +132,7 @@ func writeHelp(w io.Writer, path []string, cmd *Command) {
 			usage += " " + cmd.Args
 		}
 		fmt.Fprintf(tw, "%s\n\n%s\n\nFlags:\n", usage, cmd.Summary)
-		fs, _, _ := cmd.leafFlags(path)
+		fs, _ := cmd.leafFlags(path)
 		fs.VisitAll(func(f *flag.Flag) {
 			typ, text := flag.UnquoteUsage(f)
 			left := "  --" + f.Name

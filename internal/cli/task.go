@@ -74,11 +74,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory, or with --after the parent's).", "a directory")
 			after := nonEmpty(fs, "after", "Continue the conversation of task `ID` once it is done, with its agent and cwd.", "a task id")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m, in whole milliseconds.")
-			var pass []string
-			fs.Func("env", "Pass the variable `NAME` from the worker's environment to the agent. Repeatable.", func(v string) error {
-				pass = append(pass, v)
-				return nil
-			})
+			pass := repeated(fs, "env", "Pass the variable `NAME` from the worker's environment to the agent. Repeatable.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
@@ -87,7 +83,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				if *after != "" && *cwd == "" {
 					dir = "" // the parent's
 				}
-				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Timeout: *timeout, Env: pass})
+				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Timeout: *timeout, Env: *pass})
 				if err != nil {
 					return 0, taskError(err)
 				}

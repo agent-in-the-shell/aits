@@ -97,3 +97,52 @@ func TestGrammarLeafFlagBeforeCommand(t *testing.T) {
 		t.Errorf("code=%d stdout=%q", out.code, out.stdout)
 	}
 }
+
+// #85: a flag that takes one value is refused when given twice, rather than
+// the last one silently winning; --env still repeats.
+func TestGrammarRepeatedFlag(t *testing.T) {
+	for _, args := range [][]string{
+		{"shell", "submit", "--agent", "claude", "--agent", "codex", "hi"},
+		{"task", "create", "--agent", "claude", "--agent", "codex", "hi"},
+		{"session", "search", "--agent", "claude", "--agent=codex", "x"},
+	} {
+		out := call{args: append(args, "--json")}.run(t)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != "flag --agent is given more than once" {
+			t.Errorf("aits %s: code=%d stdout=%q", strings.Join(args, " "), out.code, out.stdout)
+		}
+	}
+}
+
+// #85: --help prints help only once the whole line parses: an unknown flag or
+// a bad value is a usage error wherever it is, before or after --help, at a
+// group or at a leaf.
+func TestGrammarHelpChecksTheLine(t *testing.T) {
+	for args, code := range map[string]string{
+		"task list --help --bogus":         "unknown_flag",
+		"task list --bogus --help":         "unknown_flag",
+		"task --json=notabool":             "invalid_input",
+		"task --help --json=notabool":      "invalid_input",
+		"task list --json=notabool --help": "invalid_input",
+	} {
+		out := call{args: strings.Fields(args)}.run(t)
+		if out.code != 2 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") {
+			t.Errorf("aits %s: code=%d stdout=%q stderr=%q, want %s", args, out.code, out.stdout, out.stderr, code)
+		}
+	}
+}
+
+// #85: once --json appears before "--", errors are the JSON envelope on
+// stdout, even when another flag took --json as its value (shell-submit spec
+// §4).
+func TestGrammarJSONTakenAsValue(t *testing.T) {
+	for _, args := range [][]string{
+		{"shell", "submit", "--agent", "--json", "hi"},
+		{"shell", "submit", "--agent", "claude", "--timeout", "--json", "hi"},
+		{"task", "create", "--after", "--json", "hi"},
+	} {
+		out := call{args: args}.run(t)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || out.stderr != "" {
+			t.Errorf("aits %s: code=%d stdout=%q stderr=%q", strings.Join(args, " "), out.code, out.stdout, out.stderr)
+		}
+	}
+}

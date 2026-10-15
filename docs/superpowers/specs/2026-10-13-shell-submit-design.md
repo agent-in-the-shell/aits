@@ -63,9 +63,16 @@ All input is validated before anything is started; any failure exits 2 with
   (the standard library's behaviour), boolean flags take no value.
 - Unknown command, unknown flag, missing flag value: exit 2. Nothing is
   guessed, no prefix matching, no "did you mean".
+- A flag that takes one value may be given once; a second one is
+  `invalid_input`, never a silent override. Flags marked "Repeatable." in
+  help (`--env`) and boolean flags (`--json`) may repeat (#85).
+- `--help` prints help only once the whole line parses: an unknown flag or a
+  bad value anywhere on it is still a usage error, at a group as at a leaf
+  (#85).
 - Errors: with `--json` anywhere before `--`, the error is
-  `{"error":{"code":"…","message":"…"}}` on stdout; otherwise
-  `aits: <message>` on stderr. Exit 2 for input errors, 1 for runtime errors.
+  `{"error":{"code":"…","message":"…"}}` on stdout, even when another flag
+  took that `--json` as its value (#85); otherwise `aits: <message>` on
+  stderr. Exit 2 for input errors, 1 for runtime errors.
 
 ## 5. Running Claude (`internal/shell`)
 
