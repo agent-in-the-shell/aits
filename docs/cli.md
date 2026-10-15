@@ -224,14 +224,12 @@ invalid_input.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
-Follow-ups (--after ID): the task continues task ID's conversation, with its
-agent and cwd; --agent or --cwd, if given, must be the same (--cwd is made
-absolute, symlinks not resolved). It is claimed only once ID is done, and
-runs with ID's session id. If ID fails, the next list or work fails the
-follow-up, with run status not_started; until then show reports it queued.
-ID must not have failed, and may have one follow-up that has not failed.
-If a task file cannot be read, whether ID already has one cannot be told,
-and create fails (internal).
+Follow-ups (--after ID): --agent and --cwd, if given, must be ID's (--cwd
+is made absolute, symlinks not resolved). ID must not have failed or ended
+without a session, and may have only one follow-up that has not failed. If
+ID fails, the next list or work fails the follow-up (run status
+not_started); until then show reports it queued. An unreadable task file
+makes create fail (internal).
 
 Exit codes:
   0  Queued.
@@ -294,12 +292,12 @@ Task fields (--json):
   run          Once worked: the "shell submit" result (status, agent,
                session_id, answer, exit_code, duration_ms, stderr_tail,
                message) plus started_at and finished_at. run.status is a
-               shell status, not_started (the agent was never started: it could not
-               be started after the claim, or the task's parent failed), or
-               worker_died (its worker exited first; set by the next work or
-               list). A not_started or worker_died run has no exit_code and
-               no duration_ms, which are unknown; only a worker_died run whose
-               agent had started has started_at.
+               shell status, not_started (the agent was never started: it
+               could not be started after the claim, or the task's parent
+               failed), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died run has no
+               exit_code and no duration_ms, which are unknown; only a
+               worker_died run whose agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
@@ -334,12 +332,12 @@ Task fields (--json):
   run          Once worked: the "shell submit" result (status, agent,
                session_id, answer, exit_code, duration_ms, stderr_tail,
                message) plus started_at and finished_at. run.status is a
-               shell status, not_started (the agent was never started: it could not
-               be started after the claim, or the task's parent failed), or
-               worker_died (its worker exited first; set by the next work or
-               list). A not_started or worker_died run has no exit_code and
-               no duration_ms, which are unknown; only a worker_died run whose
-               agent had started has started_at.
+               shell status, not_started (the agent was never started: it
+               could not be started after the claim, or the task's parent
+               failed), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died run has no
+               exit_code and no duration_ms, which are unknown; only a
+               worker_died run whose agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.

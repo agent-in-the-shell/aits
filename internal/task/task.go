@@ -147,19 +147,18 @@ func (t Task) validate(timeout time.Duration) error {
 }
 
 // follow makes t a follow-up of task t.After, under the directory lock: the
-// parent must exist and not have failed, t takes its agent and cwd, and the
-// parent may have no other follow-up that is not failed (#63).
+// parent must exist and not have failed or ended without a session, t takes
+// its agent and cwd, and the parent may have no other follow-up that is not
+// failed (#63).
 func (t *Task) follow(dir string, timeout time.Duration) error {
-	p, err := read(dir, t.After)
-	if errors.Is(err, os.ErrNotExist) {
-		return invalid("no task %s", t.After)
-	}
+	p, err := find(dir, t.After)
 	if err != nil {
 		return err
 	}
+	if why := parentFault(&p, false); why != "" {
+		return invalid("task %s %s; only a done task with a session can be followed up", p.ID, why)
+	}
 	switch {
-	case p.Status == Failed:
-		return invalid("task %s failed; only a done task can be followed up", p.ID)
 	case t.Agent != "" && t.Agent != p.Agent:
 		return invalid("agent %s is not task %s's agent %s", t.Agent, p.ID, p.Agent)
 	case t.Cwd != "" && t.Cwd != p.Cwd:
@@ -207,6 +206,11 @@ func Show(environ []string, id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	return find(dir, id)
+}
+
+// find reads task id in dir; an unknown id is a *shell.InvalidRequestError.
+func find(dir, id string) (Task, error) {
 	t, err := read(dir, id)
 	if errors.Is(err, os.ErrNotExist) {
 		return Task{}, invalid("no task %s", id)
@@ -214,9 +218,9 @@ func Show(environ []string, id string) (Task, error) {
 	return t, err
 }
 
-// Work reclaims tasks of dead workers, claims the oldest queued task (of
+// Work reclaims tasks of dead workers, claims the oldest claimable task (of
 // agent, if not empty), runs it through shell and records the run. It also
-// returns the notes of the reclaim. The task is nil when nothing is queued;
+// returns the notes of the reclaim. The task is nil when nothing is claimable;
 // the error is shell.ErrStopped when ctx is done before the claim, and
 // errReclaimed, wrapped with the task id, when the task was reclaimed.
 func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent string) (*Task, Notes, error) {
@@ -316,7 +320,8 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 // reclaim, under the lock, loads every task and fails each running one whose
 // lock file it can lock: no worker holds it, so the worker is gone. A held
 // lock is a live worker, whatever its age (P10); a missing lock file cannot be
-// judged and is noted (P6); any other error stops it. It returns what it
+// judged and is noted (P6); any other error stops it. It then fails each
+// queued follow-up that can never run (parentFault). It returns what it
 // loaded and the agent process groups to stop once the lock is free.
 func reclaim(dir string) (snapshot, []int, error) {
 	s, err := load(dir)

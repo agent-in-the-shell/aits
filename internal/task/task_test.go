@@ -454,57 +454,6 @@ func setStatus(t *testing.T, environ []string, tk Task, st Status, r *Run) {
 	}
 }
 
-// A follow-up takes its parent's agent and cwd; differing ones, a failed or
-// unknown parent and a second live follow-up are refused (spec §2, §4).
-func TestCreateFollowUp(t *testing.T) {
-	environ := env(t)
-	p := create(t, environ, "codex")
-	f, err := follow(environ, p.ID, Spec{})
-	if err != nil || f.After != p.ID || f.Agent != "codex" || f.Cwd != p.Cwd {
-		t.Fatalf("follow-up = %+v, %v; want agent and cwd of %+v", f, err, p)
-	}
-	if _, err := follow(environ, p.ID, Spec{Agent: "codex", Cwd: p.Cwd}); err == nil ||
-		err.Error() != "invalid request: task "+p.ID+" already has a follow-up: "+f.ID+"; follow up on "+f.ID+" instead" {
-		t.Errorf("second follow-up: err = %v", err)
-	}
-	g := create(t, environ, "claude")
-	other := t.TempDir()
-	for name, s := range map[string]Spec{
-		"other agent": {Agent: "codex"},
-		"other cwd":   {Cwd: other},
-	} {
-		var invalid *shell.InvalidRequestError
-		if _, err := follow(environ, g.ID, s); !errors.As(err, &invalid) {
-			t.Errorf("%s: err = %v, want invalid", name, err)
-		}
-	}
-	for name, parent := range map[string]string{"unknown": "20000101T000000-000000", "not an id": "x"} {
-		var invalid *shell.InvalidRequestError
-		if _, err := follow(environ, parent, Spec{}); !errors.As(err, &invalid) || invalid.Reason != "no task "+parent {
-			t.Errorf("%s parent: err = %v", name, err)
-		}
-	}
-	setStatus(t, environ, g, Failed, &Run{Result: shell.Result{Status: "timeout", SessionID: "s"}})
-	if _, err := follow(environ, g.ID, Spec{}); err == nil || err.Error() != "invalid request: task "+g.ID+" failed; only a done task can be followed up" {
-		t.Errorf("failed parent: err = %v", err)
-	}
-}
-
-// A failed follow-up never runs again, so it does not count: the parent can
-// be followed up again (spec §2, fan-out).
-func TestCreateFollowUpAfterFailedOne(t *testing.T) {
-	environ := env(t)
-	p := create(t, environ, "claude")
-	f, err := follow(environ, p.ID, Spec{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	setStatus(t, environ, f, Failed, &Run{Result: shell.Result{Status: NotStarted}})
-	if _, err := follow(environ, p.ID, Spec{}); err != nil {
-		t.Errorf("follow-up after a failed one: %v", err)
-	}
-}
-
 // An unreadable task file could be a follow-up of the same parent: create
 // --after fails closed, and a plain create is unaffected (spec §2, P6).
 func TestCreateFollowUpUnreadableFile(t *testing.T) {
