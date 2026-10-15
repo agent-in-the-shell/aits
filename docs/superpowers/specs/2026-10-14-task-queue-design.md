@@ -107,8 +107,8 @@ invalid input (P5).
 
 `aits task show ID`
 - `--json`: the task record (§4); text: what `work` prints for the task
-  (table below), or only its first line before it has a run. Exit 0, whatever
-  the task's status (#62).
+  (table below), or only `ID  STATUS  AGENT  CWD` before it has a run.
+  Exit 0, whatever the task's status (#62).
 - Unknown id: `invalid_input` (`no task ID`), exit 2.
 
 `aits task work [--agent AGENT]`
