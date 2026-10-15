@@ -165,7 +165,11 @@ func (q queue) count() int {
 
 func (q queue) create(prompt string, flags ...string) string {
 	q.t.Helper()
-	return created(q.t, q.run(append(append([]string{"create", "--agent", "claude", "--cwd", q.t.TempDir(), "--json"}, flags...), prompt)...))
+	args := []string{"create", "--cwd", q.t.TempDir(), "--json"}
+	if !slices.Contains(flags, "--agent") {
+		args = append(args, "--agent", "claude")
+	}
+	return created(q.t, q.run(append(append(args, flags...), prompt)...))
 }
 
 // after queues a follow-up of parent with flags and returns its id.
@@ -861,7 +865,7 @@ func TestTaskCreatePromptFromStdinBound(t *testing.T) {
 func TestTaskFollowUpResumesParentSession(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		q := queue{t: t, home: t.TempDir(), path: vendorAs(t, agent, "ok")}
-		p := created(t, q.run("create", "--agent", agent, "--cwd", t.TempDir(), "--json", "review"))
+		p := q.create("review", "--agent", agent)
 		if out := q.run("work"); out.code != 0 {
 			t.Fatalf("work: code=%d stderr=%q", out.code, out.stderr)
 		}

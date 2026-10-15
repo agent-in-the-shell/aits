@@ -117,16 +117,16 @@ func TestGrammarRepeatedFlag(t *testing.T) {
 // a bad value is a usage error wherever it is, before or after --help, at a
 // group or at a leaf.
 func TestGrammarHelpChecksTheLine(t *testing.T) {
-	for args, code := range map[string]string{
-		"task list --help --bogus":         "unknown_flag",
-		"task list --bogus --help":         "unknown_flag",
-		"task --json=notabool":             "invalid_input",
-		"task --help --json=notabool":      "invalid_input",
-		"task list --json=notabool --help": "invalid_input",
+	for _, args := range []string{
+		"task list --help --bogus",
+		"task list --bogus --help",
+		"task --json=notabool",
+		"task --help --json=notabool",
+		"task list --json=notabool --help",
 	} {
 		out := call{args: strings.Fields(args)}.run(t)
 		if out.code != 2 || out.stdout != "" || !strings.HasPrefix(out.stderr, "aits: ") {
-			t.Errorf("aits %s: code=%d stdout=%q stderr=%q, want %s", args, out.code, out.stdout, out.stderr, code)
+			t.Errorf("aits %s: code=%d stdout=%q stderr=%q, want a usage error", args, out.code, out.stdout, out.stderr)
 		}
 	}
 }

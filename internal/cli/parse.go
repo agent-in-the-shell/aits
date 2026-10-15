@@ -60,7 +60,8 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 		if f == nil {
 			return nil, usageError("unknown_flag", "unknown flag %s", a)
 		}
-		if _, ok := f.Value.(*list); seen[f.Name] && !ok && !isBoolFlag(f) {
+		_, many := f.Value.(*list)
+		if seen[f.Name] && !many && !isBoolFlag(f) {
 			return nil, usageError("invalid_input", "flag --%s is given more than once", f.Name)
 		}
 		seen[f.Name] = true
@@ -89,11 +90,11 @@ type list []string
 func (l *list) String() string     { return "" }
 func (l *list) Set(s string) error { *l = append(*l, s); return nil }
 
-// repeated declares a flag that may be given more than once; each value is
-// appended to the returned list.
+// repeated declares a flag that may be given more than once, and says so in
+// its help; each value is appended to the returned list.
 func repeated(fs *flag.FlagSet, name, usage string) *[]string {
 	l := new(list)
-	fs.Var(l, name, usage)
+	fs.Var(l, name, usage+" Repeatable.")
 	return (*[]string)(l)
 }
 
