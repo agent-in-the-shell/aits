@@ -52,6 +52,8 @@ func TestOutputChannels(t *testing.T) {
 			result: jsonIs(`{"id":"{ID}","status":"queued"}`), stdout: "{ID}\n"},
 		{name: "task create without agent", scenario: "ok", args: []string{"task", "create", "--cwd", "{DIR}", "hi"}, code: 2,
 			errCode: "invalid_input", errMsg: "agent is required (one of: claude, codex)"},
+		{name: "task create after unknown", scenario: "ok", args: []string{"task", "create", "--after", "20000101T000000-000000", "hi"}, code: 2,
+			errCode: "invalid_input", errMsg: "no task 20000101T000000-000000"},
 		{name: "task create internal", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"}, code: 1,
 			setup: homeIsFile, errCode: "internal"},
 

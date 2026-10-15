@@ -25,6 +25,7 @@ type taskRecord struct {
 	Prompt    string   `json:"prompt"`
 	TimeoutMS int64    `json:"timeout_ms"`
 	Env       []string `json:"env"`
+	After     string   `json:"after"`
 	CreatedAt string   `json:"created_at"`
 	Lease     *struct {
 		Token     string `json:"token"`
@@ -48,14 +49,17 @@ type taskRecord struct {
 // taskList is the --json output of task list; decoding rejects any field not
 // listed here (P5).
 type taskList struct {
-	Tasks []struct {
-		ID        string `json:"id"`
-		Status    string `json:"status"`
-		Agent     string `json:"agent"`
-		Cwd       string `json:"cwd"`
-		CreatedAt string `json:"created_at"`
-	} `json:"tasks"`
-	Skipped []string `json:"skipped"`
+	Tasks   []taskListItem `json:"tasks"`
+	Skipped []string       `json:"skipped"`
+}
+
+type taskListItem struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Agent     string `json:"agent"`
+	Cwd       string `json:"cwd"`
+	CreatedAt string `json:"created_at"`
+	After     string `json:"after"`
 }
 
 // queue is a shared AITS_HOME and fake-agent PATH for one test.
@@ -143,17 +147,34 @@ func (q queue) waitLease(id string, pgid int) {
 }
 
 // queuedAny reports whether any task record exists.
-func (q queue) queuedAny() bool {
-	entries, _ := os.ReadDir(filepath.Join(q.home, "task"))
-	return slices.ContainsFunc(entries, func(e os.DirEntry) bool { return strings.HasSuffix(e.Name(), ".json") })
+func (q queue) queuedAny() bool { return q.count() > 0 }
+
+// count returns how many task records exist.
+func (q queue) count() int {
+	m, _ := filepath.Glob(q.taskFile("*"))
+	return len(m)
 }
 
 func (q queue) create(prompt string, flags ...string) string {
 	q.t.Helper()
-	out := q.run(append(append([]string{"create", "--agent", "claude", "--cwd", q.t.TempDir(), "--json"}, flags...), prompt)...)
-	var r struct{ ID, Status string }
-	if err := json.Unmarshal([]byte(out.stdout), &r); out.code != 0 || err != nil || r.Status != "queued" {
-		q.t.Fatalf("create: code=%d stdout=%q", out.code, out.stdout)
+	return created(q.t, q.run(append(append([]string{"create", "--agent", "claude", "--cwd", q.t.TempDir(), "--json"}, flags...), prompt)...))
+}
+
+// after queues a follow-up of parent with flags and returns its id.
+func (q queue) after(parent, prompt string, flags ...string) string {
+	q.t.Helper()
+	return created(q.t, q.run(append(append([]string{"create", "--after", parent, "--json"}, flags...), prompt)...))
+}
+
+// created returns the id that a successful create --json printed.
+func created(t *testing.T, out output) string {
+	t.Helper()
+	if out.code != 0 {
+		t.Fatalf("create: code=%d stdout=%q", out.code, out.stdout)
+	}
+	r := decodeOne[struct{ ID, Status string }](t, out.stdout)
+	if r.Status != "queued" {
+		t.Fatalf("create: stdout=%q", out.stdout)
 	}
 	return r.ID
 }
@@ -763,5 +784,110 @@ func TestTaskCreatePromptFromStdinBound(t *testing.T) {
 	}
 	if q.queuedAny() {
 		t.Errorf("an oversized prompt was queued")
+	}
+}
+
+// A follow-up runs in its parent's session, with its agent and cwd, given
+// neither (#63). The parent's session id is patched to a unique value: the
+// fake always reports sess-fake-1.
+func TestTaskFollowUpResumesParentSession(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		q := queue{t: t, home: t.TempDir(), path: vendorAs(t, agent, "ok")}
+		p := q.create("review", "--agent", agent)
+		if out := q.run("work"); out.code != 0 {
+			t.Fatalf("work: code=%d stderr=%q", out.code, out.stderr)
+		}
+		parent := decodeOne[taskRecord](t, q.run("show", p, "--json").stdout)
+		q.patch(p, map[string]any{"run": map[string]any{"status": "ok", "agent": agent, "session_id": "sess-parent-7", "answer": "a", "finished_at": parent.Run.FinishedAt}})
+		f := q.after(p, "fix it")
+		w := decodeOne[taskRecord](t, q.run("work", "--json").stdout)
+		if w.ID != f || w.Status != "done" || w.After != p || w.Agent != agent || w.Cwd != parent.Cwd {
+			t.Errorf("follow-up = %+v", w)
+		}
+		l := decodeOne[taskList](t, q.run("list", "--json").stdout)
+		if i := slices.IndexFunc(l.Tasks, func(e taskListItem) bool { return e.ID == f }); i < 0 || l.Tasks[i].After != p {
+			t.Errorf("list = %+v, want %s after %s", l.Tasks, f, p)
+		}
+		rec := readRecord(t, q.path)
+		want := map[string][]string{"claude": {"--resume", "sess-parent-7"}, "codex": {"resume", "sess-parent-7"}}[agent]
+		if i := slices.Index(rec.Args, want[0]); i < 0 || i+1 >= len(rec.Args) || rec.Args[i+1] != want[1] {
+			t.Errorf("agent argv = %q, want %q", rec.Args, want)
+		}
+	})
+}
+
+// While a worker runs the parent, a second worker passes over its follow-up
+// and claims a newer task; the follow-up stays queued. When the parent then
+// fails, list fails the follow-up (#63).
+func TestTaskFollowUpWaitsForParent(t *testing.T) {
+	q := newQueue(t, "sleep")
+	p := q.create("parent")
+	f := q.after(p, "follow")
+	x := q.create("other")
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	q.waitLease(p, readPID(t, filepath.Join(q.path, "child.pid")))
+	other := call{path: vendor(t, "ok"), env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.run(t)
+	if w := decodeOne[taskRecord](t, other.stdout); w.ID != x {
+		t.Errorf("second worker claimed %s, want %s (not the follow-up %s)", w.ID, x, f)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", f, "--json").stdout); r.Status != "queued" {
+		t.Errorf("follow-up = %+v, want queued", r)
+	}
+	s.signal(t, syscall.SIGTERM)
+	s.waitOrKill(t, 10*time.Second)
+	q.run("list")
+	if r := decodeOne[taskRecord](t, q.run("show", f, "--json").stdout); r.Status != "failed" || r.Run == nil ||
+		r.Run.Status != "not_started" || r.Run.Message != "its parent task "+p+" failed" {
+		t.Errorf("follow-up of a failed parent = %+v", r)
+	}
+}
+
+// create --after refuses what it cannot run as asked, and writes nothing
+// (#63, spec §4).
+func TestTaskCreateAfterInvalid(t *testing.T) {
+	q := newQueue(t, "ok")
+	p := q.create("parent")
+	parent := decodeOne[taskRecord](t, q.run("show", p, "--json").stdout)
+	first := q.after(p, "first")
+	failed, nosession := q.create("failed"), q.create("no session")
+	q.patch(failed, map[string]any{"status": "failed", "run": map[string]any{"status": "timeout", "agent": "claude", "finished_at": parent.CreatedAt}})
+	q.patch(nosession, map[string]any{"status": "done", "run": map[string]any{"status": "ok", "agent": "claude", "finished_at": parent.CreatedAt}})
+	other := t.TempDir()
+	const only = "; only a done task with a session can be followed up"
+	for _, tt := range []struct {
+		name string
+		args []string
+		msg  string
+	}{
+		{"unknown parent", []string{"--after", "20000101T000000-000000"}, "no task 20000101T000000-000000"},
+		{"not a task id", []string{"--after", "x"}, "no task x"},
+		{"empty after", []string{"--after", ""}, `invalid value "" for flag -after: needs a task id`},
+		{"failed parent", []string{"--after", failed}, "task " + failed + " failed" + only},
+		{"parent without a session", []string{"--after", nosession}, "task " + nosession + " has no session" + only},
+		{"other agent", []string{"--after", p, "--agent", "codex"}, "agent codex is not task " + p + "'s agent claude"},
+		{"other cwd", []string{"--after", p, "--cwd", other}, fmt.Sprintf("working directory %q is not task %s's %q", other, p, parent.Cwd)},
+		{"second follow-up", []string{"--after", p}, "task " + p + " already has a follow-up: " + first + "; follow up on " + first + " instead"},
+	} {
+		before := q.count()
+		out := q.run(append(append([]string{"create"}, tt.args...), "--json", "x")...)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != tt.msg || q.count() != before {
+			t.Errorf("%s: code=%d stdout=%q; want %q", tt.name, out.code, out.stdout, tt.msg)
+		}
+	}
+	// Once the first follow-up has failed, the parent can be followed up again;
+	// the same agent and cwd, spelled with a trailing slash, are the parent's.
+	q.patch(first, map[string]any{"status": "failed", "run": map[string]any{"status": "not_started", "agent": "claude", "finished_at": parent.CreatedAt}})
+	q.after(p, "again", "--cwd", parent.Cwd+"/", "--agent", "claude")
+	// An unreadable task file could be another follow-up of the parent:
+	// create fails closed, naming it, and writes nothing (P6).
+	fresh := q.create("fresh")
+	junk := "20000101T000000-00000a"
+	q.writeTaskFile(junk, "not json", 0o600)
+	before := q.count()
+	out := q.run("create", "--after", fresh, "--json", "x")
+	want := "cannot tell whether task " + fresh + " already has a follow-up: task " + junk + " could not be read"
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "internal" || e.Message != want || q.count() != before {
+		t.Errorf("unreadable file: code=%d stdout=%q; want internal %q", out.code, out.stdout, want)
 	}
 }

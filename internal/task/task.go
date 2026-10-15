@@ -46,7 +46,8 @@ type Task struct {
 	Cwd       string    `json:"cwd"`
 	Prompt    string    `json:"prompt"`
 	TimeoutMS int64     `json:"timeout_ms"`
-	Env       []string  `json:"env,omitempty"` // names only (P8)
+	Env       []string  `json:"env,omitempty"`   // names only (P8)
+	After     string    `json:"after,omitempty"` // the task whose session this one continues (#63)
 	CreatedAt time.Time `json:"created_at"`
 	Lease     *Lease    `json:"lease"`
 	Run       *Run      `json:"run"`
@@ -67,11 +68,12 @@ type Run struct {
 	FinishedAt time.Time `json:"finished_at"`
 }
 
-// Spec is a task to create.
+// Spec is a task to create. With After set, an empty Agent or Cwd is taken
+// from that task.
 type Spec struct {
-	Agent, Cwd, Prompt string
-	Timeout            time.Duration
-	Env                []string
+	Agent, Cwd, Prompt, After string
+	Timeout                   time.Duration
+	Env                       []string
 }
 
 // invalid rejects input as shell does, so every invalid input of the group is
@@ -94,20 +96,18 @@ type Notes struct{ Skipped, Unknown []string }
 // one at the same path be locked by someone else.
 func lockPath(dir, id string) string { return filepath.Join(dir, id+".lock") }
 
-// Create validates s as the request it will be run as, and queues it.
+// Create validates s as the request it will be run as, and queues it. A
+// follow-up (s.After) is checked against its parent under the lock.
 func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, CreatedAt: now,
 	}
-	r := t.request(nil)
-	r.Timeout = s.Timeout // validate the value given, not its stored form (P6)
-	if err := r.Validate(); err != nil {
-		return Task{}, err
-	}
-	if s.Timeout%time.Millisecond != 0 {
-		return Task{}, invalid("a task's timeout must be a whole number of milliseconds, got %s", s.Timeout)
+	if s.After == "" {
+		if err := t.validate(s.Timeout); err != nil {
+			return Task{}, err
+		}
 	}
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
@@ -118,6 +118,11 @@ func Create(environ []string, s Spec) (Task, error) {
 		return Task{}, err
 	}
 	defer unlock()
+	if s.After != "" {
+		if err := t.follow(dir, s.Timeout); err != nil {
+			return Task{}, err
+		}
+	}
 	for {
 		t.ID = fmt.Sprintf("%s-%06x", now.Format("20060102T150405"), rand.Uint32()&0xffffff)
 		if _, err := os.Stat(path(dir, t.ID)); errors.Is(err, os.ErrNotExist) {
@@ -125,6 +130,57 @@ func Create(environ []string, s Spec) (Task, error) {
 		}
 	}
 	return t, write(dir, t)
+}
+
+// validate checks t as the request it will be run as, with timeout as given
+// rather than its stored form (P6).
+func (t Task) validate(timeout time.Duration) error {
+	r := t.request(nil)
+	r.Timeout = timeout
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if timeout%time.Millisecond != 0 {
+		return invalid("a task's timeout must be a whole number of milliseconds, got %s", timeout)
+	}
+	return nil
+}
+
+// follow makes t a follow-up of task t.After, under the directory lock: the
+// parent must exist and not have failed or ended without a session, t takes
+// its agent and cwd, and the parent may have no other follow-up that is not
+// failed (#63).
+func (t *Task) follow(dir string, timeout time.Duration) error {
+	p, err := find(dir, t.After)
+	if err != nil {
+		return err
+	}
+	if why := parentFault(&p, false); why != "" {
+		return invalid("task %s %s; only a done task with a session can be followed up", p.ID, why)
+	}
+	switch {
+	case t.Agent != "" && t.Agent != p.Agent:
+		return invalid("agent %s is not task %s's agent %s", t.Agent, p.ID, p.Agent)
+	case t.Cwd != "" && t.Cwd != p.Cwd:
+		return invalid("working directory %q is not task %s's %q", t.Cwd, p.ID, p.Cwd)
+	}
+	t.Agent, t.Cwd = p.Agent, p.Cwd
+	if err := t.validate(timeout); err != nil {
+		return err
+	}
+	s, err := load(dir)
+	if err != nil {
+		return err
+	}
+	if len(s.Skipped) > 0 {
+		return fmt.Errorf("cannot tell whether task %s already has a follow-up: task %s could not be read", p.ID, s.Skipped[0])
+	}
+	for _, o := range s.tasks {
+		if o.After == p.ID && o.Status != Failed {
+			return invalid("task %s already has a follow-up: %s; follow up on %s instead", p.ID, o.ID, o.ID)
+		}
+	}
+	return nil
 }
 
 // List reclaims tasks of dead workers and returns every readable task, oldest
@@ -144,12 +200,17 @@ func List(environ []string) ([]Task, Notes, error) {
 	return s.tasks, s.Notes, err
 }
 
-// Show returns one task; an unknown id is a *shell.InvalidRequestError.
+// Show returns one task (see find).
 func Show(environ []string, id string) (Task, error) {
 	dir, err := store.Dir(environ, "task")
 	if err != nil {
 		return Task{}, err
 	}
+	return find(dir, id)
+}
+
+// find reads task id in dir; an unknown id is a *shell.InvalidRequestError.
+func find(dir, id string) (Task, error) {
 	t, err := read(dir, id)
 	if errors.Is(err, os.ErrNotExist) {
 		return Task{}, invalid("no task %s", id)
@@ -157,9 +218,9 @@ func Show(environ []string, id string) (Task, error) {
 	return t, err
 }
 
-// Work reclaims tasks of dead workers, claims the oldest queued task (of
+// Work reclaims tasks of dead workers, claims the oldest claimable task (of
 // agent, if not empty), runs it through shell and records the run. It also
-// returns the notes of the reclaim. The task is nil when nothing is queued;
+// returns the notes of the reclaim. The task is nil when nothing is claimable;
 // the error is shell.ErrStopped when ctx is done before the claim, and
 // errReclaimed, wrapped with the task id, when the task was reclaimed.
 func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent string) (*Task, Notes, error) {
@@ -170,7 +231,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 	if err != nil {
 		return nil, Notes{}, err
 	}
-	t, release, notes, err := claim(ctx, dir, agent)
+	t, session, release, notes, err := claim(ctx, dir, agent)
 	if t == nil || err != nil {
 		return nil, notes, err
 	}
@@ -178,6 +239,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 	token := t.Lease.Token
 	var started time.Time // stays zero unless the agent starts
 	req := t.request(environ)
+	req.Session = session
 	req.Kill = kill
 	req.Started = func(pgid int) error {
 		started = time.Now().UTC()
@@ -207,25 +269,38 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 }
 
 // claim, under the lock, reclaims tasks of dead workers and marks the oldest
-// queued task of agent running with a fresh lease. It locks the task's lock
-// file first, so that a running task's lock is never free while its worker
-// lives, and returns the function that releases it, with the notes of the
-// reclaim. A signal that arrived while it waited for the lock claims nothing.
-func claim(ctx context.Context, dir, agent string) (*Task, func(), Notes, error) {
+// claimable queued task of agent running with a fresh lease: a follow-up is
+// claimable once its parent is done. It locks the task's lock file first, so
+// that a running task's lock is never free while its worker lives, and
+// returns the session the task continues ("" for a new one), the function
+// that releases the lock, and the notes of the reclaim. A signal that arrived
+// while it waited for the lock claims nothing.
+func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
-		return nil, nil, Notes{}, err
+		return nil, "", nil, Notes{}, err
 	}
 	if ctx.Err() != nil {
 		unlock()
-		return nil, nil, Notes{}, shell.ErrStopped
+		return nil, "", nil, Notes{}, shell.ErrStopped
 	}
 	s, groups, err := reclaim(dir)
+	byID := index(s.tasks)
 	var claimed *Task
+	var session string
 	var release func()
-	i := slices.IndexFunc(s.tasks, func(t Task) bool { return t.Status == Queued && (agent == "" || t.Agent == agent) })
+	i := slices.IndexFunc(s.tasks, func(t Task) bool {
+		if t.Status != Queued || (agent != "" && t.Agent != agent) {
+			return false
+		}
+		p := byID[t.After]
+		return t.After == "" || (p != nil && p.Status == Done)
+	})
 	if err == nil && i >= 0 {
 		t := &s.tasks[i]
+		if t.After != "" {
+			session = byID[t.After].Run.SessionID // reclaim failed any done parent without one
+		}
 		if release, err = store.TryLock(lockPath(dir, t.ID), true); err != nil {
 			err = fmt.Errorf("task %s: %w", t.ID, err)
 		} else {
@@ -239,13 +314,14 @@ func claim(ctx context.Context, dir, agent string) (*Task, func(), Notes, error)
 	}
 	unlock()
 	shell.Stop(groups...)
-	return claimed, release, s.Notes, err
+	return claimed, session, release, s.Notes, err
 }
 
 // reclaim, under the lock, loads every task and fails each running one whose
 // lock file it can lock: no worker holds it, so the worker is gone. A held
 // lock is a live worker, whatever its age (P10); a missing lock file cannot be
-// judged and is noted (P6); any other error stops it. It returns what it
+// judged and is noted (P6); any other error stops it. It then fails each
+// queued follow-up that can never run (parentFault). It returns what it
 // loaded and the agent process groups to stop once the lock is free.
 func reclaim(dir string) (snapshot, []int, error) {
 	s, err := load(dir)
@@ -292,8 +368,66 @@ func reclaim(dir string) (snapshot, []int, error) {
 			return s, groups, err
 		}
 	}
+	if err := failOrphans(dir, s); err != nil {
+		return s, groups, err
+	}
 	slices.Sort(s.Unknown)
 	return s, groups, nil
+}
+
+// failOrphans fails each queued follow-up in s that can never run
+// (parentFault), until a pass changes nothing, so a whole chain fails at once
+// whatever its created_at order.
+func failOrphans(dir string, s snapshot) error {
+	byID := index(s.tasks)
+	for changed := true; changed; {
+		changed = false
+		for i := range s.tasks {
+			t := &s.tasks[i]
+			if t.Status != Queued || t.After == "" {
+				continue
+			}
+			why := parentFault(byID[t.After], slices.Contains(s.Skipped, t.After))
+			if why == "" {
+				continue
+			}
+			t.Status = Failed
+			t.Run = &Run{Result: shell.Result{
+				Status: NotStarted, Agent: t.Agent, Message: "its parent task " + t.After + " " + why,
+			}, FinishedAt: time.Now().UTC()}
+			if err := write(dir, *t); err != nil {
+				return err
+			}
+			changed = true
+		}
+	}
+	return nil
+}
+
+// index maps each task's id to it.
+func index(tasks []Task) map[string]*Task {
+	m := make(map[string]*Task, len(tasks))
+	for i := range tasks {
+		m[tasks[i].ID] = &tasks[i]
+	}
+	return m
+}
+
+// parentFault says why a follow-up of p can never run, or "" if it may yet:
+// p failed, its file is gone, or it is done without a session. A parent whose
+// file cannot be read (skipped) is waited for (P10).
+func parentFault(p *Task, skipped bool) string {
+	switch {
+	case p == nil && skipped:
+		return ""
+	case p == nil:
+		return "does not exist"
+	case p.Status == Failed:
+		return "failed"
+	case p.Status == Done && (p.Run == nil || p.Run.SessionID == ""):
+		return "has no session"
+	}
+	return ""
 }
 
 // update applies fn to task id under the directory lock if the caller still
@@ -331,24 +465,40 @@ type snapshot struct {
 // as it is (P10); a directory that cannot be listed is an error.
 // (Readdirnames rather than os.ReadDir keeps the binary smaller, P14.)
 func load(dir string) (snapshot, error) {
-	var s snapshot
 	f, err := os.Open(dir)
 	if err != nil {
-		return s, err
+		return snapshot{}, err
 	}
 	names, err := f.Readdirnames(-1)
 	f.Close()
 	if err != nil {
-		return s, err
+		return snapshot{}, err
 	}
+	return collect(dir, names), nil
+}
+
+// collect reads the tasks that names, a listing of dir, holds, and also a
+// task whose lock file is listed without its record: a listing can miss a
+// record a worker renames over without the directory lock (modify), and such
+// a task was claimed with a lock file, never renamed or removed (P6).
+func collect(dir string, names []string) snapshot {
+	var s snapshot
+	ids := make(map[string]bool, len(names)) // id: whether its record is listed
 	for _, name := range names {
-		id, ok := strings.CutSuffix(name, ".json")
-		if !ok || strings.HasPrefix(name, ".") {
+		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		if t, err := read(dir, id); err == nil {
+		if id, ok := strings.CutSuffix(name, ".json"); ok {
+			ids[id] = true
+		} else if id, ok := strings.CutSuffix(name, ".lock"); ok && !ids[id] {
+			ids[id] = false
+		}
+	}
+	for id, listed := range ids {
+		t, err := read(dir, id)
+		if err == nil {
 			s.tasks = append(s.tasks, t)
-		} else {
+		} else if listed || !errors.Is(err, os.ErrNotExist) { // not a lock file whose record is gone
 			s.Skipped = append(s.Skipped, id)
 		}
 	}
@@ -356,7 +506,7 @@ func load(dir string) (snapshot, error) {
 		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
 	})
 	slices.Sort(s.Skipped)
-	return s, nil
+	return s
 }
 
 // request is the shell request that runs t in environ.

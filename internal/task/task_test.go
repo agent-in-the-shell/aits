@@ -437,3 +437,144 @@ func TestModifyWithoutDirLock(t *testing.T) {
 		t.Fatal("modify waited for the directory lock")
 	}
 }
+
+// follow creates a follow-up of parent with s's other fields.
+func follow(environ []string, parent string, s Spec) (Task, error) {
+	s.After, s.Prompt, s.Timeout = parent, "next", time.Minute
+	return Create(environ, s)
+}
+
+// setStatus rewrites task tk with status st and run r, as a worker would.
+func setStatus(t *testing.T, environ []string, tk Task, st Status, r *Run) {
+	t.Helper()
+	dir, _ := store.Dir(environ, "task")
+	tk.Status, tk.Run = st, r
+	if err := write(dir, tk); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A follow-up is passed over until its parent is done, then run in the
+// parent's session. The fake PATH has no agent, so the run is not_started;
+// which task was claimed, and with which session, is what matters.
+func TestClaimFollowUp(t *testing.T) {
+	environ := env(t)
+	p := create(t, environ, "claude")
+	f, err := follow(environ, p.ID, Spec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, p, `{"token":"w","pgid":0}`)
+	unlock := lock(t, dir, p.ID) // a live worker
+	got, session, release, _, err := claim(context.Background(), dir, "")
+	if err != nil || got == nil || got.ID != x.ID || session != "" {
+		t.Fatalf("claim with the parent running = %+v %q, %v; want %s", got, session, err, x.ID)
+	}
+	release()
+	unlock()
+	setStatus(t, environ, p, Done, &Run{Result: shell.Result{Status: shell.StatusOK, SessionID: "sess-p"}})
+	got, session, release, _, err = claim(context.Background(), dir, "")
+	if err != nil || got == nil || got.ID != f.ID || session != "sess-p" {
+		t.Fatalf("claim with the parent done = %+v %q, %v; want %s in sess-p", got, session, err, f.ID)
+	}
+	release()
+}
+
+// A queued follow-up whose parent failed, is gone, or is done without a
+// session is failed by the next reclaim, down the whole chain, whatever the
+// order of created_at (spec §2, §4).
+func TestReclaimFailsOrphans(t *testing.T) {
+	tests := []struct {
+		name   string
+		parent func(t *testing.T, environ []string, p Task)
+		why    string
+	}{
+		{"failed", func(t *testing.T, environ []string, p Task) {
+			setStatus(t, environ, p, Failed, &Run{Result: shell.Result{Status: "agent_failed"}})
+		}, "failed"},
+		{"gone", func(t *testing.T, environ []string, p Task) {
+			dir, _ := store.Dir(environ, "task")
+			if err := os.Remove(path(dir, p.ID)); err != nil {
+				t.Fatal(err)
+			}
+		}, "does not exist"},
+		{"done without a run", func(t *testing.T, environ []string, p Task) {
+			setStatus(t, environ, p, Done, nil)
+		}, "has no session"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			environ := env(t)
+			p := create(t, environ, "claude")
+			f, err := follow(environ, p.ID, Spec{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			g, err := follow(environ, f.ID, Spec{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// g reads as older than f: the chain must not rely on created_at.
+			g.CreatedAt = p.CreatedAt.Add(-time.Hour)
+			setStatus(t, environ, g, Queued, nil)
+			tt.parent(t, environ, p)
+			tasks, _, err := List(environ)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{f.ID: p.ID + " " + tt.why, g.ID: f.ID + " failed"}
+			for _, tk := range tasks {
+				w, ok := want[tk.ID]
+				if !ok {
+					continue
+				}
+				if tk.Status != Failed || tk.Run == nil || tk.Run.Status != NotStarted || tk.Run.Message != "its parent task "+w {
+					t.Errorf("%s = %+v %+v; want failed, its parent task %s", tk.ID, tk, tk.Run, w)
+				}
+				delete(want, tk.ID)
+			}
+			if len(want) > 0 {
+				t.Errorf("not listed: %v", want)
+			}
+		})
+	}
+}
+
+// A follow-up whose parent cannot be read waits; nothing is failed (P10).
+func TestReclaimSparesFollowUpOfUnreadableParent(t *testing.T) {
+	environ := env(t)
+	p := create(t, environ, "claude")
+	f, err := follow(environ, p.ID, Spec{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := store.Dir(environ, "task")
+	if err := store.WriteFile(path(dir, p.ID), []byte("not json")); err != nil {
+		t.Fatal(err)
+	}
+	tasks, notes, err := List(environ)
+	if err != nil || len(tasks) != 1 || tasks[0].ID != f.ID || tasks[0].Status != Queued || !slices.Equal(notes.Skipped, []string{p.ID}) {
+		t.Errorf("List = %+v %+v, %v; want %s queued and %s skipped", tasks, notes, err, f.ID, p.ID)
+	}
+}
+
+// collect reads a task whose lock file is listed without its record, and
+// ignores a lock file whose record is gone (see collect).
+func TestCollectReadsRunningTaskMissedByListing(t *testing.T) {
+	environ := env(t)
+	p := create(t, environ, "claude")
+	dir, _ := store.Dir(environ, "task")
+	running(t, dir, p, `{"token":"w","pgid":0}`)
+	lock(t, dir, p.ID)() // as a claim leaves it
+	gone := create(t, environ, "claude")
+	lock(t, dir, gone.ID)()
+	if err := os.Remove(path(dir, gone.ID)); err != nil { // a lock file whose record is gone
+		t.Fatal(err)
+	}
+	s := collect(dir, []string{p.ID + ".lock", gone.ID + ".lock"})
+	if len(s.tasks) != 1 || s.tasks[0].ID != p.ID || len(s.Skipped) != 0 {
+		t.Errorf("collect = %+v; want %s only", s, p.ID)
+	}
+}

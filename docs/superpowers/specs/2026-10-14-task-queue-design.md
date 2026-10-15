@@ -11,7 +11,7 @@ A local queue of agent runs. A dispatching agent creates tasks; one or more
 workers, each in the foreground, claim and run one task per call through
 `shell`; the dispatcher reads results by id. First slice: `create`, `list`,
 `show`, `work`, and the states `queued → running → done | failed`.
-Follow-ups on a task's session come in a later issue.
+Follow-ups on a task's session: `2026-10-15-task-follow-up-design.md` (#63).
 
 ## 2. Decisions
 
@@ -78,6 +78,8 @@ ordered by `created_at` (nanoseconds), since several can share a second.
   These two have no `exit_code` or `duration_ms`, which are unknown, rather
   than zeros that read as success (P6). A `worker_died` run has the lease's
   `started_at` if its agent had started (#57).
+- `after`: for a follow-up, the task whose session it continues; a follow-up
+  whose parent failed is also `not_started` (#63).
 
 ## 5. Commands
 
@@ -126,8 +128,9 @@ is generated from help (P13).
 
 ## 6. Claim, run, reclaim
 
-**Claim**, under the lock: reclaim (below); pick the oldest `queued` task
-(by `created_at`) matching `--agent`; lock its `<id>.lock` (created, never
+**Claim**, under the lock: reclaim (below); pick the oldest claimable
+`queued` task (by `created_at`; a follow-up only once its parent is `done`,
+#63) matching `--agent`; lock its `<id>.lock` (created, never
 removed) without waiting, before anything is written; set `running` and the
 lease (`token` random); write; unlock. The worker keeps the task lock until
 its run is recorded; the agent does not inherit it.

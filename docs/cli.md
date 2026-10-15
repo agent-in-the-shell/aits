@@ -197,7 +197,7 @@ Commands:
   create  Queue a prompt for an agent; prints the task id.
   list    List tasks, oldest first.
   show    Show one task and its run.
-  work    Claim the oldest queued task, run it, record the result, exit.
+  work    Claim the oldest claimable task, run it, record the result, exit.
 
 Run 'aits task COMMAND --help' for details.
 
@@ -212,8 +212,9 @@ Usage: aits task create [flags] (PROMPT | -)
 Queue a prompt for an agent; prints the task id.
 
 Flags:
-  --agent AGENT       AGENT CLI to run (required). One of: claude, codex.
-  --cwd DIR           Run the agent in DIR (default: the current directory).
+  --after ID          Continue the conversation of task ID once it is done, with its agent and cwd.
+  --agent AGENT       AGENT CLI to run (required unless --after). One of: claude, codex.
+  --cwd DIR           Run the agent in DIR (default: the current directory, or with --after the parent's).
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
@@ -223,9 +224,16 @@ invalid_input.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
+Follow-ups (--after ID): --agent and --cwd, if given, must be ID's (--cwd
+is made absolute, symlinks not resolved). ID must not have failed or ended
+without a session, and may have only one follow-up that has not failed. If
+ID fails, the next list or work fails the follow-up (run status
+not_started); until then show reports it queued. An unreadable task file
+makes create fail (internal).
+
 Exit codes:
   0  Queued.
-  1  The task could not be written.
+  1  The queue could not be read or written.
   2  Usage error or invalid input; nothing was written.
 
 Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).
@@ -242,8 +250,9 @@ Flags:
   --json  Print the result, or the error, as JSON on stdout.
 
 Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
-{"tasks":[{"id","status","agent","cwd","created_at"}],"skipped":["ID"]}.
-Tasks of dead workers are reclaimed first. A running task whose lock file is
+{"tasks":[{"id","status","agent","cwd","created_at","after"}],"skipped":["ID"]},
+with after only for a follow-up. Tasks of dead workers are reclaimed first,
+and follow-ups of failed tasks are failed. A running task whose lock file is
 missing cannot be judged: it stays running, with "aits: cannot tell whether
 the worker of task ID is alive: its lock file is missing" on stderr.
 
@@ -277,16 +286,18 @@ Task fields (--json):
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
+  after        For a follow-up: the task whose session it continues.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the "shell submit" result (status, agent,
                session_id, answer, exit_code, duration_ms, stderr_tail,
                message) plus started_at and finished_at. run.status is a
-               shell status, not_started (the agent was never started), or
-               worker_died (its worker exited first; set by the next work or
-               list). A not_started or worker_died run has no exit_code and
-               no duration_ms, which are unknown; only a worker_died run whose
-               agent had started has started_at.
+               shell status, not_started (the agent was never started: it
+               could not be started after the claim, or the task's parent
+               failed), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died run has no
+               exit_code and no duration_ms, which are unknown; only a
+               worker_died run whose agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
@@ -304,7 +315,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```text
 Usage: aits task work [flags]
 
-Claim the oldest queued task, run it, record the result, exit.
+Claim the oldest claimable task, run it, record the result, exit.
 
 Flags:
   --agent AGENT  Only claim tasks for AGENT.
@@ -315,22 +326,25 @@ Task fields (--json):
   status       queued, running, done or failed.
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
+  after        For a follow-up: the task whose session it continues.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the "shell submit" result (status, agent,
                session_id, answer, exit_code, duration_ms, stderr_tail,
                message) plus started_at and finished_at. run.status is a
-               shell status, not_started (the agent was never started), or
-               worker_died (its worker exited first; set by the next work or
-               list). A not_started or worker_died run has no exit_code and
-               no duration_ms, which are unknown; only a worker_died run whose
-               agent had started has started_at.
+               shell status, not_started (the agent was never started: it
+               could not be started after the claim, or the task's parent
+               failed), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died run has no
+               exit_code and no duration_ms, which are unknown; only a
+               worker_died run whose agent had started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id and why a task failed on stderr.
 
-With nothing queued, work prints {"status":"empty"} with --json (nothing
-otherwise) and exits 0. A worker whose task was reclaimed records nothing
+With nothing claimable (nothing queued, or only follow-ups whose parent is
+not done), work prints {"status":"empty"} with --json (nothing otherwise)
+and exits 0. A worker whose task was reclaimed records nothing
 and fails with "task ID was reclaimed before its run was recorded". A task
 file that cannot be read is skipped and left as it is, with
 "aits: skipped task ID that could not be read" on stderr. Running tasks
