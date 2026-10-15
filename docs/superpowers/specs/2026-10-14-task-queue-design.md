@@ -106,11 +106,9 @@ invalid input (P5).
   `internal`, exit 1, `task ID could not be read: REASON` (#35).
 
 `aits task show ID`
-- `--json`: the task record (§4). Text, as `work` prints a task (table
-  below): `ID  STATUS  AGENT  CWD` on stdout; when there is a run, `session:
-  ID` on stderr if the run has a session id, then the answer on stdout for a
-  `done` task, or `aits: task ID failed: STATUS: MESSAGE` on stderr for a
-  `failed` one. Exit 0, whatever the task's status (#62).
+- `--json`: the task record (§4); text: what `work` prints for the task
+  (table below), or only its first line before it has a run. Exit 0, whatever
+  the task's status (#62).
 - Unknown id: `invalid_input` (`no task ID`), exit 2.
 
 `aits task work [--agent AGENT]`

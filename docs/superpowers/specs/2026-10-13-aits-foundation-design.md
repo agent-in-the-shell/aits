@@ -41,10 +41,8 @@ The primary caller is an AI agent; humans are supported but secondary.
 
 ## 3. Principles
 
-> **Note (#62).** The current principles are in
-> [`docs/principles.md`](../../principles.md), which supersedes this section.
-> What follows is the text as approved on 2026-10-13, kept unchanged as the
-> record of that approval.
+> **Note (#62).** Superseded by [`docs/principles.md`](../../principles.md);
+> this section is the text as approved on 2026-10-13.
 
 Each principle states the rule, the failure it prevents, and the guard that
 enforces it. A guard marked *review-only* cannot be checked mechanically and
