@@ -49,15 +49,17 @@ type taskRecord struct {
 // taskList is the --json output of task list; decoding rejects any field not
 // listed here (P5).
 type taskList struct {
-	Tasks []struct {
-		ID        string `json:"id"`
-		Status    string `json:"status"`
-		Agent     string `json:"agent"`
-		Cwd       string `json:"cwd"`
-		CreatedAt string `json:"created_at"`
-		After     string `json:"after"`
-	} `json:"tasks"`
-	Skipped []string `json:"skipped"`
+	Tasks   []taskListItem `json:"tasks"`
+	Skipped []string       `json:"skipped"`
+}
+
+type taskListItem struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Agent     string `json:"agent"`
+	Cwd       string `json:"cwd"`
+	CreatedAt string `json:"created_at"`
+	After     string `json:"after"`
 }
 
 // queue is a shared AITS_HOME and fake-agent PATH for one test.
@@ -806,6 +808,10 @@ func TestTaskFollowUpResumesParentSession(t *testing.T) {
 		w := decodeOne[taskRecord](t, q.run("work", "--json").stdout)
 		if w.ID != f || w.Status != "done" || w.After != p || w.Agent != agent || w.Cwd != parent.Cwd {
 			t.Errorf("follow-up = %+v", w)
+		}
+		l := decodeOne[taskList](t, q.run("list", "--json").stdout)
+		if i := slices.IndexFunc(l.Tasks, func(e taskListItem) bool { return e.ID == f }); i < 0 || l.Tasks[i].After != p {
+			t.Errorf("list = %+v, want %s after %s", l.Tasks, f, p)
 		}
 		rec := readRecord(t, q.path)
 		want := map[string][]string{"claude": {"--resume", "sess-parent-7"}, "codex": {"resume", "sess-parent-7"}}[agent]
