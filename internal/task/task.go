@@ -186,15 +186,18 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 		if o.Status != Failed {
 			return invalid("task %s already has a follow-up: %s; follow up on %s instead", p.ID, o.ID, o.ID)
 		}
-		// A follow-up whose worker died may still have its agent running until
-		// the reclaim that failed it has stopped it; that reclaim holds its lock.
+		if o.Run == nil || o.Run.Status != WorkerDied {
+			continue // its agent was stopped before it was recorded failed
+		}
+		// Its agent may still be running until the reclaim that failed it has
+		// stopped it; that reclaim holds its lock until then.
 		release, err := store.TryLock(lockPath(dir, o.ID), false)
 		switch {
 		case errors.Is(err, store.ErrLocked):
 			return invalid("task %s, a follow-up of %s, failed but its agent is still being stopped; try again in a few seconds", o.ID, p.ID)
 		case err == nil:
 			release()
-		case !errors.Is(err, os.ErrNotExist): // no lock file: the follow-up never ran
+		case !errors.Is(err, os.ErrNotExist): // a lock file removed by hand: nothing to wait for
 			return fmt.Errorf("task %s: %w", o.ID, err)
 		}
 	}
@@ -212,9 +215,9 @@ func List(environ []string) ([]Task, Notes, error) {
 	if err != nil {
 		return nil, Notes{}, err
 	}
-	s, st, err := reclaim(dir)
+	s, stop, err := reclaim(dir)
 	unlock()
-	st.stop()
+	stop()
 	return s.tasks, s.Notes, err
 }
 
@@ -302,7 +305,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 		unlock()
 		return nil, "", nil, Notes{}, shell.ErrStopped
 	}
-	s, st, err := reclaim(dir)
+	s, stop, err := reclaim(dir)
 	byID := index(s.tasks)
 	var claimed *Task
 	var session string
@@ -331,7 +334,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 		}
 	}
 	unlock()
-	st.stop()
+	stop()
 	return claimed, session, release, s.Notes, err
 }
 
@@ -340,12 +343,22 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 // lock is a live worker, whatever its age (P10); a missing lock file cannot be
 // judged and is noted (P6); any other error stops it. It then fails each
 // queued follow-up that can never run (parentFault). It returns what it
-// loaded and the agent groups to stop once the directory lock is free.
-func reclaim(dir string) (snapshot, stopping, error) {
-	var st stopping
+// loaded and stop, for the caller to run once the directory lock is free:
+// stop ends the dead workers' agent groups and only then releases their
+// tasks' locks, so a failed task whose lock is held may still have its agent
+// running (P10, #76).
+func reclaim(dir string) (snapshot, func(), error) {
+	var groups []int
+	var locks []func()
+	stop := func() {
+		shell.Stop(groups...)
+		for _, release := range locks {
+			release()
+		}
+	}
 	s, err := load(dir)
 	if err != nil {
-		return s, st, err
+		return s, stop, err
 	}
 	for i := range s.tasks {
 		t := &s.tasks[i]
@@ -360,7 +373,7 @@ func reclaim(dir string) (snapshot, stopping, error) {
 			s.Unknown = append(s.Unknown, t.ID)
 			continue
 		case err != nil:
-			return s, st, fmt.Errorf("task %s: %w", t.ID, err)
+			return s, stop, fmt.Errorf("task %s: %w", t.ID, err)
 		}
 		// Re-read: the worker writes its pgid without the directory lock, so it
 		// may have done so since load. (The error branch has no test: a write
@@ -368,7 +381,7 @@ func reclaim(dir string) (snapshot, stopping, error) {
 		cur, err := read(dir, t.ID)
 		if err != nil {
 			release()
-			return s, st, err
+			return s, stop, err
 		}
 		if *t = cur; t.Status != Running {
 			release()
@@ -382,31 +395,15 @@ func reclaim(dir string) (snapshot, stopping, error) {
 		t.Status, t.Lease = Failed, nil
 		if err := write(dir, *t); err != nil {
 			release()
-			return s, st, err
+			return s, stop, err
 		}
-		st.groups, st.locks = append(st.groups, pgid), append(st.locks, release)
+		groups, locks = append(groups, pgid), append(locks, release)
 	}
 	if err := failOrphans(dir, s); err != nil {
-		return s, st, err
+		return s, stop, err
 	}
 	slices.Sort(s.Unknown)
-	return s, st, nil
-}
-
-// stopping is the agent groups of the workers a reclaim found dead, and those
-// tasks' locks, which it keeps until the groups are stopped: a task whose
-// lock is held may still have its agent running (P10).
-type stopping struct {
-	groups []int
-	locks  []func()
-}
-
-// stop ends the groups, then releases the locks.
-func (st stopping) stop() {
-	shell.Stop(st.groups...)
-	for _, release := range st.locks {
-		release()
-	}
+	return s, stop, nil
 }
 
 // failOrphans fails each queued follow-up in s that can never run

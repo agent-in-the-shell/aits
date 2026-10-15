@@ -144,6 +144,14 @@ ignored, and a running record with a lease stays valid.
   failed write as its message; if that write fails too, `work` fails
   (`internal`) and the task is reclaimed as `worker_died` once the worker has
   exited (#56).
+- A reclaim whose process is killed while it stops a dead worker's agent
+  releases that task's lock early. The task is already `failed`, so no later
+  reclaim stops the agent; one that ignores TERM keeps running (its SIGKILL
+  timer died with the reclaim), and a retried follow-up can run beside it
+  (#76). Recording `failed` only after the stop would close this, but it
+  breaks two rules this design relies on: the reclaim would no longer be the
+  record's only writer when a lock file is replaced by hand, and the record
+  would depend on how the stop went.
 - Without D, the pgid write's token check and write are not atomic: if a
   lock file is removed by hand, a reclaim or claim that writes the record
   during that write can be undone by it.

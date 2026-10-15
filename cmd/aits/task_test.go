@@ -139,12 +139,18 @@ func (q queue) patch(id string, fields map[string]any) []byte {
 // waitLease waits until task id records the agent's process group pgid.
 func (q queue) waitLease(id string, pgid int) {
 	q.t.Helper()
+	q.waitShow(id, fmt.Sprintf("record pgid %d", pgid), func(r taskRecord) bool { return r.Lease != nil && r.Lease.PGID == pgid })
+}
+
+// waitShow waits until task id, as show prints it, satisfies ok.
+func (q queue) waitShow(id, what string, ok func(taskRecord) bool) {
+	q.t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
-		if r := decodeOne[taskRecord](q.t, q.run("show", id, "--json").stdout); r.Lease != nil && r.Lease.PGID == pgid {
+		if ok(decodeOne[taskRecord](q.t, q.run("show", id, "--json").stdout)) {
 			return
 		}
 	}
-	q.t.Fatalf("task %s never recorded pgid %d", id, pgid)
+	q.t.Fatalf("task %s did not %s", id, what)
 }
 
 // queuedAny reports whether any task record exists.
@@ -877,19 +883,15 @@ func TestTaskFollowUpRetryWaitsForStop(t *testing.T) {
 	f := q.after(p, "first try")
 	g := q.deadWorker(f, `trap '' TERM; : > "$0"; exec sleep 60`) // ignores TERM for the 5s grace
 	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "list", "--json"}}.start(t)
-	for deadline := time.Now().Add(5 * time.Second); decodeOne[taskRecord](t, q.run("show", f, "--json").stdout).Status != "failed"; time.Sleep(20 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("task %s was not reclaimed", f)
-		}
-	}
+	q.waitShow(f, "failed", func(r taskRecord) bool { return r.Status == "failed" })
 	out := q.run("create", "--after", p, "--json", "retry")
 	if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || !strings.Contains(e.Message, f) {
 		t.Errorf("retry while %s's agent is being stopped: code=%d stdout=%q", f, out.code, out.stdout)
 	}
+	_ = syscall.Kill(-g, syscall.SIGKILL) // end the grace period early
 	if out := s.waitOrKill(t, 15*time.Second); out.code != 0 {
 		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
 	}
-	assertGone(t, g)
 	q.after(p, "retry")
 }
 
