@@ -14,7 +14,6 @@ import (
 )
 
 // ErrNoRoot means the root cannot be found: neither AITS_HOME nor HOME is set.
-// The caller's environment is at fault, not the file system.
 var ErrNoRoot = errors.New("neither AITS_HOME nor HOME is set")
 
 // Dir returns the directory of group under the root, creating it 0700 and

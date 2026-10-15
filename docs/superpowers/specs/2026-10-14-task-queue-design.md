@@ -35,8 +35,7 @@ Follow-ups on a task's session: `2026-10-15-task-follow-up-design.md` (#63).
   - `Dir(environ []string, group string) (string, error)` — resolves
     `$AITS_HOME/<group>` (default `$HOME/.local/share/aits/<group>`), creates
     it 0700 and tightens an existing one to 0700. With neither variable set it
-    returns `ErrNoRoot`, which the task commands report as `invalid_input`,
-    exit 2, as `session search` reports its own roots (#98);
+    returns `ErrNoRoot` (task: `invalid_input`, exit 2; #98);
   - `WriteFile(path string, data []byte) error` — temp file in the same
     directory, then rename; mode 0600;
   - `Lock(dir string) (unlock func(), err error)` — `flock` on `<dir>/.lock`;
