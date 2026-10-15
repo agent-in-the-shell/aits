@@ -110,8 +110,12 @@ Vendor-owned data (for example `~/.claude`) stays where the vendor keeps it.
 permission fixes landing one call site at a time; two different migration
 styles.
 
-**Guard.** Tests assert actual on-disk permissions. A structural test forbids
-`os.WriteFile`, `os.MkdirAll` and `os.Create` outside the storage package.
+**Guard.** Tests assert actual on-disk permissions. A structural test forbids,
+outside the storage package, every `os` function that creates, moves, changes
+or removes a file or directory: `OpenFile` (whatever its flags), `Mkdir`,
+`MkdirAll`, `MkdirTemp`, `Create`, `CreateTemp`, `WriteFile`, `Rename`,
+`Symlink`, `Link`, `Chmod`, `Chown`, `Lchown`, `Chtimes`, `Truncate`, `Remove`
+and `RemoveAll`.
 
 ## P8 — Content and secret hygiene
 
