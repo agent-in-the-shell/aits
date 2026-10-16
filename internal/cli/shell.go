@@ -60,7 +60,7 @@ Statuses:
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
-
+` + writeDetails + `
 Errors (nothing was started):
   unknown_flag        exit 2  No such flag for this command.
   invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
@@ -88,15 +88,21 @@ func submitCommand() *Command {
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
 			session := nonEmpty(fs, "session", "Continue the conversation `ID`: the session_id of an earlier result.", "a session id")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to the agent.")
+			write := fs.Bool("write", false, writeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
 					return 0, err
 				}
-				res, err := shell.Submit(ctx, shell.Request{
+				req := shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: *pass, Session: *session, Kill: env.Kill,
-				})
+					Environ: env.Environ, Pass: *pass, Session: *session, Write: *write, Kill: env.Kill,
+				}
+				if *write {
+					// Once the agent has started: invalid input prints only its error.
+					req.Started = func(int) error { warnWrite(env); return nil }
+				}
+				res, err := shell.Submit(ctx, req)
 				if err != nil {
 					return 0, submitError(err)
 				}
@@ -167,6 +173,34 @@ func submitError(err error) error {
 		return failure("agent_start_failed", "%v", err)
 	}
 }
+
+// writeDetails documents --write, for shell submit and task create (#104).
+const writeDetails = `
+Write (--write): the agent edits files and runs commands without asking,
+inside its vendor's sandbox; aits opens no network, and your own vendor
+settings still apply. shell submit (once the agent starts) and task create
+(once the task is stored) print on stderr, with --json too:
+  ` + writeWarning + `
+
+  claude  --permission-mode acceptEdits and a sandbox in --settings: file
+          tools write in the working directory; commands write there and
+          in Claude Code's temp directory.
+  codex   -s workspace-write: commands write in the working directory, /tmp
+          and $TMPDIR; .git stays read-only. Without --write codex gets
+          -s read-only, a resumed session too.
+A write anywhere else fails, such as a build cache under $HOME. A command the
+sandbox stops is not in denied_tools: it looks like any failed command.
+Claude Code leaves .claude/.cc-writes in the working directory.
+`
+
+// writeUsage is the help of --write, for shell submit and task create.
+const writeUsage = "Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox."
+
+// writeWarning is printed on stderr, in both output modes, by an invocation
+// that gives --write (P9).
+const writeWarning = "aits: warning: --write lets the agent edit files and run commands in its working directory without asking"
+
+func warnWrite(env *Env) { fmt.Fprintln(env.Stderr, writeWarning) }
 
 // writeRunNotes prints, in text mode, the run's session id and the tools the
 // agent was refused, if any, on stderr.

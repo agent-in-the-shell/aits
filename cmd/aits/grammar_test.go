@@ -22,8 +22,8 @@ func TestGrammarUnknownFlag(t *testing.T) {
 	walk(cli.Root(), nil, func(path []string, _ *cli.Command) {
 		args := append(slices.Clone(path), "--no-such-flag", "--json")
 		out := call{args: args}.run(t)
-		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "unknown_flag" {
-			t.Errorf("aits %s: code=%d stdout=%q", strings.Join(args, " "), out.code, out.stdout)
+		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "unknown_flag" || out.stderr != "" {
+			t.Errorf("aits %s: code=%d stdout=%q stderr=%q", strings.Join(args, " "), out.code, out.stdout, out.stderr)
 		}
 		if got := helpErrors(t, path)["unknown_flag"]; got != "exit 2" {
 			t.Errorf("aits %s --help lists unknown_flag with %q, want exit 2", strings.Join(path, " "), got)

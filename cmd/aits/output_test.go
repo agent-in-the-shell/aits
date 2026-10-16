@@ -24,13 +24,16 @@ type outputCase struct {
 	result  func(t *testing.T, stdout string, v vars)
 	stdout  string // text mode, exact; an error prints only "aits: MESSAGE"
 	stderr  string
+
+	jsonStderr string // --json mode, exact: only the warning of --write (P9)
 }
 
 // TestOutputChannels enforces P5 for every kind of outcome of every command:
 // with --json, stdout is exactly one JSON object (an error envelope or a
-// result) and stderr is empty; in text mode, stdout carries only the result
-// and stderr the diagnostics, with an error printed as "aits: MESSAGE". The
-// help of the command a row runs lists the row's error code with its exit.
+// result) and stderr is empty but for the warning of --write; in text mode,
+// stdout carries only the result and stderr the diagnostics, with an error
+// printed as "aits: MESSAGE". The help of the command a row runs lists the
+// row's error code with its exit.
 func TestOutputChannels(t *testing.T) {
 	const failed = "aits: task {ID} failed: agent_failed: the agent exited with code 3\n"
 	const denied = "denied_tools: Write, " + ctrlToolShown + "\n"
@@ -46,6 +49,11 @@ func TestOutputChannels(t *testing.T) {
 		{name: "ok", scenario: "ok", args: submitArgs("hi"), result: submitIs("ok"), stdout: "fake answer\n", stderr: "session: sess-fake-1\n"},
 		{name: "denied", scenario: "denied", args: submitArgs("hi"), result: submitIs("ok"), stdout: "fake answer\n",
 			stderr: "session: sess-fake-1\n" + denied},
+		{name: "write", scenario: "ok", args: submitArgs("--write", "hi"), result: submitIs("ok"), stdout: "fake answer\n",
+			stderr: writeWarning + "session: sess-fake-1\n", jsonStderr: writeWarning},
+		{name: "invalid input with write", scenario: "ok", args: []string{"shell", "submit", "--write", "hi"}, code: 2,
+			errCode: "invalid_input", errMsg: "agent is required (one of: claude, codex)"},
+		{name: "agent not found with write", args: submitArgs("--write", "hi"), code: 1, errCode: "agent_not_found"},
 		{name: "timeout", scenario: "sleep", args: submitArgs("--timeout", "1s", "hi"), code: 1, result: submitIs("timeout"),
 			stderr: "aits: timeout: the agent did not finish before the timeout\nsession: sess-fake-1\n"},
 		{name: "output too large", scenario: "huge_line", args: submitArgs("hi"), code: 1, result: submitIs("output_too_large"),
@@ -53,6 +61,10 @@ func TestOutputChannels(t *testing.T) {
 
 		{name: "task create", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "hi"},
 			result: jsonIs(`{"id":"{ID}","status":"queued"}`), stdout: "{ID}\n"},
+		{name: "task create write", scenario: "ok", args: []string{"task", "create", "--agent", "claude", "--cwd", "{DIR}", "--write", "hi"},
+			result: jsonIs(`{"id":"{ID}","status":"queued"}`), stdout: "{ID}\n", stderr: writeWarning, jsonStderr: writeWarning},
+		{name: "task create write without agent", scenario: "ok", args: []string{"task", "create", "--cwd", "{DIR}", "--write", "hi"}, code: 2,
+			errCode: "invalid_input", errMsg: "agent is required (one of: claude, codex)"},
 		{name: "task create without agent", scenario: "ok", args: []string{"task", "create", "--cwd", "{DIR}", "hi"}, code: 2,
 			errCode: "invalid_input", errMsg: "agent is required (one of: claude, codex)"},
 		{name: "task create after unknown", scenario: "ok", args: []string{"task", "create", "--after", "20000101T000000-000000", "hi"}, code: 2,
@@ -128,8 +140,8 @@ func TestOutputChannels(t *testing.T) {
 			}
 
 			out, v := run("--json")
-			if out.code != tt.code || out.stderr != "" {
-				t.Errorf("--json: code=%d, want %d; stderr=%q", out.code, tt.code, out.stderr)
+			if out.code != tt.code || out.stderr != tt.jsonStderr {
+				t.Errorf("--json: code=%d, want %d; stderr=%q, want %q", out.code, tt.code, out.stderr, tt.jsonStderr)
 			}
 			msg := ""
 			if tt.errCode != "" {

@@ -27,6 +27,7 @@ type taskRecord struct {
 	TimeoutMS int64    `json:"timeout_ms"`
 	Env       []string `json:"env"`
 	After     string   `json:"after"`
+	Write     bool     `json:"write"`
 	CreatedAt string   `json:"created_at"`
 	Lease     *struct {
 		Token     string `json:"token"`
@@ -68,6 +69,7 @@ type taskListItem struct {
 type queue struct {
 	t          *testing.T
 	home, path string
+	env        []string // extra KEY=VALUE entries for every run
 }
 
 // newQueue makes a queue whose PATH holds the fake agent set to scenario, or
@@ -82,7 +84,7 @@ func newQueue(t *testing.T, scenario string) queue {
 
 func (q queue) run(args ...string) output {
 	q.t.Helper()
-	return call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append([]string{"task"}, args...)}.run(q.t)
+	return call{path: q.path, env: append([]string{"AITS_HOME=" + q.home}, q.env...), args: append([]string{"task"}, args...)}.run(q.t)
 }
 
 // writeTaskFile writes body as the task file of id, as something other than
@@ -217,15 +219,16 @@ func TestTaskFlow(t *testing.T) {
 func TestTaskInvalidInput(t *testing.T) {
 	q := newQueue(t, "ok")
 	for name, args := range map[string][]string{
-		"no agent":     {"create", "--cwd", t.TempDir(), "hi"},
-		"empty prompt": {"create", "--agent", "claude", "--cwd", t.TempDir(), " "},
-		"missing cwd":  {"create", "--agent", "claude", "--cwd", "/nonexistent/aits", "hi"},
-		"unknown id":   {"show", "20000101T000000-000000"},
-		"two ids":      {"show", "a", "b"},
+		"no agent":        {"create", "--cwd", t.TempDir(), "hi"},
+		"write, no agent": {"create", "--cwd", t.TempDir(), "--write", "hi"},
+		"empty prompt":    {"create", "--agent", "claude", "--cwd", t.TempDir(), " "},
+		"missing cwd":     {"create", "--agent", "claude", "--cwd", "/nonexistent/aits", "hi"},
+		"unknown id":      {"show", "20000101T000000-000000"},
+		"two ids":         {"show", "a", "b"},
 	} {
 		out := q.run(append(args, "--json")...)
-		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {
-			t.Errorf("%s: code=%d stdout=%q", name, out.code, out.stdout)
+		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" || out.stderr != "" {
+			t.Errorf("%s: code=%d stdout=%q stderr=%q", name, out.code, out.stdout, out.stderr)
 		}
 	}
 	if q.queuedAny() {

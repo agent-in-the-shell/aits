@@ -51,6 +51,7 @@ Flags:
   --json              Print the result, or the error, as JSON on stdout.
   --session ID        Continue the conversation ID: the session_id of an earlier result.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
+  --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
 
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
 invalid_input.
@@ -88,6 +89,22 @@ Statuses:
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
+
+Write (--write): the agent edits files and runs commands without asking,
+inside its vendor's sandbox; aits opens no network, and your own vendor
+settings still apply. shell submit (once the agent starts) and task create
+(once the task is stored) print on stderr, with --json too:
+  aits: warning: --write lets the agent edit files and run commands in its working directory without asking
+
+  claude  --permission-mode acceptEdits and a sandbox in --settings: file
+          tools write in the working directory; commands write there and
+          in Claude Code's temp directory.
+  codex   -s workspace-write: commands write in the working directory, /tmp
+          and $TMPDIR; .git stays read-only. Without --write codex gets
+          -s read-only, a resumed session too.
+A write anywhere else fails, such as a build cache under $HOME. A command the
+sandbox stops is not in denied_tools: it looks like any failed command.
+Claude Code leaves .claude/.cc-writes in the working directory.
 
 Errors (nothing was started):
   unknown_flag        exit 2  No such flag for this command.
@@ -226,6 +243,7 @@ Flags:
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
+  --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
 neither AITS_HOME nor HOME set, every task command fails (invalid_input).
@@ -245,6 +263,26 @@ whose worker died counts until its agent is stopped; try again then). A
 queued follow-up whose parent does not exist, failed or has no session when
 done is failed by the next list or work (run status not_started); until then
 show reports it queued. An unreadable task file fails create (internal).
+
+With --write, work runs the task as shell submit --write does, without the
+warning. A follow-up takes its own --write, never its parent's: without it,
+the agent resumes without write access.
+
+Write (--write): the agent edits files and runs commands without asking,
+inside its vendor's sandbox; aits opens no network, and your own vendor
+settings still apply. shell submit (once the agent starts) and task create
+(once the task is stored) print on stderr, with --json too:
+  aits: warning: --write lets the agent edit files and run commands in its working directory without asking
+
+  claude  --permission-mode acceptEdits and a sandbox in --settings: file
+          tools write in the working directory; commands write there and
+          in Claude Code's temp directory.
+  codex   -s workspace-write: commands write in the working directory, /tmp
+          and $TMPDIR; .git stays read-only. Without --write codex gets
+          -s read-only, a resumed session too.
+A write anywhere else fails, such as a build cache under $HOME. A command the
+sandbox stops is not in denied_tools: it looks like any failed command.
+Claude Code leaves .claude/.cc-writes in the working directory.
 
 Exit codes:
   0  Queued.
@@ -311,6 +349,8 @@ Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  write        Set by create --write: the agent runs in its vendor's
+               sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"
@@ -355,6 +395,8 @@ Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  write        Set by create --write: the agent runs in its vendor's
+               sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"

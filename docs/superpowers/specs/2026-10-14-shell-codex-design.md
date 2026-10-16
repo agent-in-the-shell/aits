@@ -21,7 +21,7 @@ issue.
 |---|---|---|
 | Vendor abstraction | One `agent` struct per vendor in a table, with a `parse` function field; one shared line reader, process supervisor and outcome table | P2: the abstraction appears with its second caller; an interface or per-vendor packages add indirection two vendors do not need (P1, P2) |
 | Codex invocation | `codex exec --json -`, prompt on stdin, cwd set by aits | P8 (prompt not in argv); `-C` is redundant with the child's cwd |
-| Codex flags | None beyond the above: no sandbox, approval, model or `--skip-git-repo-check` | P9: aits does not loosen a vendor's own safety checks; outside a git repository the run fails with Codex's message |
+| Codex flags | None beyond the above: no approval, model or `--skip-git-repo-check`. Revised by #104: `-s read-only`, or `-s workspace-write` with `--write`, always, before `resume` (`2026-10-16-write-design.md`) | P9: aits does not loosen a vendor's own safety checks; outside a git repository the run fails with Codex's message |
 | Answer | The `text` of the last `agent_message` item of the turn | Observed format (§4); earlier messages in a turn are progress, the last one is the reply |
 | Failure message | When the agent reported an error, `message` carries it (first line, at most 200 bytes) even if the exit code is non-zero | Today a non-zero exit hides the vendor's reason: Claude not logged in exits 1 with an empty stderr and the reason only in its result event |
 | Fake vendor | One fake program that speaks Claude or Codex according to its executable name | P12; shared scenarios stay in one place and run for both agents |

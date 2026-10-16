@@ -49,6 +49,7 @@ type Task struct {
 	TimeoutMS int64     `json:"timeout_ms"`
 	Env       []string  `json:"env,omitempty"`   // names only (P8)
 	After     string    `json:"after,omitempty"` // the task whose session this one continues (#63)
+	Write     bool      `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
 	CreatedAt time.Time `json:"created_at"`
 	Lease     *Lease    `json:"lease"`
 	Run       *Run      `json:"run"`
@@ -75,6 +76,7 @@ type Spec struct {
 	Agent, Cwd, Prompt, After string
 	Timeout                   time.Duration
 	Env                       []string
+	Write                     bool // never taken from After (#104)
 }
 
 // invalid rejects input as shell does, so every invalid input of the group is
@@ -113,7 +115,7 @@ func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Write: s.Write, CreatedAt: now,
 	}
 	if s.After == "" {
 		if err := t.validate(s.Timeout); err != nil {
@@ -569,7 +571,7 @@ func collect(dir string, names []string) snapshot {
 func (t Task) request(environ []string) shell.Request {
 	return shell.Request{
 		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
-		Environ: environ, Pass: t.Env,
+		Environ: environ, Pass: t.Env, Write: t.Write,
 	}
 }
 

@@ -76,7 +76,7 @@ func eachAgent(t *testing.T, f func(t *testing.T, agent string)) {
 // in it (P8).
 var agentArgv = map[string][]string{
 	"claude": {"-p", "--output-format", "stream-json", "--verbose"},
-	"codex":  {"exec", "--json", "-"},
+	"codex":  {"exec", "--json", "-s", "read-only", "-"},
 }
 
 // vendor installs the fake vendor as claude, set to scenario.
@@ -395,14 +395,15 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 		{"zero timeout", submitArgs("--timeout", "0s", "hi"), "invalid_input"},
 		{"bad timeout", submitArgs("--timeout", "soon", "hi"), "invalid_input"},
 		{"unset env", submitArgs("--env", "AITS_TEST_UNSET", "hi"), "invalid_input"},
+		{"bad write", submitArgs("--write=abc", "hi"), "invalid_input"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bin := vendor(t, "ok")
 			out := call{path: bin, args: append(tt.args, "--json")}.run(t)
 			r := decode(t, out.stdout)
-			if out.code != 2 || r.Error == nil || r.Error.Code != tt.code {
-				t.Errorf("code=%d stdout=%q, want exit 2 and error %s", out.code, out.stdout, tt.code)
+			if out.code != 2 || r.Error == nil || r.Error.Code != tt.code || out.stderr != "" {
+				t.Errorf("code=%d stdout=%q stderr=%q, want exit 2, error %s and no stderr", out.code, out.stdout, out.stderr, tt.code)
 			}
 			if ran(bin) {
 				t.Errorf("the agent was started")
@@ -519,7 +520,7 @@ func TestSubmitBadOutput(t *testing.T) {
 // sess-fake-1.
 var resumeArgv = map[string][]string{
 	"claude": {"-p", "--output-format", "stream-json", "--verbose", "--resume", "sess-fake-1"},
-	"codex":  {"exec", "--json", "resume", "sess-fake-1", "-"},
+	"codex":  {"exec", "--json", "-s", "read-only", "resume", "sess-fake-1", "-"},
 }
 
 func TestSubmitResume(t *testing.T) {

@@ -193,7 +193,7 @@ func TestSessionSearchIDResumes(t *testing.T) {
 	if out.code != 0 {
 		t.Fatalf("resume: code=%d stdout=%q", out.code, out.stdout)
 	}
-	if args := readRecord(t, bin).Args; !slices.Equal(args, []string{"exec", "--json", "resume", id, "-"}) {
+	if args := readRecord(t, bin).Args; !slices.Equal(args, []string{"exec", "--json", "-s", "read-only", "resume", id, "-"}) {
 		t.Errorf("argv = %q", args)
 	}
 }

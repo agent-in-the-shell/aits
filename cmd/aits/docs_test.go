@@ -13,6 +13,7 @@ import (
 
 	"github.com/agent-in-the-shell/aits/internal/cli"
 	"github.com/agent-in-the-shell/aits/internal/shell"
+	"github.com/agent-in-the-shell/aits/internal/task"
 )
 
 var update = flag.Bool("update", false, "rewrite docs/cli.md from the binary's help output")
@@ -64,9 +65,8 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 			rows[section+" "+f[0]] = line
 		}
 	}
-	rt := reflect.TypeFor[shell.Result]()
-	for i := range rt.NumField() {
-		if name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ","); rows["Result "+name] == "" {
+	for _, name := range jsonFields[shell.Result]() {
+		if rows["Result "+name] == "" {
 			t.Errorf("result field %q is not documented in help", name)
 		}
 	}
@@ -83,6 +83,38 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 			t.Errorf("error code %q is not documented in help with %s", code, exit)
 		}
 	}
+}
+
+// TestTaskHelpDocumentsFields enforces P5 for the task record: every field
+// of its JSON is named under "Task fields" in the help of show (and of work,
+// which prints the same section).
+func TestTaskHelpDocumentsFields(t *testing.T) {
+	_, fields, _ := strings.Cut(call{args: []string{"task", "show", "--help"}}.run(t).stdout, "Task fields (--json):")
+	fields, _, _ = strings.Cut(fields, "\n\n")
+	named := map[string]bool{}
+	for _, line := range strings.Split(fields, "\n") {
+		// A row names its fields before the first double space.
+		names, _, _ := strings.Cut(strings.TrimSpace(line), "  ")
+		for _, n := range strings.Split(names, ",") {
+			named[strings.TrimSpace(n)] = true
+		}
+	}
+	for _, name := range jsonFields[task.Task]() {
+		if !named[name] {
+			t.Errorf("task show --help does not name the task field %q", name)
+		}
+	}
+}
+
+// jsonFields returns the JSON names of T's fields.
+func jsonFields[T any]() []string {
+	rt := reflect.TypeFor[T]()
+	var names []string
+	for i := range rt.NumField() {
+		name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ",")
+		names = append(names, name)
+	}
+	return names
 }
 
 // TestHelpDocumentsErrors enforces P5 for the leaves whose errors all come
