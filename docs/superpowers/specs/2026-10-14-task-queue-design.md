@@ -23,7 +23,7 @@ Follow-ups on a task's session: `2026-10-15-task-follow-up-design.md` (#63).
 | Lease | Written at claim: random token and the agent's pgid; the worker holds the task's lock file `<id>.lock` until its run is recorded | P10: the kernel releases the lock however the worker exits (#37) |
 | Dead worker | Task set to `failed` (`worker_died`), its leftover agent process group stopped; never re-queued | Re-running a task with side effects twice is worse than asking the dispatcher to resubmit |
 | Stopping a leftover agent | `shell.Request` gains `Started func(pgid int)`; the worker records the pgid in the lease | Only way for `task` to know the agent's group; reclaim is its caller from day one (P2) |
-| Permissions | None stored or forwarded; agents run with the vendors' safe defaults | P9 |
+| Permissions | None stored or forwarded; agents run with the vendors' safe defaults. Revised by #104: `create --write` stores `write` for that task alone (`2026-10-16-write-design.md`) | P9 |
 | Errors | No new error codes; an unknown id is `invalid_input` | P14: nothing new to document and test |
 
 ## 3. Packages

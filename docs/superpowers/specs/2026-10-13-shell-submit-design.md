@@ -81,8 +81,9 @@ All input is validated before anything is started; any failure exits 2 with
 **Lookup.** `claude` is resolved on the `PATH` in the request's environment.
 Not found → `agent_not_found` error envelope, exit 1, nothing started.
 
-**Argv.** `claude -p --output-format stream-json --verbose`. No permission or
-model flags (P9; out of scope in the issue). The prompt is written to the
+**Argv.** `claude -p --output-format stream-json --verbose`. No model flags;
+no permission flags unless the caller gives `--write` (#104,
+`2026-10-16-write-design.md`). The prompt is written to the
 child's stdin, which is then closed; it never appears in argv (P8).
 
 **Working directory.** `--cwd`, resolved to an absolute path.
