@@ -96,6 +96,10 @@ func TestOutputChannels(t *testing.T) {
 		{name: "session search no match", args: []string{"session", "search", "nothing"},
 			result: jsonIs(`{"results":[],"skipped":{"files":0,"lines":0}}`)},
 		{name: "session search without terms", args: []string{"session", "search"}, code: 2, errCode: "invalid_input"},
+
+		{name: "version", args: []string{"version"}, result: jsonIs(`{"version":"{VERSION}"}`), stdout: "{VERSION}\n"},
+		{name: "version with an argument", args: []string{"version", "extra"}, code: 2,
+			errCode: "invalid_input", errMsg: "version takes no arguments"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,11 +159,11 @@ func TestOutputChannels(t *testing.T) {
 }
 
 // vars are the values of one run that "{ID}", "{DIR}" and "{CREATED_AT}"
-// stand for.
+// stand for. "{VERSION}" is the version Go recorded in the binary under test.
 type vars struct{ id, dir, createdAt string }
 
 func (v vars) fill(s string) string {
-	return strings.NewReplacer("{ID}", v.id, "{DIR}", v.dir, "{CREATED_AT}", v.createdAt).Replace(s)
+	return strings.NewReplacer("{ID}", v.id, "{DIR}", v.dir, "{CREATED_AT}", v.createdAt, "{VERSION}", aitsVersion).Replace(s)
 }
 
 // queued creates one task for claude in dir.

@@ -14,6 +14,7 @@ Commands:
   shell    Run prompts through vendor agent CLIs.
   session  Search the coding agents' own conversation transcripts.
   task     Queue agent runs, work them one at a time, and read their results.
+  version  Print the version of this aits binary.
   help     Show help for aits or one of its commands.
 
 Run 'aits COMMAND --help' for details.
@@ -389,6 +390,33 @@ Exit codes:
   2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
+```
+
+## aits version
+
+```text
+Usage: aits version [flags]
+
+Print the version of this aits binary.
+
+Flags:
+  --json  Print the result, or the error, as JSON on stdout.
+
+Output:
+  The main module version Go recorded when the binary was built, e.g.
+  v0.0.0-20261015142825-3556be1bc9f6: a pseudo-version naming the commit,
+  with +dirty when the checkout had uncommitted changes, or a release tag.
+  With --json: {"version":"…"}.
+
+  "go build" in a git checkout and "go install …@VERSION" record it. A build
+  with -buildvcs=false, or from a copy without .git, records none.
+
+Exit codes:
+  0  Printed.
+  1  The binary records no version.
+  2  Usage error or invalid input.
+
+Errors: unknown_flag, invalid_input (exit 2); unknown_version (exit 1).
 ```
 
 ## aits help

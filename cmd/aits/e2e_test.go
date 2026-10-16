@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"debug/buildinfo"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +18,9 @@ import (
 )
 
 var (
-	aitsBin string // the aits binary under test (P12)
-	fakeBin string // the fake vendor executable
+	aitsBin     string // the aits binary under test (P12)
+	aitsVersion string // the main module version Go recorded in aitsBin
+	fakeBin     string // the fake vendor executable
 )
 
 func TestMain(m *testing.M) {
@@ -38,6 +40,13 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
+	info, err := buildinfo.ReadFile(aitsBin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+	aitsVersion = info.Main.Version
 	// Run aits once: the first run of a freshly built executable can be slow
 	// (macOS assesses it), and a test that signals aits must not race that
 	// first start against main installing its handler.
