@@ -70,8 +70,8 @@ documented behaviour, not observed here.
   agent (`TestOutputChannels`); `--write=abc`; environment variables
   changing nothing; the record's `write`, absent without the flag;
   follow-ups with and without it; `task work --write` is `unknown_flag`.
-- `TestTaskHelpDocumentsFields`: every task record field is named in the
-  help of `show` and `work`.
+- `TestTaskHelpDocumentsFields`: every task record field is named under
+  Task fields in `task show --help` (`work` prints the same section).
 - Opt-in live test `TestLiveWrite` (`-tags live`): checks files, not answers.
 
 ## 6. Not done

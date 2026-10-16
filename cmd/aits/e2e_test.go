@@ -402,8 +402,8 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 			bin := vendor(t, "ok")
 			out := call{path: bin, args: append(tt.args, "--json")}.run(t)
 			r := decode(t, out.stdout)
-			if out.code != 2 || r.Error == nil || r.Error.Code != tt.code {
-				t.Errorf("code=%d stdout=%q, want exit 2 and error %s", out.code, out.stdout, tt.code)
+			if out.code != 2 || r.Error == nil || r.Error.Code != tt.code || out.stderr != "" {
+				t.Errorf("code=%d stdout=%q stderr=%q, want exit 2, error %s and no stderr", out.code, out.stdout, out.stderr, tt.code)
 			}
 			if ran(bin) {
 				t.Errorf("the agent was started")

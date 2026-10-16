@@ -29,17 +29,20 @@ var (
 // The warning is checked by TestOutputChannels.
 func TestSubmitWrite(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
-		for _, session := range []string{"", "sess-fake-1"} {
-			bin, want, args := vendorAs(t, agent, "ok"), writeArgv[agent], agentArgs(agent, "--write", "--json")
-			if session != "" {
-				want, args = writeResumeArgv[agent], append(args, "--session", session)
+		for _, tt := range []struct {
+			session string
+			want    map[string][]string
+		}{{"", writeArgv}, {"sess-fake-1", writeResumeArgv}} {
+			bin, args := vendorAs(t, agent, "ok"), agentArgs(agent, "--write", "--json")
+			if tt.session != "" {
+				args = append(args, "--session", tt.session)
 			}
 			out := call{path: bin, args: append(args, "edit it")}.run(t)
 			if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" {
-				t.Fatalf("session %q: code=%d result=%+v", session, out.code, r)
+				t.Fatalf("session %q: code=%d result=%+v", tt.session, out.code, r)
 			}
-			if rec := readRecord(t, bin); !slices.Equal(rec.Args, want) {
-				t.Errorf("session %q: agent argv = %q, want %q", session, rec.Args, want)
+			if rec := readRecord(t, bin); !slices.Equal(rec.Args, tt.want[agent]) {
+				t.Errorf("session %q: agent argv = %q, want %q", tt.session, rec.Args, tt.want[agent])
 			}
 		}
 	})

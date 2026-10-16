@@ -177,8 +177,10 @@ func submitError(err error) error {
 // writeDetails documents --write, for shell submit and task create (#104).
 const writeDetails = `
 Write (--write): the agent edits files and runs commands without asking,
-inside its vendor's sandbox. aits opens no network, and your own vendor
-settings still apply.
+inside its vendor's sandbox. shell submit (once the agent starts) and task
+create (once the task is stored) print on stderr, with --json too:
+  ` + writeWarning + `
+aits opens no network, and your own vendor settings still apply.
   claude  --permission-mode acceptEdits and a sandbox in --settings: file
           tools write in the working directory; commands write there and
           in Claude Code's temp directory.
@@ -187,10 +189,7 @@ settings still apply.
           -s read-only, a resumed session too.
 A write anywhere else fails, such as a build cache under $HOME. A command the
 sandbox stops is not in denied_tools: it looks like any failed command.
-Claude Code leaves .claude/.cc-writes in the working directory. On stderr,
-with --json too, shell submit once the agent starts and task create once
-the task is stored print:
-  ` + writeWarning + `
+Claude Code leaves .claude/.cc-writes in the working directory.
 `
 
 // writeUsage is the help of --write, for shell submit and task create.
