@@ -67,9 +67,9 @@ documented behaviour, not observed here.
 - Binary tests with the fake vendors: the exact argv per agent, new and
   resumed, with and without `--write`, from `shell submit` and `task work`;
   the warning in both modes and its absence on invalid input or a missing
-  agent; `--write=false` and `--write=abc`; environment variables changing
-  nothing; the record's `write`; follow-ups with and without it; `task work
-  --write` is `unknown_flag`.
+  agent (`TestOutputChannels`); `--write=abc`; environment variables
+  changing nothing; the record's `write`, absent without the flag;
+  follow-ups with and without it; `task work --write` is `unknown_flag`.
 - `TestTaskHelpDocumentsFields`: every task record field is named in the
   help of `show` and `work`.
 - Opt-in live test `TestLiveWrite` (`-tags live`): checks files, not answers.

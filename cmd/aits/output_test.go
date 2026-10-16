@@ -30,9 +30,10 @@ type outputCase struct {
 
 // TestOutputChannels enforces P5 for every kind of outcome of every command:
 // with --json, stdout is exactly one JSON object (an error envelope or a
-// result) and stderr is empty but for the warning of --write; in text mode, stdout carries only the result
-// and stderr the diagnostics, with an error printed as "aits: MESSAGE". The
-// help of the command a row runs lists the row's error code with its exit.
+// result) and stderr is empty but for the warning of --write; in text mode,
+// stdout carries only the result and stderr the diagnostics, with an error
+// printed as "aits: MESSAGE". The help of the command a row runs lists the
+// row's error code with its exit.
 func TestOutputChannels(t *testing.T) {
 	const failed = "aits: task {ID} failed: agent_failed: the agent exited with code 3\n"
 	const denied = "denied_tools: Write, " + ctrlToolShown + "\n"

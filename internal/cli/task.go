@@ -70,9 +70,9 @@ queued follow-up whose parent does not exist, failed or has no session when
 done is failed by the next list or work (run status not_started); until then
 show reports it queued. An unreadable task file fails create (internal).
 
-With --write, the task records write and work runs it as shell submit
---write does, with no warning. A follow-up takes its own --write, never its
-parent's: without it, the agent resumes without write access.
+With --write, work runs the task as shell submit --write does, without the
+warning. A follow-up takes its own --write, never its parent's: without it,
+the agent resumes without write access.
 ` + writeDetails + `
 Exit codes:
   0  Queued.

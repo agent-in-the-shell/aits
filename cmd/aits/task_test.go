@@ -69,6 +69,7 @@ type taskListItem struct {
 type queue struct {
 	t          *testing.T
 	home, path string
+	env        []string // extra KEY=VALUE entries for every run
 }
 
 // newQueue makes a queue whose PATH holds the fake agent set to scenario, or
@@ -83,7 +84,7 @@ func newQueue(t *testing.T, scenario string) queue {
 
 func (q queue) run(args ...string) output {
 	q.t.Helper()
-	return call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append([]string{"task"}, args...)}.run(q.t)
+	return call{path: q.path, env: append([]string{"AITS_HOME=" + q.home}, q.env...), args: append([]string{"task"}, args...)}.run(q.t)
 }
 
 // writeTaskFile writes body as the task file of id, as something other than

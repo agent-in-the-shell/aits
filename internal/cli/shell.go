@@ -177,11 +177,8 @@ func submitError(err error) error {
 // writeDetails documents --write, for shell submit and task create (#104).
 const writeDetails = `
 Write (--write): the agent edits files and runs commands without asking,
-inside its vendor's sandbox. aits prints "aits: warning: --write lets the
-agent edit files and run commands in its working directory without asking"
-on stderr, with --json too: shell submit once the agent starts, task create
-once the task is stored. aits opens no network, and your own vendor settings
-still apply.
+inside its vendor's sandbox. aits opens no network, and your own vendor
+settings still apply.
   claude  --permission-mode acceptEdits and a sandbox in --settings: file
           tools write in the working directory; commands write there and
           in Claude Code's temp directory.
@@ -190,17 +187,20 @@ still apply.
           -s read-only, a resumed session too.
 A write anywhere else fails, such as a build cache under $HOME. A command the
 sandbox stops is not in denied_tools: it looks like any failed command.
-Claude Code leaves .claude/.cc-writes in the working directory.
+Claude Code leaves .claude/.cc-writes in the working directory. On stderr,
+with --json too, shell submit once the agent starts and task create once
+the task is stored print:
+  ` + writeWarning + `
 `
 
 // writeUsage is the help of --write, for shell submit and task create.
 const writeUsage = "Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox."
 
-// warnWrite says on stderr, in both output modes, that the agent may write
-// without asking (P9).
-func warnWrite(env *Env) {
-	fmt.Fprintln(env.Stderr, "aits: warning: --write lets the agent edit files and run commands in its working directory without asking")
-}
+// writeWarning is printed on stderr, in both output modes, by an invocation
+// that gives --write (P9).
+const writeWarning = "aits: warning: --write lets the agent edit files and run commands in its working directory without asking"
+
+func warnWrite(env *Env) { fmt.Fprintln(env.Stderr, writeWarning) }
 
 // writeRunNotes prints, in text mode, the run's session id and the tools the
 // agent was refused, if any, on stderr.

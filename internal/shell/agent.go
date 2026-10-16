@@ -47,10 +47,11 @@ func claudeArgv(session string, write bool) []string {
 // it (P9). No --skip-git-repo-check or approval flags: Codex keeps its own
 // checks.
 func codexArgv(session string, write bool) []string {
-	args := []string{"exec", "--json", "-s", "read-only"}
+	sandbox := "read-only"
 	if write {
-		args[3] = "workspace-write"
+		sandbox = "workspace-write"
 	}
+	args := []string{"exec", "--json", "-s", sandbox}
 	if session != "" {
 		args = append(args, "resume", session)
 	}

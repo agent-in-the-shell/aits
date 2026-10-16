@@ -395,6 +395,7 @@ func TestSubmitInvalidInputStartsNothing(t *testing.T) {
 		{"zero timeout", submitArgs("--timeout", "0s", "hi"), "invalid_input"},
 		{"bad timeout", submitArgs("--timeout", "soon", "hi"), "invalid_input"},
 		{"unset env", submitArgs("--env", "AITS_TEST_UNSET", "hi"), "invalid_input"},
+		{"bad write", submitArgs("--write=abc", "hi"), "invalid_input"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
