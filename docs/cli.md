@@ -405,7 +405,8 @@ Flags:
 Output:
   The main module version Go recorded when the binary was built: a release
   tag, or a pseudo-version ending in the commit, e.g.
-  v0.0.0-20261015142825-3556be1bc9f6, with +dirty for uncommitted changes.
+  v0.0.0-20261015142825-3556be1bc9f6, with +dirty when the checkout had
+  uncommitted changes or untracked files.
   With --json: {"version":"…"}. "go build" in a git checkout and
   "go install …@VERSION" record it; -buildvcs=false or a copy without .git
   does not.
