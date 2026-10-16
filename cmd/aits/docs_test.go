@@ -13,6 +13,7 @@ import (
 
 	"github.com/agent-in-the-shell/aits/internal/cli"
 	"github.com/agent-in-the-shell/aits/internal/shell"
+	"github.com/agent-in-the-shell/aits/internal/task"
 )
 
 var update = flag.Bool("update", false, "rewrite docs/cli.md from the binary's help output")
@@ -81,6 +82,30 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 	for code, exit := range errorCodes(t, "../../internal/cli/shell.go", "../../internal/cli/parse.go", "../../internal/cli/cli.go") {
 		if documented[code] != exit {
 			t.Errorf("error code %q is not documented in help with %s", code, exit)
+		}
+	}
+}
+
+// TestTaskHelpDocumentsFields enforces P5 for the task record: every field
+// of its JSON is named under "Task fields" in the help of show and work.
+func TestTaskHelpDocumentsFields(t *testing.T) {
+	for _, cmd := range []string{"show", "work"} {
+		help := call{args: []string{"task", cmd, "--help"}}.run(t).stdout
+		_, fields, _ := strings.Cut(help, "Task fields (--json):")
+		fields, _, _ = strings.Cut(fields, "\n\n")
+		named := map[string]bool{}
+		for _, line := range strings.Split(fields, "\n") {
+			// A row names its fields before the first double space.
+			names, _, _ := strings.Cut(strings.TrimSpace(line), "  ")
+			for _, n := range strings.Split(names, ",") {
+				named[strings.TrimSpace(n)] = true
+			}
+		}
+		rt := reflect.TypeFor[task.Task]()
+		for i := range rt.NumField() {
+			if name, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ","); !named[name] {
+				t.Errorf("task %s --help does not name the task field %q", cmd, name)
+			}
 		}
 	}
 }

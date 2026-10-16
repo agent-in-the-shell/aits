@@ -60,7 +60,7 @@ Statuses:
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
-
+` + writeDetails + `
 Errors (nothing was started):
   unknown_flag        exit 2  No such flag for this command.
   invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
@@ -173,6 +173,25 @@ func submitError(err error) error {
 		return failure("agent_start_failed", "%v", err)
 	}
 }
+
+// writeDetails documents --write, for shell submit and task create (#104).
+const writeDetails = `
+Write (--write): the agent edits files and runs commands without asking,
+inside its vendor's sandbox. aits prints "aits: warning: --write lets the
+agent edit files and run commands in its working directory without asking"
+on stderr, with --json too: shell submit once the agent starts, task create
+once the task is stored. aits opens no network, and your own vendor settings
+still apply.
+  claude  --permission-mode acceptEdits and a sandbox in --settings: file
+          tools write in the working directory; commands write there and
+          in Claude Code's temp directory.
+  codex   -s workspace-write: commands write in the working directory, /tmp
+          and $TMPDIR; .git stays read-only. Without --write codex gets
+          -s read-only, a resumed session too.
+A write anywhere else fails, such as a build cache under $HOME. A command the
+sandbox stops is not in denied_tools: it looks like any failed command.
+Claude Code leaves .claude/.cc-writes in the working directory.
+`
 
 // writeUsage is the help of --write, for shell submit and task create.
 const writeUsage = "Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox."

@@ -90,6 +90,22 @@ Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
 
+Write (--write): the agent edits files and runs commands without asking,
+inside its vendor's sandbox. aits prints "aits: warning: --write lets the
+agent edit files and run commands in its working directory without asking"
+on stderr, with --json too: shell submit once the agent starts, task create
+once the task is stored. aits opens no network, and your own vendor settings
+still apply.
+  claude  --permission-mode acceptEdits and a sandbox in --settings: file
+          tools write in the working directory; commands write there and
+          in Claude Code's temp directory.
+  codex   -s workspace-write: commands write in the working directory, /tmp
+          and $TMPDIR; .git stays read-only. Without --write codex gets
+          -s read-only, a resumed session too.
+A write anywhere else fails, such as a build cache under $HOME. A command the
+sandbox stops is not in denied_tools: it looks like any failed command.
+Claude Code leaves .claude/.cc-writes in the working directory.
+
 Errors (nothing was started):
   unknown_flag        exit 2  No such flag for this command.
   invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
@@ -248,6 +264,26 @@ queued follow-up whose parent does not exist, failed or has no session when
 done is failed by the next list or work (run status not_started); until then
 show reports it queued. An unreadable task file fails create (internal).
 
+With --write, the task records write and work runs it as shell submit
+--write does, with no warning. A follow-up takes its own --write, never its
+parent's: without it, the agent resumes without write access.
+
+Write (--write): the agent edits files and runs commands without asking,
+inside its vendor's sandbox. aits prints "aits: warning: --write lets the
+agent edit files and run commands in its working directory without asking"
+on stderr, with --json too: shell submit once the agent starts, task create
+once the task is stored. aits opens no network, and your own vendor settings
+still apply.
+  claude  --permission-mode acceptEdits and a sandbox in --settings: file
+          tools write in the working directory; commands write there and
+          in Claude Code's temp directory.
+  codex   -s workspace-write: commands write in the working directory, /tmp
+          and $TMPDIR; .git stays read-only. Without --write codex gets
+          -s read-only, a resumed session too.
+A write anywhere else fails, such as a build cache under $HOME. A command the
+sandbox stops is not in denied_tools: it looks like any failed command.
+Claude Code leaves .claude/.cc-writes in the working directory.
+
 Exit codes:
   0  Queued.
   1  The queue could not be read or written.
@@ -313,6 +349,8 @@ Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  write        Set by create --write: the agent runs in its vendor's
+               sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"
@@ -357,6 +395,8 @@ Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  write        Set by create --write: the agent runs in its vendor's
+               sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"
