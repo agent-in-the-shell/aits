@@ -30,7 +30,7 @@ func Root() *Command {
 	root := &Command{
 		Name:     "aits",
 		Summary:  "Run coding agents from the command line.",
-		Children: []*Command{shellGroup(), sessionGroup(), taskGroup()},
+		Children: []*Command{shellGroup(), sessionGroup(), taskGroup(), versionCommand()},
 	}
 	root.Children = append(root.Children, helpCommand(root))
 	return root

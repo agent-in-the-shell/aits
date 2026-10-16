@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"cmp"
+	"debug/buildinfo"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +19,9 @@ import (
 )
 
 var (
-	aitsBin string // the aits binary under test (P12)
-	fakeBin string // the fake vendor executable
+	aitsBin     string // the aits binary under test (P12)
+	aitsVersion string // the main module version Go recorded in aitsBin
+	fakeBin     string // the fake vendor executable
 )
 
 func TestMain(m *testing.M) {
@@ -38,6 +41,13 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
+	info, err := buildinfo.ReadFile(aitsBin)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+	aitsVersion = info.Main.Version
 	// Run aits once: the first run of a freshly built executable can be slow
 	// (macOS assesses it), and a test that signals aits must not race that
 	// first start against main installing its handler.
@@ -95,6 +105,7 @@ func vendorAs(t *testing.T, agent, scenario string) string {
 // call is one invocation of the aits binary, always with a temporary HOME and
 // AITS_HOME (P12).
 type call struct {
+	bin   string // the aits binary; empty means aitsBin
 	path  string // PATH for aits; empty means an empty directory
 	dir   string // aits's working directory; empty means the test's
 	stdin string
@@ -113,7 +124,7 @@ func (c call) command(t *testing.T) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer) {
 	if path == "" {
 		path = t.TempDir()
 	}
-	cmd := exec.Command(aitsBin, c.args...)
+	cmd := exec.Command(cmp.Or(c.bin, aitsBin), c.args...)
 	cmd.Dir = c.dir
 	cmd.Env = append([]string{"PATH=" + path, "HOME=" + t.TempDir(), "AITS_HOME=" + t.TempDir()}, c.env...)
 	cmd.Stdin = strings.NewReader(c.stdin)

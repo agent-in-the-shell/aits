@@ -85,14 +85,22 @@ func TestSubmitHelpDocumentsOutput(t *testing.T) {
 	}
 }
 
-// TestSearchHelpDocumentsErrors enforces P5 for "aits session search": every
-// error code internal/cli/session.go can produce is on the help's Errors line
-// with the exit code it causes (#62).
-func TestSearchHelpDocumentsErrors(t *testing.T) {
-	documented := helpErrors(t, []string{"session", "search"})
-	for code, exit := range errorCodes(t, "../../internal/cli/session.go") {
-		if documented[code] != exit {
-			t.Errorf("error code %q is not in the help's Errors with %s: %v", code, exit, documented)
+// TestHelpDocumentsErrors enforces P5 for the leaves whose errors all come
+// from one file: every error code the file can produce is on the help's
+// Errors line with the exit code it causes (#62, #102).
+func TestHelpDocumentsErrors(t *testing.T) {
+	for _, c := range []struct {
+		path []string
+		src  string
+	}{
+		{[]string{"session", "search"}, "session.go"},
+		{[]string{"version"}, "version.go"},
+	} {
+		documented := helpErrors(t, c.path)
+		for code, exit := range errorCodes(t, "../../internal/cli/"+c.src) {
+			if documented[code] != exit {
+				t.Errorf("aits %s: error code %q is not in the help's Errors with %s: %v", strings.Join(c.path, " "), code, exit, documented)
+			}
 		}
 	}
 }

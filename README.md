@@ -13,6 +13,13 @@ call.
 
     go install github.com/agent-in-the-shell/aits/cmd/aits@latest
 
+Check which build is installed:
+
+    aits version
+
+prints the version Go recorded at build time, such as
+`v0.0.0-20261015142825-3556be1bc9f6`, which ends in the commit.
+
 ## Usage
 
     aits shell submit --agent claude --cwd ~/src/proj --json "Summarize what this repo does"
