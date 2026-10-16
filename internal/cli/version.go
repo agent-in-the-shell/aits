@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"runtime/debug"
+	"strings"
 )
 
 // versionCommand is "aits version": the main module version Go recorded in
@@ -14,13 +15,12 @@ func versionCommand() *Command {
 		Name:    "version",
 		Summary: "Print the version of this aits binary.",
 		Details: `Output:
-  The main module version Go recorded when the binary was built, e.g.
-  v0.0.0-20261015142825-3556be1bc9f6: a pseudo-version naming the commit,
-  with +dirty when the checkout had uncommitted changes, or a release tag.
-  With --json: {"version":"…"}.
-
-  "go build" in a git checkout and "go install …@VERSION" record it. A build
-  with -buildvcs=false, or from a copy without .git, records none.
+  The main module version Go recorded when the binary was built: a release
+  tag, or a pseudo-version ending in the commit, e.g.
+  v0.0.0-20261015142825-3556be1bc9f6, with +dirty for uncommitted changes.
+  With --json: {"version":"…"}. "go build" in a git checkout and
+  "go install …@VERSION" record it; -buildvcs=false or a copy without .git
+  does not.
 
 Exit codes:
   0  Printed.
@@ -35,8 +35,9 @@ Errors: unknown_flag, invalid_input (exit 2); unknown_version (exit 1).
 					return 0, usageError("invalid_input", "version takes no arguments")
 				}
 				info, ok := debug.ReadBuildInfo()
-				if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
-					return 0, failure("unknown_version", "this aits records no version: it was built without version control information (go build -buildvcs=false, or outside a git checkout)")
+				// Without version control information Go records "(devel)".
+				if !ok || !strings.HasPrefix(info.Main.Version, "v") {
+					return 0, failure("unknown_version", "this aits records no version (built with -buildvcs=false or outside a git checkout)")
 				}
 				if env.JSON {
 					writeJSON(env.Stdout, map[string]string{"version": info.Main.Version})

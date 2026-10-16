@@ -403,13 +403,12 @@ Flags:
   --json  Print the result, or the error, as JSON on stdout.
 
 Output:
-  The main module version Go recorded when the binary was built, e.g.
-  v0.0.0-20261015142825-3556be1bc9f6: a pseudo-version naming the commit,
-  with +dirty when the checkout had uncommitted changes, or a release tag.
-  With --json: {"version":"…"}.
-
-  "go build" in a git checkout and "go install …@VERSION" record it. A build
-  with -buildvcs=false, or from a copy without .git, records none.
+  The main module version Go recorded when the binary was built: a release
+  tag, or a pseudo-version ending in the commit, e.g.
+  v0.0.0-20261015142825-3556be1bc9f6, with +dirty for uncommitted changes.
+  With --json: {"version":"…"}. "go build" in a git checkout and
+  "go install …@VERSION" record it; -buildvcs=false or a copy without .git
+  does not.
 
 Exit codes:
   0  Printed.
