@@ -76,7 +76,7 @@ func eachAgent(t *testing.T, f func(t *testing.T, agent string)) {
 // in it (P8).
 var agentArgv = map[string][]string{
 	"claude": {"-p", "--output-format", "stream-json", "--verbose"},
-	"codex":  {"exec", "--json", "-"},
+	"codex":  {"exec", "--json", "-s", "read-only", "-"},
 }
 
 // vendor installs the fake vendor as claude, set to scenario.
@@ -519,7 +519,7 @@ func TestSubmitBadOutput(t *testing.T) {
 // sess-fake-1.
 var resumeArgv = map[string][]string{
 	"claude": {"-p", "--output-format", "stream-json", "--verbose", "--resume", "sess-fake-1"},
-	"codex":  {"exec", "--json", "resume", "sess-fake-1", "-"},
+	"codex":  {"exec", "--json", "-s", "read-only", "resume", "sess-fake-1", "-"},
 }
 
 func TestSubmitResume(t *testing.T) {

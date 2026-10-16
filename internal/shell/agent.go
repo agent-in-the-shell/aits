@@ -10,10 +10,12 @@ import (
 type agent struct {
 	name       string
 	executable string
-	args       []string                 // never carries the prompt (P8)
-	resume     func(id string) []string // the argv that continues session id
-	env        []string                 // the agent's own variables, passed on top of baseEnv when set
-	parse      parser                   // turns one line of the agent's output into events
+	// argv is the agent's arguments: a new conversation, or session when it
+	// is not empty, in the vendor's sandbox when write is set. It never
+	// carries the prompt (P8).
+	argv  func(session string, write bool) []string
+	env   []string // the agent's own variables, passed on top of baseEnv when set
+	parse parser   // turns one line of the agent's output into events
 }
 
 // baseEnv is passed to every agent when set, together with every LC_*
@@ -23,37 +25,54 @@ var baseEnv = []string{
 	"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
 }
 
-var claudeArgs = []string{"-p", "--output-format", "stream-json", "--verbose"}
+// claudeSandbox lets Claude Code edit files and run commands without asking,
+// confined by its sandbox to the working directory and its temp directory,
+// with no network; a command the sandbox would stop is never retried outside
+// it, and a run where the sandbox cannot start fails (P6, P9).
+const claudeSandbox = `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}`
+
+func claudeArgv(session string, write bool) []string {
+	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
+	if write {
+		args = append(args, "--permission-mode", "acceptEdits", "--settings", claudeSandbox)
+	}
+	if session != "" {
+		args = append(args, "--resume", session)
+	}
+	return args
+}
+
+// codexArgv always names the sandbox: Codex keeps a session's sandbox when it
+// is resumed without one, so a session started with write access would keep
+// it (P9). No --skip-git-repo-check or approval flags: Codex keeps its own
+// checks.
+func codexArgv(session string, write bool) []string {
+	args := []string{"exec", "--json", "-s", "read-only"}
+	if write {
+		args[3] = "workspace-write"
+	}
+	if session != "" {
+		args = append(args, "resume", session)
+	}
+	return append(args, "-")
+}
 
 var agents = map[string]agent{
 	"claude": {
 		name:       "claude",
 		executable: "claude",
-		args:       claudeArgs,
-		resume:     func(id string) []string { return append(slices.Clip(claudeArgs), "--resume", id) },
+		argv:       claudeArgv,
 		env:        []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
 		parse:      parseClaude,
 	},
 	"codex": {
 		name:       "codex",
 		executable: "codex",
-		// No --skip-git-repo-check, sandbox or approval flags: Codex keeps its
-		// own safety defaults (P9).
-		args:   []string{"exec", "--json", "-"},
-		resume: func(id string) []string { return []string{"exec", "--json", "resume", id, "-"} },
+		argv:       codexArgv,
 		// The credential variables Codex reads besides its login in CODEX_HOME.
 		env:   []string{"CODEX_HOME", "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"},
 		parse: parseCodex,
 	},
-}
-
-// argv returns the agent's arguments: a new conversation, or session when it
-// is not empty.
-func (a agent) argv(session string) []string {
-	if session == "" {
-		return a.args
-	}
-	return a.resume(session)
 }
 
 // Agents returns the supported agent names, sorted.

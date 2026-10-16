@@ -88,15 +88,21 @@ func submitCommand() *Command {
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
 			session := nonEmpty(fs, "session", "Continue the conversation `ID`: the session_id of an earlier result.", "a session id")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to the agent.")
+			write := fs.Bool("write", false, writeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
 					return 0, err
 				}
-				res, err := shell.Submit(ctx, shell.Request{
+				req := shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: *pass, Session: *session, Kill: env.Kill,
-				})
+					Environ: env.Environ, Pass: *pass, Session: *session, Write: *write, Kill: env.Kill,
+				}
+				if *write {
+					// Once the agent has started: invalid input prints only its error.
+					req.Started = func(int) error { warnWrite(env); return nil }
+				}
+				res, err := shell.Submit(ctx, req)
 				if err != nil {
 					return 0, submitError(err)
 				}
@@ -166,6 +172,15 @@ func submitError(err error) error {
 	default:
 		return failure("agent_start_failed", "%v", err)
 	}
+}
+
+// writeUsage is the help of --write, for shell submit and task create.
+const writeUsage = "Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox."
+
+// warnWrite says on stderr, in both output modes, that the agent may write
+// without asking (P9).
+func warnWrite(env *Env) {
+	fmt.Fprintln(env.Stderr, "aits: warning: --write lets the agent edit files and run commands in its working directory without asking")
 }
 
 // writeRunNotes prints, in text mode, the run's session id and the tools the

@@ -38,6 +38,10 @@ type Request struct {
 	Environ []string      // the caller's environment, KEY=VALUE; its PATH also finds the agent
 	Pass    []string      // variable names passed from Environ beyond the allowlist (P8)
 	Session string        // a session to continue; empty starts a new one
+	// Write lets the agent edit files and run commands in Dir without asking,
+	// inside its vendor's sandbox. Only an explicit choice of the caller sets
+	// it (P9).
+	Write bool
 	// Started, if set, is called once with the agent's process group right
 	// after it starts. If it fails, the group is killed at once and the run
 	// is stopped, with the error as its message.

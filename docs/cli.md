@@ -51,6 +51,7 @@ Flags:
   --json              Print the result, or the error, as JSON on stdout.
   --session ID        Continue the conversation ID: the session_id of an earlier result.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
+  --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
 
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
 invalid_input.
@@ -226,6 +227,7 @@ Flags:
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
+  --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
 neither AITS_HOME nor HOME set, every task command fails (invalid_input).

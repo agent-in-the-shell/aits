@@ -27,6 +27,7 @@ type taskRecord struct {
 	TimeoutMS int64    `json:"timeout_ms"`
 	Env       []string `json:"env"`
 	After     string   `json:"after"`
+	Write     bool     `json:"write"`
 	CreatedAt string   `json:"created_at"`
 	Lease     *struct {
 		Token     string `json:"token"`
