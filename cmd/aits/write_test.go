@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -79,14 +80,29 @@ func TestSubmitWriteValue(t *testing.T) {
 	})
 }
 
-// No environment variable turns --write on (P9).
+// No environment variable turns --write on, for shell submit or task create
+// (P9).
 func TestWriteNotFromEnvironment(t *testing.T) {
+	env := []string{"AITS_WRITE=1", "AITS_SHELL_WRITE=1", "AITS_TASK_WRITE=1", "WRITE=1"}
 	eachAgent(t, func(t *testing.T, agent string) {
 		bin := vendorAs(t, agent, "ok")
-		env := []string{"AITS_WRITE=1", "AITS_SHELL_WRITE=1", "WRITE=1"}
 		out := call{path: bin, env: env, args: agentArgs(agent, "--json", "hi")}.run(t)
 		if rec := readRecord(t, bin); out.code != 0 || out.stderr != "" || !slices.Equal(rec.Args, agentArgv[agent]) {
-			t.Errorf("code=%d stderr=%q argv=%q, want %q", out.code, out.stderr, rec.Args, agentArgv[agent])
+			t.Errorf("submit: code=%d stderr=%q argv=%q, want %q", out.code, out.stderr, rec.Args, agentArgv[agent])
+		}
+
+		q := queue{t: t, home: t.TempDir(), path: vendorAs(t, agent, "ok")}
+		withEnv := func(args ...string) output {
+			return call{path: q.path, env: append([]string{"AITS_HOME=" + q.home}, env...), args: append([]string{"task"}, args...)}.run(t)
+		}
+		out = withEnv("create", "--agent", agent, "--cwd", t.TempDir(), "--json", "hi")
+		if out.stderr != "" {
+			t.Errorf("create: stderr=%q", out.stderr)
+		}
+		created(t, out)
+		withEnv("work")
+		if rec := readRecord(t, q.path); !slices.Equal(rec.Args, agentArgv[agent]) {
+			t.Errorf("work: argv=%q, want %q", rec.Args, agentArgv[agent])
 		}
 	})
 }
@@ -137,12 +153,12 @@ func TestTaskWrite(t *testing.T) {
 }
 
 // --write belongs to the invocation that queues the task; work has no such
-// flag, and a task created without it records nothing.
+// flag, and a task created without it has no write field at all.
 func TestTaskWorkHasNoWrite(t *testing.T) {
 	q := newQueue(t, "ok")
 	id := q.create("hi")
-	if rec := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); rec.Write {
-		t.Errorf("task = %+v", rec)
+	if out := q.run("show", id, "--json"); strings.Contains(out.stdout, `"write"`) {
+		t.Errorf("task = %s", out.stdout)
 	}
 	out := q.run("work", "--write", "--json")
 	if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "unknown_flag" {
