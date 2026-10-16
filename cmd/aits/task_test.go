@@ -219,15 +219,16 @@ func TestTaskFlow(t *testing.T) {
 func TestTaskInvalidInput(t *testing.T) {
 	q := newQueue(t, "ok")
 	for name, args := range map[string][]string{
-		"no agent":     {"create", "--cwd", t.TempDir(), "hi"},
-		"empty prompt": {"create", "--agent", "claude", "--cwd", t.TempDir(), " "},
-		"missing cwd":  {"create", "--agent", "claude", "--cwd", "/nonexistent/aits", "hi"},
-		"unknown id":   {"show", "20000101T000000-000000"},
-		"two ids":      {"show", "a", "b"},
+		"no agent":        {"create", "--cwd", t.TempDir(), "hi"},
+		"write, no agent": {"create", "--cwd", t.TempDir(), "--write", "hi"},
+		"empty prompt":    {"create", "--agent", "claude", "--cwd", t.TempDir(), " "},
+		"missing cwd":     {"create", "--agent", "claude", "--cwd", "/nonexistent/aits", "hi"},
+		"unknown id":      {"show", "20000101T000000-000000"},
+		"two ids":         {"show", "a", "b"},
 	} {
 		out := q.run(append(args, "--json")...)
-		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" {
-			t.Errorf("%s: code=%d stdout=%q", name, out.code, out.stdout)
+		if r := decode(t, out.stdout); out.code != 2 || r.Error == nil || r.Error.Code != "invalid_input" || out.stderr != "" {
+			t.Errorf("%s: code=%d stdout=%q stderr=%q", name, out.code, out.stdout, out.stderr)
 		}
 	}
 	if q.queuedAny() {

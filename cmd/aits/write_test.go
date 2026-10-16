@@ -30,19 +30,16 @@ var (
 func TestSubmitWrite(t *testing.T) {
 	eachAgent(t, func(t *testing.T, agent string) {
 		for _, tt := range []struct {
-			session string
-			want    map[string][]string
-		}{{"", writeArgv}, {"sess-fake-1", writeResumeArgv}} {
-			bin, args := vendorAs(t, agent, "ok"), agentArgs(agent, "--write", "--json")
-			if tt.session != "" {
-				args = append(args, "--session", tt.session)
-			}
-			out := call{path: bin, args: append(args, "edit it")}.run(t)
+			extra []string
+			want  map[string][]string
+		}{{nil, writeArgv}, {[]string{"--session", "sess-fake-1"}, writeResumeArgv}} {
+			bin := vendorAs(t, agent, "ok")
+			out := call{path: bin, args: append(agentArgs(agent, "--write", "--json", "edit it"), tt.extra...)}.run(t)
 			if r := decode(t, out.stdout); out.code != 0 || r.Status != "ok" {
-				t.Fatalf("session %q: code=%d result=%+v", tt.session, out.code, r)
+				t.Fatalf("%q: code=%d result=%+v", tt.extra, out.code, r)
 			}
 			if rec := readRecord(t, bin); !slices.Equal(rec.Args, tt.want[agent]) {
-				t.Errorf("session %q: agent argv = %q, want %q", tt.session, rec.Args, tt.want[agent])
+				t.Errorf("%q: agent argv = %q, want %q", tt.extra, rec.Args, tt.want[agent])
 			}
 		}
 	})
