@@ -46,6 +46,17 @@ Queue work for agents and collect it later:
 
 The full reference is [docs/cli.md](docs/cli.md).
 
+## Agent skill
+
+[skills/aits/SKILL.md](skills/aits/SKILL.md) teaches a coding agent when and
+how to call aits. Install it where your agent loads skills, for Claude Code:
+
+    git clone https://github.com/agent-in-the-shell/aits
+    mkdir -p ~/.claude/skills && cp -R aits/skills/aits ~/.claude/skills/
+
+Update it with the binary: each change to the CLI updates the skill in the
+same commit.
+
 ## Planned command groups
 
 | Group | Job |

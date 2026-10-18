@@ -200,14 +200,19 @@ directory, so any test writing to the real environment fails.
 
 ## P13 — Ship together, on supported platforms
 
-**Rule.** One pull request delivers the code, CLI help, docs and tests for a
-change. The CLI reference is generated from help, never hand-written.
-Supported platforms are Linux and macOS on amd64 and arm64.
+**Rule.** One pull request delivers the code, CLI help, docs, the agent skill
+(`skills/aits/SKILL.md`) and tests for a change. The CLI reference is
+generated from help, never hand-written. Supported platforms are Linux and
+macOS on amd64 and arm64.
 
-**Prevents.** Help, docs and behaviour drifting apart.
+**Prevents.** Help, docs, the skill agents learn aits from, and behaviour
+drifting apart.
 
 **Guard.** `TestCLIDocs`, run by `go test ./...` in CI, fails when
-`docs/cli.md` differs from the help; the CI matrix covers Linux and macOS.
+`docs/cli.md` differs from the help; `TestSkill` fails when the skill does
+not name every command, flag and result status. Whether the skill's prose
+still matches the behaviour is *review-only*. The CI matrix covers Linux and
+macOS.
 
 ## P14 — Small binary, no over-engineering
 
