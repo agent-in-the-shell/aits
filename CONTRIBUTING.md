@@ -11,8 +11,10 @@ against them.
    failure cases) and what is explicitly out of scope.
 2. **One pull request per issue.** Put `Closes #<issue>` in the description;
    CI fails without it. Keep the pull request to what the issue asks for.
-3. **Ship it together.** Code, CLI help, docs and tests land in the same pull
-   request (P13).
+3. **Ship it together.** Code, CLI help, docs, the agent skill
+   ([skills/aits/SKILL.md](skills/aits/SKILL.md)) and tests land in the same
+   pull request (P13). Any change to what a caller sees (a command, flag,
+   output field, status, error or default) updates the skill.
 4. **Report what you ran.** The pull request lists the commands you ran and
    their actual results, and says what was not verified.
 
@@ -40,6 +42,8 @@ budget in the same pull request and says why. Run the same staticcheck locally w
   default CI.
 - The CLI reference is generated from help: after changing a command, run
   `go test ./cmd/aits -run TestCLIDocs -update` (P13).
+- `go test ./cmd/aits -run TestSkill` fails when the skill does not name
+  every command, flag and result status; fix the skill, not the test.
 - `go test -tags live ./cmd/aits -run TestLive` starts and then continues one
   real conversation per agent (Claude Code, Codex) with your own logins: two
   model calls each; `-run TestLive/codex` runs one agent.

@@ -12,5 +12,8 @@
 5. Report results honestly: the commands you ran, their actual output, and what
    you did not verify.
 
+A change to what a caller sees also updates the agent skill,
+[skills/aits/SKILL.md](skills/aits/SKILL.md), in the same pull request (P13).
+
 Design specs and plans live in `docs/superpowers/specs/` and
 `docs/superpowers/plans/`.

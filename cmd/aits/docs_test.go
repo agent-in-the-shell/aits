@@ -106,6 +106,39 @@ func TestTaskHelpDocumentsFields(t *testing.T) {
 	}
 }
 
+// TestSkill enforces P13 for the agent skill: skills/aits/SKILL.md names
+// every command, every flag of every command and every status a shell or
+// task result can carry, so a change that adds one cannot ship without
+// updating the skill (#106).
+func TestSkill(t *testing.T) {
+	src, err := os.ReadFile("../../skills/aits/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := string(src)
+	// A flag row of help starts "  --NAME".
+	flagRow := regexp.MustCompile(`(?m)^  (--[\w-]+)`)
+	walk(cli.Root(), nil, func(path []string, _ *cli.Command) {
+		name := strings.Join(append([]string{"aits"}, path...), " ")
+		if !strings.Contains(skill, "`"+name) {
+			t.Errorf("the skill does not name %q", name)
+		}
+		help := call{args: append(slices.Clone(path), "--help")}.run(t).stdout
+		for _, m := range flagRow.FindAllStringSubmatch(help, -1) {
+			if !regexp.MustCompile(m[1] + `\b`).MatchString(skill) {
+				t.Errorf("the skill does not name %s's flag %s", name, m[1])
+			}
+		}
+	})
+	for _, glob := range []string{"../../internal/shell/*.go", "../../internal/task/*.go"} {
+		for _, m := range sourceMatches(t, glob, `\bStatus\s*=\s*"(\w+)"`) {
+			if !strings.Contains(skill, "`"+m[1]+"`") {
+				t.Errorf("the skill does not name the status %q", m[1])
+			}
+		}
+	}
+}
+
 // jsonFields returns the JSON names of T's fields.
 func jsonFields[T any]() []string {
 	rt := reflect.TypeFor[T]()
