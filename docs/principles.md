@@ -150,8 +150,15 @@ bind is loopback; no environment variable enables a privilege-raising flag.
 
 ## P10 — Owned processes, recoverable state
 
-**Rule.** aits runs in the foreground and never daemonizes itself. Each child
-runs in its own process group; on timeout, cancel or SIGTERM aits sends TERM,
+**Rule.** aits runs in the foreground and never daemonizes itself: it does
+not fork into the background, detach from its session, re-execute itself or
+write pid files, and no command starts another aits process. A long-running
+command, such as a server or a looping worker, is allowed when the user
+starts it in the foreground and supervises it with a tool of their choice
+(launchd, systemd, tmux). Every other command works on its own and never
+requires a running aits process; a long-running process does not own agents
+that other commands depend on (#111). Each child runs in its own process
+group; on timeout, cancel or SIGTERM aits sends TERM,
 waits a bounded grace period, sends KILL, reaps, and still prints a result —
 with timeout and stop as distinct statuses. Persisted "in progress" state must
 be recoverable by aits itself (for example, a lock the kernel releases when
@@ -159,11 +166,17 @@ its holder exits), without manual repair. One user action is one atomic
 command.
 
 **Prevents.** Orphaned agent processes; a task stuck `running` forever after
-its worker dies; two-step follow-ups that race a background worker.
+its worker dies; two-step follow-ups that race a background worker; a stale
+background server still running after an upgrade; commands that fail because
+a server is not running; one server crash orphaning every agent.
 
 **Guard.** Tests with a fake vendor that spawns a grandchild assert nothing
 survives a timeout or SIGTERM; a test asserts the task of a dead worker is
-reclaimed, even when its pid now belongs to a live process.
+reclaimed, even when its pid now belongs to a live process. A structural test
+forbids the calls that detach or re-execute aits — `os.Executable`,
+`os.StartProcess`, `syscall.ForkExec`, `syscall.Exec`, `Setsid`, `Noctty` —
+outside tests and testdata (`internal/archtest/process_test.go`). That no
+command requires a running aits process is *review-only*.
 
 ## P11 — Clean-room, issue-first
 
