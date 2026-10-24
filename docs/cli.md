@@ -228,6 +228,32 @@ Commands:
 Run 'aits task COMMAND --help' for details.
 
 Errors: unknown_command, unknown_flag (exit 2).
+
+Running on a schedule: let the OS scheduler start aits; aits never stays
+in the background. A crontab that queues a review each weekday at 09:00 and
+works the queue every 5 minutes:
+
+  0 9 * * 1-5  aits task create --agent claude --cwd ~/src/proj "Review the commits since yesterday for bugs"
+  */5 * * * *  aits task work --json >> ~/aits-work.log
+
+work exits 0 with {"status":"empty"} when nothing is claimable, so a run
+with nothing to do is harmless. Runs that overlap claim different tasks,
+never the same one, so a slow task can leave several workers running at
+once; to keep one, start work from a scheduler that does not overlap a job
+(launchd does not), or wrap it, e.g. flock -n on Linux.
+
+On macOS use a launchd agent in ~/Library/LaunchAgents: ProgramArguments
+for the command, StartInterval 300 for work or StartCalendarInterval for
+create, and EnvironmentVariables for what the job needs.
+
+A scheduled job does not get your shell's environment:
+  PATH   must reach aits and the agent CLI (claude, codex): cron's default
+         PATH has neither if they live in ~/.local/bin or Homebrew. Without
+         the agent, the task fails with run status not_started.
+  HOME   must be yours: the agent's login lives there, and the queue too
+         unless AITS_HOME is set; create and work must use the same queue.
+  --env  names variables that work passes to the agent from the worker's
+         own environment, so set them in the work job, not the create job.
 ```
 
 ## aits task create

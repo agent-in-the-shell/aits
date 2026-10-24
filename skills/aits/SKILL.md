@@ -177,6 +177,44 @@ a `run`: the `shell submit` result fields plus `started_at` and
 Only a `done` task's `run.answer` is the agent's answer; read
 `run.message` for any other.
 
+### Running on a schedule
+
+To run agent work at set times or keep draining the queue with no terminal
+open, have the OS scheduler start aits: aits never stays in the background,
+and has no schedule of its own. See `aits task --help`.
+
+```sh
+# crontab -e
+0 9 * * 1-5  aits task create --agent claude --cwd ~/src/proj "Review the commits since yesterday for bugs"
+*/5 * * * *  aits task work --json >> ~/aits-work.log
+```
+
+On macOS prefer a launchd agent, which never starts a job again while it
+is running:
+
+```xml
+<!-- ~/Library/LaunchAgents/local.aits-work.plist; launchctl load it -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>local.aits-work</string>
+  <key>ProgramArguments</key>
+  <array><string>/opt/homebrew/bin/aits</string><string>task</string><string>work</string><string>--json</string></array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string></dict>
+  <key>StandardOutPath</key><string>/Users/YOU/aits-work.log</string>
+</dict></plist>
+```
+
+- A scheduled job gets a bare environment. `PATH` must reach `aits` and the
+  agent CLI, or the task fails with run status `not_started`. `HOME` must be
+  the user's (the agent's login, and the queue unless `AITS_HOME` is set);
+  `create` and `work` must use the same queue.
+- `--env NAME` is read from the worker's environment: set the variable in the
+  `work` job, not the `create` job.
+- An idle run prints `{"status":"empty"}` and exits 0. Overlapping cron runs
+  claim different tasks, so slow tasks can pile up workers; use launchd, or
+  `flock -n` on Linux, to keep one.
+
 ## Version: aits version
 
 `aits version --json` prints `{"version":"…"}`, a release tag or a
