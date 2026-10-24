@@ -1193,3 +1193,41 @@ func TestTaskWaitLockFileMissing(t *testing.T) {
 		t.Errorf("wait: code=%d stdout=%q stderr=%q; want timeout and %q", out.code, out.stdout, out.stderr, want)
 	}
 }
+
+// A worker started by the OS scheduler has a bare environment. Every call
+// here runs with only PATH, HOME and AITS_HOME, as cron gives: with the agent
+// on PATH the task ends done; without it, it ends failed, not_started, at
+// once rather than hanging (#109).
+func TestTaskScheduledEnvironment(t *testing.T) {
+	for _, tt := range []struct{ scenario, status, run string }{
+		{"ok", "done", "ok"},
+		{"", "failed", "not_started"},
+	} {
+		q := newQueue(t, tt.scenario)
+		id := q.create("hi")
+		s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+		out := s.waitOrKill(t, 10*time.Second)
+		if r := decodeOne[taskRecord](t, out.stdout); r.ID != id || r.Status != tt.status || r.Run == nil || r.Run.Status != tt.run {
+			t.Errorf("agent %q: work = %+v, want %s %s", tt.scenario, r, tt.status, tt.run)
+		}
+	}
+}
+
+// A scheduled run that overlaps a slow one claims nothing the slow one holds:
+// it exits 0, empty, and the running task keeps its worker's lease (#109).
+func TestTaskScheduledOverlap(t *testing.T) {
+	q := newQueue(t, "sleep")
+	id := q.create("slow")
+	slow := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	q.waitLease(id, readPID(t, filepath.Join(q.path, "child.pid")))
+	before := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout)
+	if out := q.run("work", "--json"); out.code != 0 || out.stdout != `{"status":"empty"}`+"\n" {
+		t.Errorf("overlapping work: code=%d stdout=%q, want empty", out.code, out.stdout)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "running" || r.Lease == nil || r.Lease.Token != before.Lease.Token {
+		t.Errorf("task after the overlapping run = %+v, want running with lease %+v", r, before.Lease)
+	}
+	slow.signal(t, syscall.SIGTERM)
+	slow.waitOrKill(t, 10*time.Second)
+}

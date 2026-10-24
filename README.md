@@ -44,6 +44,9 @@ Queue work for agents and collect it later:
     aits task work            # in one or more terminals; one task per call
     aits task wait "$id" --json    # blocks until $id is done or failed
 
+To run tasks on a schedule, let cron or launchd start `aits task create` and
+`aits task work`; `aits task --help` shows how.
+
 The full reference is [docs/cli.md](docs/cli.md).
 
 ## Agent skill
