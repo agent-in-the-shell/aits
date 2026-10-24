@@ -21,6 +21,7 @@ installed with `aits version`.
 | Continue that conversation | `aits shell submit --session ID` |
 | Find an earlier conversation to continue | `aits session search` |
 | Queue work and collect it later | `aits task create`, then `aits task work` |
+| Wait for a queued task to finish | `aits task wait ID --timeout 9m` |
 | Queue a follow-up in the same conversation | `aits task create --after ID` |
 | See queued and finished work | `aits task list`, `aits task show ID` |
 | Which aits is installed | `aits version` |
@@ -139,6 +140,7 @@ id=$(aits task create --agent claude --cwd ~/src/proj --json "Review internal/se
 next=$(aits task create --after "$id" --json "Fix the first bug you found" | jq -r .id)
 aits task work --json        # runs the oldest claimable task, then exits
 aits task show "$id" --json
+aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
 ```
 
 - `aits task create` takes the same `--agent`, `--cwd`, `--env`, `--timeout`
@@ -154,6 +156,13 @@ aits task show "$id" --json
   is 1 when the task failed.
 - `aits task list --json` lists every task oldest first; ids it could not
   read are in `"skipped"`. `aits task show ID --json` prints the whole task.
+- `aits task wait ID --json` blocks until the task is `done` or `failed`,
+  then prints it as `show` does, with exit 0 either way: read `status`. Use
+  it instead of polling `show`, which never notices a dead worker. It starts
+  no worker, so something must run `task work`. Always pass `--timeout`
+  below your shell tool's own limit (Claude Code's Bash tool stops a command
+  after 2 minutes by default, 10 at most); on `timeout` (exit 1) the task is
+  untouched: call `wait` again. A signal ends it with `stopped`.
 
 Task `status` is `queued`, `running`, `done` or `failed`. A worked task has
 a `run`: the `shell submit` result fields plus `started_at` and
@@ -161,8 +170,8 @@ a `run`: the `shell submit` result fields plus `started_at` and
 
 - `not_started`: the agent never started, or the task is a follow-up whose
   parent does not exist, failed or ended without a session.
-- `worker_died`: the worker exited before recording a result. `list` and
-  `work` find this by themselves; nothing needs repairing. Create the task
+- `worker_died`: the worker exited before recording a result. `list`,
+  `work` and `wait` find this by themselves; nothing needs repairing. Create the task
   again to retry.
 
 Only a `done` task's `run.answer` is the agent's answer; read
