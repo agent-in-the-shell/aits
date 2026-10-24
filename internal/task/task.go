@@ -255,6 +255,83 @@ func Show(environ []string, id string) (Task, error) {
 	return find(dir, id)
 }
 
+// pollEvery is how often Wait looks at the queue again.
+const pollEvery = 250 * time.Millisecond
+
+// TimeoutError means Wait's timeout elapsed with the task not yet done or
+// failed; Task is the task as last read.
+type TimeoutError struct {
+	Task    Task
+	Timeout time.Duration
+}
+
+func (e *TimeoutError) Error() string {
+	return fmt.Sprintf("task %s is still %s after %s", e.Task.ID, e.Task.Status, e.Timeout)
+}
+
+// Wait returns task id once it is done or failed (#110). Each look reclaims
+// as List does, so the task of a dead worker, or a follow-up that can never
+// run, ends instead of being waited for; Wait never takes a task's lock
+// itself. unknown is called once if the task is running and its lock file is
+// missing, so that whether its worker is alive cannot be told. With a timeout
+// above 0, a task still queued or running after it is a *TimeoutError; when
+// ctx is done first, the error is ctx's.
+func Wait(ctx context.Context, environ []string, id string, timeout time.Duration, unknown func()) (Task, error) {
+	if timeout < 0 {
+		return Task{}, invalid("timeout must not be negative, got %s", timeout)
+	}
+	dir, err := taskDir(environ)
+	if err != nil {
+		return Task{}, err
+	}
+	var deadline <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		deadline = timer.C
+	}
+	tick := time.NewTicker(pollEvery)
+	defer tick.Stop()
+	noted := false
+	for {
+		t, unk, err := look(dir, id)
+		if err != nil {
+			return Task{}, err
+		}
+		if t.Status == Done || t.Status == Failed {
+			return t, nil
+		}
+		if unk && !noted {
+			unknown()
+			noted = true
+		}
+		select {
+		case <-ctx.Done():
+			return Task{}, ctx.Err()
+		case <-deadline:
+			return Task{}, &TimeoutError{Task: t, Timeout: timeout}
+		case <-tick.C:
+		}
+	}
+}
+
+// look reclaims under the lock, then reads task id, and reports whether it is
+// a running task whose lock file is missing.
+func look(dir, id string) (Task, bool, error) {
+	unlock, err := store.Lock(dir)
+	if err != nil {
+		return Task{}, false, err
+	}
+	s, stop, err := reclaim(dir)
+	unlock()
+	stop()
+	if err != nil {
+		return Task{}, false, err
+	}
+	t, err := find(dir, id)
+	return t, slices.Contains(s.Unknown, id), err
+}
+
 // find reads task id in dir; an unknown id is a *shell.InvalidRequestError.
 func find(dir, id string) (Task, error) {
 	t, err := read(dir, id)

@@ -16,7 +16,7 @@ func taskGroup() *Command {
 	return &Command{
 		Name:     "task",
 		Summary:  "Queue agent runs, work them one at a time, and read their results.",
-		Children: []*Command{taskCreate(), taskList(), taskShow(), taskWork()},
+		Children: []*Command{taskCreate(), taskList(), taskShow(), taskWait(), taskWork()},
 	}
 }
 
@@ -201,6 +201,56 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 				}
 				t, err := task.Show(env.Environ, args[0])
 				if err != nil {
+					return 0, taskError(err)
+				}
+				if err := writeTask(env, t); err != nil {
+					return 0, err
+				}
+				return exitOK, nil
+			}
+		},
+	}
+}
+
+func taskWait() *Command {
+	return &Command{
+		Name:    "wait",
+		Args:    "ID",
+		Summary: "Wait until a task is done or failed, then show it.",
+		Details: taskQueue + taskFields + `
+wait looks at the queue every 250ms and reclaims as list does, so a task
+whose worker died ends failed (worker_died), and a follow-up whose parent
+does not exist, failed or has no session when done ends failed
+(not_started), instead of being waited for. It starts no worker: a task
+nobody works is waited for until --timeout. It never takes or creates a
+task's lock file. A running task whose lock file is missing is reported once,
+as list reports it, and waited for.
+
+Pass a --timeout below the limit of whatever runs wait, such as an agent's
+shell tool, and call wait again while the task is still running.
+
+Exit codes:
+  0  The task is done or failed: read its status.
+  1  The timeout elapsed, wait was stopped, or the queue could not be read.
+  2  Unknown id, usage error or invalid input.
+
+Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).
+`,
+		Setup: func(fs *flag.FlagSet) Runner {
+			timeout := fs.Duration("timeout", 0, "Give up after `DURATION`, e.g. 90s or 9m, leaving the task as it is (default: wait until it ends).")
+			return func(ctx context.Context, env *Env, args []string) (int, error) {
+				if len(args) != 1 {
+					return 0, usageError("invalid_input", "expected one task id; got %d", len(args))
+				}
+				id := args[0]
+				t, err := task.Wait(ctx, env.Environ, id, *timeout, func() { reportNotes(env, task.Notes{Unknown: []string{id}}) })
+				var late *task.TimeoutError
+				switch {
+				case errors.As(err, &late):
+					return 0, failure("timeout", "%v", late)
+				case errors.Is(err, context.Canceled):
+					return 0, failure("stopped", "stopped while waiting for task %s", printable(id))
+				case err != nil:
 					return 0, taskError(err)
 				}
 				if err := writeTask(env, t); err != nil {

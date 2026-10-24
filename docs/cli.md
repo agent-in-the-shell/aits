@@ -222,6 +222,7 @@ Commands:
   create  Queue a prompt for an agent; prints the task id.
   list    List tasks, oldest first.
   show    Show one task and its run.
+  wait    Wait until a task is done or failed, then show it.
   work    Claim the oldest claimable task, run it, record the result, exit.
 
 Run 'aits task COMMAND --help' for details.
@@ -373,6 +374,63 @@ Exit codes:
   2  Unknown id, usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+```
+
+## aits task wait
+
+```text
+Usage: aits task wait [flags] ID
+
+Wait until a task is done or failed, then show it.
+
+Flags:
+  --json              Print the result, or the error, as JSON on stdout.
+  --timeout DURATION  Give up after DURATION, e.g. 90s or 9m, leaving the task as it is (default: wait until it ends). (default 0s)
+
+The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
+neither AITS_HOME nor HOME set, every task command fails (invalid_input).
+
+Task fields (--json):
+  id           Created by "task create".
+  status       queued, running, done or failed.
+  agent, cwd, prompt, timeout_ms, created_at
+  env          Variable names passed from the worker's environment.
+  after        For a follow-up: the task whose session it continues.
+  write        Set by create --write: the agent runs in its vendor's
+               sandbox and may write without asking.
+  lease        While running: token, pgid and, once the agent has started,
+               started_at.
+  run          Once worked: the result fields of "shell submit --help"
+               plus started_at and finished_at. run.status is a shell
+               status, not_started (the agent was never started: it could
+               not be started after the claim, or the task is a follow-up
+               whose parent does not exist, failed or has no session when
+               done), or worker_died (its worker exited first; set by the
+               next work or list). A not_started or worker_died
+               run has no exit_code and no duration_ms, which are unknown;
+               only a worker_died run whose agent started has started_at.
+
+Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
+stdout; the session id, the denied tools and why a task failed on stderr,
+with control characters shown as Go escapes (\x1b, \r).
+
+wait looks at the queue every 250ms and reclaims as list does, so a task
+whose worker died ends failed (worker_died), and a follow-up whose parent
+does not exist, failed or has no session when done ends failed
+(not_started), instead of being waited for. It starts no worker: a task
+nobody works is waited for until --timeout. It never takes or creates a
+task's lock file. A running task whose lock file is missing is reported once,
+as list reports it, and waited for.
+
+Pass a --timeout below the limit of whatever runs wait, such as an agent's
+shell tool, and call wait again while the task is still running.
+
+Exit codes:
+  0  The task is done or failed: read its status.
+  1  The timeout elapsed, wait was stopped, or the queue could not be read.
+  2  Unknown id, usage error or invalid input.
+
+Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).
 ```
 
 ## aits task work

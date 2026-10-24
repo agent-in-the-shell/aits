@@ -1074,3 +1074,122 @@ func TestTaskCreateAfterInvalid(t *testing.T) {
 	// A plain create does not look for follow-ups, so it still succeeds (#78).
 	q.create("plain")
 }
+
+// wait starts "task wait --json" on id with extra flags.
+func (q queue) wait(id string, flags ...string) *started {
+	q.t.Helper()
+	return call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: append([]string{"task", "wait", "--json", id}, flags...)}.start(q.t)
+}
+
+// wait blocks while a task is queued and running, and returns it once a
+// worker has recorded its run, with exit 0 (#110).
+func TestTaskWaitDone(t *testing.T) {
+	q := newQueue(t, "ok")
+	id := q.create("hi")
+	w := q.wait(id)
+	if out, ok := w.wait(t, time.Second); ok {
+		t.Fatalf("wait returned before the task was worked: code=%d stdout=%q", out.code, out.stdout)
+	}
+	if out := q.run("work"); out.code != 0 {
+		t.Fatalf("work: code=%d stderr=%q", out.code, out.stderr)
+	}
+	out := w.waitOrKill(t, 10*time.Second)
+	if r := decodeOne[taskRecord](t, out.stdout); out.code != 0 || out.stderr != "" || r.ID != id || r.Status != "done" || r.Run == nil || r.Run.Status != "ok" {
+		t.Errorf("wait: code=%d stderr=%q %+v", out.code, out.stderr, r)
+	}
+}
+
+// A task whose worker was killed ends worker_died through wait's own reclaim,
+// without waiting out the task's timeout, and its agent is stopped (#110).
+func TestTaskWaitWorkerKilled(t *testing.T) {
+	q := newQueue(t, "sleep")
+	id := q.create("hi")
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	pgid := readPID(t, filepath.Join(q.path, "child.pid"))
+	q.waitLease(id, pgid)
+	w := q.wait(id)
+	if err := s.cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	s.waitOrKill(t, 10*time.Second)
+	out := w.waitOrKill(t, 10*time.Second)
+	if r := decodeOne[taskRecord](t, out.stdout); out.code != 0 || r.Status != "failed" || r.Run == nil || r.Run.Status != "worker_died" {
+		t.Errorf("wait: code=%d %+v", out.code, r)
+	}
+	assertGone(t, pgid)
+}
+
+// A follow-up whose parent fails ends not_started through wait's reclaim
+// rather than being waited for (#110).
+func TestTaskWaitFollowUpOfFailed(t *testing.T) {
+	q := newQueue(t, "exit_nonzero")
+	p := q.create("hi")
+	f := q.after(p, "next")
+	w := q.wait(f)
+	if out := q.run("work"); out.code != 1 {
+		t.Fatalf("work: code=%d stderr=%q", out.code, out.stderr)
+	}
+	out := w.waitOrKill(t, 10*time.Second)
+	if r := decodeOne[taskRecord](t, out.stdout); out.code != 0 || r.ID != f || r.Status != "failed" || r.Run == nil || r.Run.Status != "not_started" {
+		t.Errorf("wait: code=%d %+v", out.code, r)
+	}
+}
+
+// --timeout gives up with the timeout error and leaves the task as it was;
+// wait creates no lock file, so it cannot make a claim fail (#110).
+func TestTaskWaitTimeout(t *testing.T) {
+	q := newQueue(t, "ok")
+	id := q.create("hi")
+	out := q.wait(id, "--timeout", "500ms").waitOrKill(t, 10*time.Second)
+	want := "task " + id + " is still queued after 500ms"
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "timeout" || e.Message != want {
+		t.Errorf("wait: code=%d stdout=%q; want timeout %q", out.code, out.stdout, want)
+	}
+	// (Not a TestOutputChannels row: the message holds the id, new each run.)
+	if text := q.run("wait", "--timeout", "300ms", id); text.code != 1 || text.stdout != "" || text.stderr != "aits: task "+id+" is still queued after 300ms\n" {
+		t.Errorf("text: code=%d stdout=%q stderr=%q", text.code, text.stdout, text.stderr)
+	}
+	if got := helpErrors(t, []string{"task", "wait"})["timeout"]; got != "exit 1" {
+		t.Errorf("task wait --help lists timeout with %q, want exit 1", got)
+	}
+	if _, err := os.Lstat(q.lockFile(id)); !os.IsNotExist(err) {
+		t.Errorf("lock file after wait: %v, want none", err)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "queued" {
+		t.Errorf("task = %+v, want still queued", r)
+	}
+}
+
+// A signal stops wait promptly with the stopped error; the task is untouched
+// (#110).
+func TestTaskWaitStopped(t *testing.T) {
+	q := newQueue(t, "ok")
+	id := q.create("hi")
+	w := q.wait(id)
+	if out, ok := w.wait(t, 500*time.Millisecond); ok {
+		t.Fatalf("wait returned early: code=%d stdout=%q", out.code, out.stdout)
+	}
+	w.signal(t, syscall.SIGTERM)
+	out := w.waitOrKill(t, 2*time.Second)
+	want := "stopped while waiting for task " + id
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "stopped" || e.Message != want {
+		t.Errorf("wait: code=%d stdout=%q; want stopped %q", out.code, out.stdout, want)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Status != "queued" {
+		t.Errorf("task = %+v, want still queued", r)
+	}
+}
+
+// A running task whose lock file is missing is reported once, as list
+// reports it, and waited for (#110).
+func TestTaskWaitLockFileMissing(t *testing.T) {
+	q := newQueue(t, "ok")
+	id := q.create("hi")
+	q.setRunning(id, map[string]any{"token": "w", "pgid": 0})
+	out := q.wait(id, "--timeout", "1s").waitOrKill(t, 10*time.Second)
+	want := "aits: cannot tell whether the worker of task " + id + " is alive: its lock file is missing\n"
+	if e := decode(t, out.stdout).Error; out.code != 1 || e == nil || e.Code != "timeout" || out.stderr != want {
+		t.Errorf("wait: code=%d stdout=%q stderr=%q; want timeout and %q", out.code, out.stdout, out.stderr, want)
+	}
+}

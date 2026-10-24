@@ -42,7 +42,7 @@ Queue work for agents and collect it later:
     id=$(aits task create --agent claude --cwd ~/src/proj "Review internal/session for bugs")
     next=$(aits task create --after "$id" "Fix the first bug you found")  # same session, once $id is done
     aits task work            # in one or more terminals; one task per call
-    aits task show "$id" --json
+    aits task wait "$id" --json    # blocks until $id is done or failed
 
 The full reference is [docs/cli.md](docs/cli.md).
 
