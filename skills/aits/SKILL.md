@@ -215,6 +215,59 @@ is running:
   claim different tasks, so slow tasks can pile up workers; use launchd, or
   `flock -n` on Linux, to keep one.
 
+## Run a loop: implement, check, fix, review, stop
+
+aits runs one iteration well; the loop is yours. Before starting, know your
+check (a command whose result you read, such as the tests) and your stop
+condition (a clean review, or a round limit). A worker must be running
+(`aits task work` in a loop elsewhere, or the scheduler); the agents work in
+a separate tree so the user's checkout is untouched.
+
+```sh
+git -C ~/src/proj worktree add ../proj-x -b feat/x; wt=~/src/proj-x
+
+# wait_task ID: the task once it ends, waiting again while wait times out
+wait_task() {
+  while t=$(aits task wait "$1" --timeout 9m --json); [ "$(printf '%s' "$t" | jq -r '.error.code // ""')" = timeout ]; do :; done
+  printf '%s' "$t"
+}
+
+id=$(aits task create --agent claude --cwd "$wt" --write --json "Add X. Run go test ./... before you finish." | jq -r .id)
+for round in 1 2 3 4 5; do
+  [ "$(wait_task "$id" | jq -r .status)" = done ] || break        # failed: see below
+  if ! out=$(cd "$wt" && go test ./... 2>&1); then                 # your check, not the agent's word
+    fix=$(printf 'The tests fail:\n%s\nFix them.' "$(printf '%s' "$out" | tail -n 200)")
+  else
+    rid=$(aits task create --agent codex --cwd "$wt" --json "Review the uncommitted changes for bugs. Reply exactly LGTM if there are none." | jq -r .id)
+    review=$(wait_task "$rid" | jq -r '.run.answer // ""')
+    [ "$review" = LGTM ] && break                                  # stop: clean review
+    fix=$(printf 'A reviewer found:\n%s\nFix what is right, then run the tests.' "$review")
+  fi
+  [ "$round" = 5 ] && break                                        # stop: round limit
+  id=$(printf '%s\n' "$fix" | aits task create --after "$id" --write --json - | jq -r .id)
+done
+```
+
+- **Check yourself.** Run the tests or lint in the tree and read the result;
+  an agent's "tests pass" is not a check.
+- **Review apart.** A new task, so a fresh session, without `--write`,
+  ideally by the other agent. Pass its findings to the implementer as a
+  follow-up.
+- **Stop.** Always cap the rounds, and report how the loop ended: clean,
+  round limit, or a failure.
+- **After a failure.** `--after` follows only a `done` task with a session. If
+  a round fails (`timeout`, `agent_failed`, `worker_died`), read
+  `run.message`, then either queue a new task that says what happened, or
+  continue its `run.session_id`, when it has one, with
+  `aits shell submit --session`.
+- **One tree per loop.** Parallel loops each get their own `git worktree`
+  and `--cwd`; never two writing agents in one tree.
+- **Blocking is fine in a script.** A script with no time limit can use
+  `aits shell submit --session` for each round and skip the queue. An agent
+  whose shell tool times out uses `task create` and `task wait` as above.
+- **Commit yourself** once the loop ends, after reading the diff: Codex keeps
+  `.git` read-only, and the loop's result is the user's to accept.
+
 ## Version: aits version
 
 `aits version --json` prints `{"version":"…"}`, a release tag or a
