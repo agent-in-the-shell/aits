@@ -41,19 +41,22 @@ const (
 
 // Task is one queued agent run and, once worked, its result.
 type Task struct {
-	ID        string    `json:"id"`
-	Status    Status    `json:"status"`
-	Agent     string    `json:"agent"`
-	Cwd       string    `json:"cwd"`
-	Prompt    string    `json:"prompt"`
-	TimeoutMS int64     `json:"timeout_ms"`
-	Env       []string  `json:"env,omitempty"`   // names only (P8)
-	After     string    `json:"after,omitempty"` // the task whose session this one continues (#63)
-	Model     string    `json:"model,omitempty"` // empty: the vendor's default (#119)
-	Write     bool      `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
-	CreatedAt time.Time `json:"created_at"`
-	Lease     *Lease    `json:"lease"`
-	Run       *Run      `json:"run"`
+	ID        string   `json:"id"`
+	Status    Status   `json:"status"`
+	Agent     string   `json:"agent"`
+	Cwd       string   `json:"cwd"`
+	Prompt    string   `json:"prompt"`
+	TimeoutMS int64    `json:"timeout_ms"`
+	Env       []string `json:"env,omitempty"`   // names only (P8)
+	After     string   `json:"after,omitempty"` // the task whose session this one continues (#63)
+	Model     string   `json:"model,omitempty"` // empty: the vendor's default (#119)
+	Write     bool     `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
+	// AllowTools is set by create --allow-tool only, for this task alone
+	// (P9, #121).
+	AllowTools []string  `json:"allow_tools,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	Lease      *Lease    `json:"lease"`
+	Run        *Run      `json:"run"`
 }
 
 // Lease is a worker's claim on a running task. Whether the worker is alive is
@@ -78,7 +81,8 @@ type Spec struct {
 	Model                     string // with After, empty is that task's model
 	Timeout                   time.Duration
 	Env                       []string
-	Write                     bool // never taken from After (#104)
+	Write                     bool     // never taken from After (#104)
+	AllowTools                []string // never taken from After (#121)
 }
 
 // invalid rejects input as shell does, so every invalid input of the group is
@@ -117,7 +121,7 @@ func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Model: s.Model, Write: s.Write, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Model: s.Model, Write: s.Write, AllowTools: s.AllowTools, CreatedAt: now,
 	}
 	if s.After == "" {
 		if err := t.validate(s.Timeout); err != nil {
@@ -656,7 +660,7 @@ func collect(dir string, names []string) snapshot {
 func (t Task) request(environ []string) shell.Request {
 	return shell.Request{
 		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
-		Environ: environ, Pass: t.Env, Model: t.Model, Write: t.Write,
+		Environ: environ, Pass: t.Env, Model: t.Model, Write: t.Write, AllowTools: t.AllowTools,
 	}
 }
 

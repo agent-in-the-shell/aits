@@ -46,6 +46,7 @@ Run one prompt through an agent CLI and return the answer and session id.
 
 Flags:
   --agent AGENT       AGENT CLI to run (required). One of: claude, codex.
+  --allow-tool TOOL   Let the agent run TOOL without asking (claude only), e.g. "Bash(git diff:*)". Repeatable.
   --cwd DIR           Run the agent in DIR (default: the current directory).
   --env NAME          Pass the variable NAME from this environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
@@ -111,6 +112,17 @@ settings still apply. shell submit (once the agent starts) and task create
 A write anywhere else fails, such as a build cache under $HOME. A command the
 sandbox stops is not in denied_tools: it looks like any failed command.
 Claude Code leaves .claude/.cc-writes in the working directory.
+
+Allowed tools (--allow-tool TOOL): the agent runs TOOL without asking, for
+this invocation only; every other call that needs approval is still refused
+and listed in denied_tools. TOOL is Claude Code's own syntax, such as Read,
+"Bash(git diff:*)" or mcp__server__tool, passed as --allowedTools TOOL;
+aits does not check that it exists. Without --write an allowed command runs
+outside any sandbox, with the network; with --write it runs in the sandbox.
+codex has no list of allowed tools: --allow-tool with codex is invalid_input.
+A TOOL that is empty, starts with "-", or has a comma or control characters
+is invalid_input. Like --write it warns on stderr, once per tool:
+  aits: warning: --allow-tool lets the agent run TOOL without asking
 
 Errors (nothing was started):
   unknown_flag        exit 2  No such flag for this command.
@@ -272,6 +284,7 @@ Queue a prompt for an agent; prints the task id.
 Flags:
   --after ID          Continue the conversation of task ID once it is done, with its agent and cwd.
   --agent AGENT       AGENT CLI to run (required unless --after). One of: claude, codex.
+  --allow-tool TOOL   Let the agent run TOOL without asking (claude only), e.g. "Bash(git diff:*)". Repeatable.
   --cwd DIR           Run the agent in DIR (default: the current directory, or with --after the parent's).
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
@@ -285,8 +298,8 @@ neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
 invalid_input.
 
-The prompt, --cwd, --model and --env names must be valid UTF-8: a task is
-stored as JSON text.
+The prompt, --cwd, --model, --allow-tool and --env names must be valid
+UTF-8: a task is stored as JSON text.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
@@ -303,7 +316,8 @@ applies to the follow-up only.
 
 With --write, work runs the task as shell submit --write does, without the
 warning. A follow-up takes its own --write, never its parent's: without it,
-the agent resumes without write access.
+the agent resumes without write access. --allow-tool is the same: work
+grants the tools without warning again, and a follow-up only its own.
 
 Model (--model): passed to claude as --model MODEL and to codex as
 -m MODEL, for a new conversation and a resumed one. aits keeps no list of
@@ -325,6 +339,17 @@ settings still apply. shell submit (once the agent starts) and task create
 A write anywhere else fails, such as a build cache under $HOME. A command the
 sandbox stops is not in denied_tools: it looks like any failed command.
 Claude Code leaves .claude/.cc-writes in the working directory.
+
+Allowed tools (--allow-tool TOOL): the agent runs TOOL without asking, for
+this invocation only; every other call that needs approval is still refused
+and listed in denied_tools. TOOL is Claude Code's own syntax, such as Read,
+"Bash(git diff:*)" or mcp__server__tool, passed as --allowedTools TOOL;
+aits does not check that it exists. Without --write an allowed command runs
+outside any sandbox, with the network; with --write it runs in the sandbox.
+codex has no list of allowed tools: --allow-tool with codex is invalid_input.
+A TOOL that is empty, starts with "-", or has a comma or control characters
+is invalid_input. Like --write it warns on stderr, once per tool:
+  aits: warning: --allow-tool lets the agent run TOOL without asking
 
 Exit codes:
   0  Queued.
@@ -395,6 +420,8 @@ Task fields (--json):
                follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  allow_tools  Set by create --allow-tool: the tools the agent runs
+               without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"
@@ -443,6 +470,8 @@ Task fields (--json):
                follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  allow_tools  Set by create --allow-tool: the tools the agent runs
+               without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"
@@ -502,6 +531,8 @@ Task fields (--json):
                follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  allow_tools  Set by create --allow-tool: the tools the agent runs
+               without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"

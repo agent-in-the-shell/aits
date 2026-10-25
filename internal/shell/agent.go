@@ -10,12 +10,16 @@ import (
 type agent struct {
 	name       string
 	executable string
-	// argv is the agent's arguments: a new conversation, or session when it
-	// is not empty, with model when it is not empty, in the vendor's sandbox
-	// when write is set. It never carries the prompt (P8).
-	argv  func(model, session string, write bool) []string
-	env   []string // the agent's own variables, passed on top of baseEnv when set
-	parse parser   // turns one line of the agent's output into events
+	// argv is the agent's arguments for r: a new conversation, or r.Session
+	// when it is not empty, with r.Model when it is not empty, in the
+	// vendor's sandbox when r.Write is set, allowing r.AllowTools. It never
+	// carries the prompt (P8).
+	argv func(r Request) []string
+	// allowTools says whether the agent takes a list of tools to run without
+	// asking (#121).
+	allowTools bool
+	env        []string // the agent's own variables, passed on top of baseEnv when set
+	parse      parser   // turns one line of the agent's output into events
 }
 
 // baseEnv is passed to every agent when set, together with every LC_*
@@ -31,16 +35,21 @@ var baseEnv = []string{
 // it, and a run where the sandbox cannot start fails (P6, P9).
 const claudeSandbox = `{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}`
 
-func claudeArgv(model, session string, write bool) []string {
+// claudeArgv gives each allowed tool its own --allowedTools, so a tool is one
+// argv element and never joined with another (P8).
+func claudeArgv(r Request) []string {
 	args := []string{"-p", "--output-format", "stream-json", "--verbose"}
-	if model != "" {
-		args = append(args, "--model", model)
+	if r.Model != "" {
+		args = append(args, "--model", r.Model)
 	}
-	if write {
+	for _, tool := range r.AllowTools {
+		args = append(args, "--allowedTools", tool)
+	}
+	if r.Write {
 		args = append(args, "--permission-mode", "acceptEdits", "--settings", claudeSandbox)
 	}
-	if session != "" {
-		args = append(args, "--resume", session)
+	if r.Session != "" {
+		args = append(args, "--resume", r.Session)
 	}
 	return args
 }
@@ -49,17 +58,17 @@ func claudeArgv(model, session string, write bool) []string {
 // is resumed without one, so a session started with write access would keep
 // it (P9). No --skip-git-repo-check or approval flags: Codex keeps its own
 // checks.
-func codexArgv(model, session string, write bool) []string {
+func codexArgv(r Request) []string {
 	sandbox := "read-only"
-	if write {
+	if r.Write {
 		sandbox = "workspace-write"
 	}
 	args := []string{"exec", "--json", "-s", sandbox}
-	if model != "" {
-		args = append(args, "-m", model)
+	if r.Model != "" {
+		args = append(args, "-m", r.Model)
 	}
-	if session != "" {
-		args = append(args, "resume", session)
+	if r.Session != "" {
+		args = append(args, "resume", r.Session)
 	}
 	return append(args, "-")
 }
@@ -69,6 +78,7 @@ var agents = map[string]agent{
 		name:       "claude",
 		executable: "claude",
 		argv:       claudeArgv,
+		allowTools: true,
 		env:        []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
 		parse:      parseClaude,
 	},

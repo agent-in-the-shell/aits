@@ -45,6 +45,10 @@ type Request struct {
 	// inside its vendor's sandbox. Only an explicit choice of the caller sets
 	// it (P9).
 	Write bool
+	// AllowTools names tools the agent may run without asking, in the
+	// vendor's own syntax. Only an explicit choice of the caller sets it
+	// (P9, #121).
+	AllowTools []string
 	// Started, if set, is called once with the agent's process group right
 	// after it starts. If it fails, the group is killed at once and the run
 	// is stopped, with the error as its message.
@@ -124,7 +128,25 @@ func (r Request) validate() (agent, error) {
 	if r.Model != "" && !validModel(r.Model) {
 		return agent{}, invalid("model %q must not start with '-' or contain spaces or control characters", r.Model)
 	}
+	if len(r.AllowTools) > 0 && !ag.allowTools {
+		return agent{}, invalid("%s has no list of allowed tools; its access is its sandbox (--write)", ag.name)
+	}
+	for _, tool := range r.AllowTools {
+		if !validTool(tool) {
+			return agent{}, invalid("tool %q must not be empty, start with '-', or contain a comma or control characters", tool)
+		}
+	}
 	return ag, nil
+}
+
+// validTool reports whether tool is safe to place in the agent's argv as one
+// tool: it cannot be read as a flag or as a list of tools. Its syntax is the
+// vendor's (#121).
+func validTool(tool string) bool {
+	if tool == "" || strings.HasPrefix(tool, "-") || !utf8.ValidString(tool) {
+		return false
+	}
+	return !strings.ContainsFunc(tool, func(c rune) bool { return c == ',' || unicode.IsControl(c) })
 }
 
 // validModel reports whether name is safe to place in the agent's argv: it

@@ -60,7 +60,7 @@ Statuses:
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
-` + modelDetails + writeDetails + `
+` + modelDetails + writeDetails + allowToolDetails + `
 Errors (nothing was started):
   unknown_flag        exit 2  No such flag for this command.
   invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
@@ -90,6 +90,7 @@ func submitCommand() *Command {
 			model := nonEmpty(fs, "model", modelUsage, "a model name")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
+			allow := repeated(fs, "allow-tool", allowToolUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
@@ -97,11 +98,12 @@ func submitCommand() *Command {
 				}
 				req := shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: *pass, Session: *session, Model: *model, Write: *write, Kill: env.Kill,
+					Environ: env.Environ, Pass: *pass, Session: *session, Model: *model, Write: *write,
+					AllowTools: *allow, Kill: env.Kill,
 				}
-				if *write {
+				if *write || len(*allow) > 0 {
 					// Once the agent has started: invalid input prints only its error.
-					req.Started = func(int) error { warnWrite(env); return nil }
+					req.Started = func(int) error { warnGrants(env, *write, *allow); return nil }
 				}
 				res, err := shell.Submit(ctx, req)
 				if err != nil {
@@ -212,7 +214,37 @@ const writeUsage = "Let the agent edit files and run commands in its working dir
 // that gives --write (P9).
 const writeWarning = "aits: warning: --write lets the agent edit files and run commands in its working directory without asking"
 
-func warnWrite(env *Env) { fmt.Fprintln(env.Stderr, writeWarning) }
+// allowToolDetails documents --allow-tool, for shell submit and task create
+// (#121).
+const allowToolDetails = `
+Allowed tools (--allow-tool TOOL): the agent runs TOOL without asking, for
+this invocation only; every other call that needs approval is still refused
+and listed in denied_tools. TOOL is Claude Code's own syntax, such as Read,
+"Bash(git diff:*)" or mcp__server__tool, passed as --allowedTools TOOL;
+aits does not check that it exists. Without --write an allowed command runs
+outside any sandbox, with the network; with --write it runs in the sandbox.
+codex has no list of allowed tools: --allow-tool with codex is invalid_input.
+A TOOL that is empty, starts with "-", or has a comma or control characters
+is invalid_input. Like --write it warns on stderr, once per tool:
+  ` + allowToolWarning + `
+`
+
+// allowToolUsage is the help of --allow-tool, for shell submit and task create.
+const allowToolUsage = "Let the agent run `TOOL` without asking (claude only), e.g. \"Bash(git diff:*)\"."
+
+// allowToolWarning is printed on stderr, in both output modes, once per tool,
+// by an invocation that gives --allow-tool (P9).
+const allowToolWarning = "aits: warning: --allow-tool lets the agent run TOOL without asking"
+
+// warnGrants prints the warning of each grant an invocation gives (P9).
+func warnGrants(env *Env, write bool, tools []string) {
+	if write {
+		fmt.Fprintln(env.Stderr, writeWarning)
+	}
+	for _, tool := range tools {
+		fmt.Fprintln(env.Stderr, strings.Replace(allowToolWarning, "TOOL", tool, 1))
+	}
+}
 
 // writeRunNotes prints, in text mode, the run's session id and the tools the
 // agent was refused, if any, on stderr.

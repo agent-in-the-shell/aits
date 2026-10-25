@@ -68,6 +68,12 @@ aits shell submit --agent codex --cwd ~/src/proj --json "Review internal/task fo
   vendor's default runs. aits does not check the name: one the vendor
   rejects is `agent_failed`, with the vendor's message in `stderr_tail`.
 - `--write` lets the agent edit files and run commands; see below.
+- `--allow-tool TOOL` (Claude Code only, repeatable) lets the agent run that
+  one tool without asking, in Claude Code's syntax: `Read`,
+  `"Bash(git diff:*)"`, `mcp__server__tool`. Every other call that needs
+  approval is still refused and listed in `denied_tools`. Without `--write`
+  an allowed command runs outside any sandbox, with the network. It prints a
+  warning on stderr per tool; with codex it is `invalid_input`.
 
 Without `--write` the agent can read but not change anything: Claude Code
 refuses tools that need approval (listed in `denied_tools`), Codex runs
@@ -148,11 +154,12 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
 ```
 
 - `aits task create` takes the same `--agent`, `--cwd`, `--env`, `--timeout`,
-  `--model` and `--write` as `shell submit`, and prints
+  `--model`, `--write` and `--allow-tool` as `shell submit`, and prints
   `{"id":"…","status":"queued"}`.
 - `--after ID` queues a follow-up that continues task `ID`'s conversation,
   with its agent and cwd, once `ID` is done. A follow-up gets write access
-  only from its own `--write`, never from its parent; it keeps its parent's
+  only from its own `--write` and allowed tools only from its own
+  `--allow-tool`, never from its parent; it keeps its parent's
   model unless it gives `--model`. A task may have only
   one follow-up that has not failed.
 - `aits task work` claims one task, runs it, records the result and exits.
@@ -288,4 +295,6 @@ upgrade with `go install github.com/agent-in-the-shell/aits/cmd/aits@latest`.
 - Do not treat exit 0 alone as an answer: `task work` exits 0 with
   `{"status":"empty"}`, and `session search` exits 0 with no results.
 - Do not add `--write` to a run the user did not ask to make changes.
+- Do not `--allow-tool` a tool the user did not ask for, and never a bare
+  `Bash` or `Bash(*)`: name the one command, such as `"Bash(curl:*)"`.
 - Do not pass secrets in the prompt; pass the variable's name with `--env`.
