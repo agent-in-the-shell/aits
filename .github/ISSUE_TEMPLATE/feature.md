@@ -29,4 +29,6 @@ leaves out, and why. Write "none" if none. -->
 
 ## Principles
 
-<!-- Principles this touches (P1–P14), and any it would loosen. -->
+<!-- Principles this touches (P1–P15), and any it would loosen. A new
+command group, or a change that adds a network dependency, says how it meets
+each of P15's five conditions. -->

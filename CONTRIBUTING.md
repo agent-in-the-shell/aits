@@ -8,7 +8,9 @@ against them.
 1. **Open an issue first.** Use the *Feature* template. It must stand on its
    own: the problem, a concrete use case (who runs what, with which input, and
    gets which result), acceptance (exact commands, expected output, the main
-   failure cases) and what is explicitly out of scope.
+   failure cases) and what is explicitly out of scope. A new command group,
+   or a change that adds a network dependency, says how it meets each of the
+   five conditions of P15 (a toolbox for agents, not a platform).
 2. **One pull request per issue.** Put `Closes #<issue>` in the description;
    CI fails without it. Keep the pull request to what the issue asks for.
 3. **Ship it together.** Code, CLI help, docs, the agent skill

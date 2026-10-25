@@ -69,6 +69,15 @@ same commit.
 | `aits session` | Full-text search over vendor transcripts; get back a resumable session id (available) |
 | `aits model` | OpenAI-compatible LLM gateway with routing and fallback |
 
+## What aits is, and is not
+
+aits is a toolbox an agent calls from a shell: one command per action, a
+`--json` result, run locally in the foreground. It is not a platform: it
+does not host services other commands depend on, run the agent's loop, keep a
+resident scheduler, or bundle adapters for third-party chat platforms; where
+such a service exists, aits is its client. See
+[P15](docs/principles.md#p15--a-toolbox-for-agents-not-a-platform).
+
 ## Design
 
 - [Principles](docs/principles.md) — the rules every change follows, each with

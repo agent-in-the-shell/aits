@@ -4,7 +4,7 @@
    [CONTRIBUTING.md](CONTRIBUTING.md) before changing anything.
 2. Work from an issue. If the task has no issue, write one with the Feature
    template before coding.
-3. Cite principles by id (`P1`–`P14`) when you justify a design choice in an
+3. Cite principles by id (`P1`–`P15`) when you justify a design choice in an
    issue or pull request. If a change would break or loosen a principle, say
    which one and why, and stop for a human decision.
 4. Never copy code from, or name private details of, any reference
