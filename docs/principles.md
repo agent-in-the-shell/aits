@@ -245,3 +245,45 @@ asked for.
 **Guard.** CI builds the release binary for linux/amd64, prints its size, and
 fails when it exceeds the budget. Whether code is bigger than its job is
 *review-only*.
+
+## P15 — A toolbox for agents, not a platform
+
+**Rule.** aits is the tools an agent calls from a shell: it runs other agents
+(`shell`), finds earlier conversations (`session`), coordinates work
+(`task`), and, once each has a caller, calls models (`model`) and reaches
+people and chat platforms as a client of a service that hosts them. A
+feature belongs in aits when all of these hold:
+
+1. its caller is an agent or a script, one command per action, with a
+   `--json` result (P5, P10);
+2. it runs locally and in the foreground; a long-running command is allowed
+   under P10, and no other command depends on it;
+3. aits adds something of its own: an environment allowlist, sandbox and
+   permissions, timeouts and process groups, recoverable state, one
+   vocabulary across vendors. Passing an API through unchanged does not
+   count;
+4. it fits P3 and P14 for every user of the binary. An integration that needs
+   a 24/7 public endpoint, credentials for many third-party platforms, or
+   dependencies most users never run is hosted elsewhere, and aits is its
+   client;
+5. it has a caller today (P2).
+
+Out of scope for now, each revisitable through its own issue:
+
+- hosting a messaging gateway or platform adapters (conditions 2 and 4); a
+  client for one is in scope;
+- loop control, stop conditions and workflow engines: the caller owns the
+  loop, and aits runs one iteration;
+- a resident scheduler: the OS scheduler runs the queue (cron, launchd);
+- a TUI, or attaching to live agents: terminal multiplexers do this;
+- installing vendor CLIs, telemetry exporters, impersonating other clients,
+  and Windows, as the foundation spec already excludes.
+
+**Prevents.** aits growing into a platform: hosting services that callers
+depend on; every user shipping integrations only a few run; releases tied to
+third-party platform fixes; a workflow engine that takes loop control away
+from the caller.
+
+**Guard.** *review-only.* An issue for a new command group, or for a change
+that adds a network dependency, says how it meets each of the five
+conditions.
