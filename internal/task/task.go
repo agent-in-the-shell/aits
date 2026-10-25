@@ -49,6 +49,7 @@ type Task struct {
 	TimeoutMS int64     `json:"timeout_ms"`
 	Env       []string  `json:"env,omitempty"`   // names only (P8)
 	After     string    `json:"after,omitempty"` // the task whose session this one continues (#63)
+	Model     string    `json:"model,omitempty"` // empty: the vendor's default (#119)
 	Write     bool      `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
 	CreatedAt time.Time `json:"created_at"`
 	Lease     *Lease    `json:"lease"`
@@ -74,6 +75,7 @@ type Run struct {
 // from that task.
 type Spec struct {
 	Agent, Cwd, Prompt, After string
+	Model                     string // with After, empty is that task's model
 	Timeout                   time.Duration
 	Env                       []string
 	Write                     bool // never taken from After (#104)
@@ -115,7 +117,7 @@ func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Write: s.Write, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Model: s.Model, Write: s.Write, CreatedAt: now,
 	}
 	if s.After == "" {
 		if err := t.validate(s.Timeout); err != nil {
@@ -159,6 +161,9 @@ func (t Task) validate(timeout time.Duration) error {
 	if !utf8.ValidString(t.Cwd) {
 		return invalid("working directory %q is not valid UTF-8", t.Cwd)
 	}
+	if !utf8.ValidString(t.Model) {
+		return invalid("model %q is not valid UTF-8", t.Model)
+	}
 	for _, name := range t.Env {
 		if !utf8.ValidString(name) {
 			return invalid("environment variable name %q is not valid UTF-8", name)
@@ -194,6 +199,9 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 		return invalid("working directory %q is not task %s's %q", t.Cwd, p.ID, p.Cwd)
 	}
 	t.Agent, t.Cwd = p.Agent, p.Cwd
+	if t.Model == "" {
+		t.Model = p.Model
+	}
 	if err := t.validate(timeout); err != nil {
 		return err
 	}
@@ -648,7 +656,7 @@ func collect(dir string, names []string) snapshot {
 func (t Task) request(environ []string) shell.Request {
 	return shell.Request{
 		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
-		Environ: environ, Pass: t.Env, Write: t.Write,
+		Environ: environ, Pass: t.Env, Model: t.Model, Write: t.Write,
 	}
 }
 

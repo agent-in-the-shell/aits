@@ -49,6 +49,7 @@ Flags:
   --cwd DIR           Run the agent in DIR (default: the current directory).
   --env NAME          Pass the variable NAME from this environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
+  --model MODEL       Run the agent with MODEL, as its vendor names it (default: the vendor's default).
   --session ID        Continue the conversation ID: the session_id of an earlier result.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
   --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
@@ -89,6 +90,11 @@ Statuses:
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
+
+Model (--model): passed to claude as --model MODEL and to codex as
+-m MODEL, for a new conversation and a resumed one. aits keeps no list of
+models: a name the vendor rejects is agent_failed. A name that starts with
+"-" or has spaces or control characters is invalid_input.
 
 Write (--write): the agent edits files and runs commands without asking,
 inside its vendor's sandbox; aits opens no network, and your own vendor
@@ -269,6 +275,7 @@ Flags:
   --cwd DIR           Run the agent in DIR (default: the current directory, or with --after the parent's).
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
+  --model MODEL       Run the agent with MODEL, as its vendor names it (default: the vendor's default).
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
   --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
 
@@ -278,8 +285,8 @@ neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
 invalid_input.
 
-The prompt, --cwd and --env names must be valid UTF-8: a task is stored as
-JSON text.
+The prompt, --cwd, --model and --env names must be valid UTF-8: a task is
+stored as JSON text.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
@@ -291,9 +298,17 @@ queued follow-up whose parent does not exist, failed or has no session when
 done is failed by the next list or work (run status not_started); until then
 show reports it queued. An unreadable task file fails create (internal).
 
+A follow-up runs with its parent's model unless it gives --model, which
+applies to the follow-up only.
+
 With --write, work runs the task as shell submit --write does, without the
 warning. A follow-up takes its own --write, never its parent's: without it,
 the agent resumes without write access.
+
+Model (--model): passed to claude as --model MODEL and to codex as
+-m MODEL, for a new conversation and a resumed one. aits keeps no list of
+models: a name the vendor rejects is agent_failed. A name that starts with
+"-" or has spaces or control characters is invalid_input.
 
 Write (--write): the agent edits files and runs commands without asking,
 inside its vendor's sandbox; aits opens no network, and your own vendor
@@ -376,6 +391,8 @@ Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  model        Set by create --model, or taken from the parent of a
+               follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,
@@ -422,6 +439,8 @@ Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  model        Set by create --model, or taken from the parent of a
+               follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,
@@ -479,6 +498,8 @@ Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  model        Set by create --model, or taken from the parent of a
+               follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,

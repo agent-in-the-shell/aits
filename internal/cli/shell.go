@@ -60,7 +60,7 @@ Statuses:
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
 the group to exit and prints the result.
-` + writeDetails + `
+` + modelDetails + writeDetails + `
 Errors (nothing was started):
   unknown_flag        exit 2  No such flag for this command.
   invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
@@ -87,6 +87,7 @@ func submitCommand() *Command {
 			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory).", "a directory")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
 			session := nonEmpty(fs, "session", "Continue the conversation `ID`: the session_id of an earlier result.", "a session id")
+			model := nonEmpty(fs, "model", modelUsage, "a model name")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
@@ -96,7 +97,7 @@ func submitCommand() *Command {
 				}
 				req := shell.Request{
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
-					Environ: env.Environ, Pass: *pass, Session: *session, Write: *write, Kill: env.Kill,
+					Environ: env.Environ, Pass: *pass, Session: *session, Model: *model, Write: *write, Kill: env.Kill,
 				}
 				if *write {
 					// Once the agent has started: invalid input prints only its error.
@@ -173,6 +174,17 @@ func submitError(err error) error {
 		return failure("agent_start_failed", "%v", err)
 	}
 }
+
+// modelUsage is the help of --model, for shell submit and task create.
+const modelUsage = "Run the agent with `MODEL`, as its vendor names it (default: the vendor's default)."
+
+// modelDetails documents --model, for shell submit and task create (#119).
+const modelDetails = `
+Model (--model): passed to claude as --model MODEL and to codex as
+-m MODEL, for a new conversation and a resumed one. aits keeps no list of
+models: a name the vendor rejects is agent_failed. A name that starts with
+"-" or has spaces or control characters is invalid_input.
+`
 
 // writeDetails documents --write, for shell submit and task create (#104).
 const writeDetails = `
