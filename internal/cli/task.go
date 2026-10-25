@@ -67,6 +67,8 @@ const taskFields = `Task fields (--json):
                follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  allow_tools  Set by create --allow-tool: the tools the agent runs
+               without asking.
   lease        While running: token, pgid and, once the agent has started,
                started_at.
   run          Once worked: the result fields of "shell submit --help"
@@ -89,8 +91,8 @@ func taskCreate() *Command {
 		Name:    "create",
 		Args:    "(PROMPT | -)",
 		Summary: "Queue a prompt for an agent; prints the task id.",
-		Details: taskQueue + promptDetails + `The prompt, --cwd, --model and --env names must be valid UTF-8: a task is
-stored as JSON text.
+		Details: taskQueue + promptDetails + `The prompt, --cwd, --model, --allow-tool and --env names must be valid
+UTF-8: a task is stored as JSON text.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
@@ -107,8 +109,9 @@ applies to the follow-up only.
 
 With --write, work runs the task as shell submit --write does, without the
 warning. A follow-up takes its own --write, never its parent's: without it,
-the agent resumes without write access.
-` + modelDetails + writeDetails + `
+the agent resumes without write access. --allow-tool is the same: work
+grants the tools without warning again, and a follow-up only its own.
+` + modelDetails + writeDetails + allowToolDetails + `
 Exit codes:
   0  Queued.
   1  The queue could not be read or written.
@@ -124,6 +127,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 			model := nonEmpty(fs, "model", modelUsage, "a model name")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from the worker's environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
+			allow := repeated(fs, "allow-tool", allowToolUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
@@ -132,13 +136,11 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				if *after != "" && *cwd == "" {
 					dir = "" // the parent's
 				}
-				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Model: *model, Timeout: *timeout, Env: *pass, Write: *write})
+				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Model: *model, Timeout: *timeout, Env: *pass, Write: *write, AllowTools: *allow})
 				if err != nil {
 					return 0, taskError(err)
 				}
-				if t.Write {
-					warnWrite(env)
-				}
+				warnGrants(env, t.Write, t.AllowTools)
 				if env.JSON {
 					writeJSON(env.Stdout, map[string]string{"id": t.ID, "status": string(t.Status)})
 				} else {

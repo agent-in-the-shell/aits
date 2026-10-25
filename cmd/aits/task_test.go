@@ -19,18 +19,19 @@ import (
 // taskRecord is the task JSON of show and work; decoding rejects any field
 // not listed here, so the shape is checked too (P5).
 type taskRecord struct {
-	ID        string   `json:"id"`
-	Status    string   `json:"status"`
-	Agent     string   `json:"agent"`
-	Cwd       string   `json:"cwd"`
-	Prompt    string   `json:"prompt"`
-	TimeoutMS int64    `json:"timeout_ms"`
-	Env       []string `json:"env"`
-	After     string   `json:"after"`
-	Model     string   `json:"model"`
-	Write     bool     `json:"write"`
-	CreatedAt string   `json:"created_at"`
-	Lease     *struct {
+	ID         string   `json:"id"`
+	Status     string   `json:"status"`
+	Agent      string   `json:"agent"`
+	Cwd        string   `json:"cwd"`
+	Prompt     string   `json:"prompt"`
+	TimeoutMS  int64    `json:"timeout_ms"`
+	Env        []string `json:"env"`
+	After      string   `json:"after"`
+	Model      string   `json:"model"`
+	AllowTools []string `json:"allow_tools"`
+	Write      bool     `json:"write"`
+	CreatedAt  string   `json:"created_at"`
+	Lease      *struct {
 		Token     string `json:"token"`
 		PGID      int    `json:"pgid"`
 		StartedAt string `json:"started_at"`
