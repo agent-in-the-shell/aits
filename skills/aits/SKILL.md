@@ -63,6 +63,10 @@ aits shell submit --agent codex --cwd ~/src/proj --json "Review internal/task fo
   needs, so name API keys or tool settings the agent must see.
 - `--session ID` continues the conversation `ID`: the `session_id` of an
   earlier result, or one from `aits session search`.
+- `--model MODEL` runs the agent with that model, named as its vendor names
+  it (`sonnet`, `opus` for Claude Code; a model id for Codex). Without it the
+  vendor's default runs. aits does not check the name: one the vendor
+  rejects is `agent_failed`, with the vendor's message in `stderr_tail`.
 - `--write` lets the agent edit files and run commands; see below.
 
 Without `--write` the agent can read but not change anything: Claude Code
@@ -143,11 +147,13 @@ aits task show "$id" --json
 aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
 ```
 
-- `aits task create` takes the same `--agent`, `--cwd`, `--env`, `--timeout`
-  and `--write` as `shell submit`, and prints `{"id":"…","status":"queued"}`.
+- `aits task create` takes the same `--agent`, `--cwd`, `--env`, `--timeout`,
+  `--model` and `--write` as `shell submit`, and prints
+  `{"id":"…","status":"queued"}`.
 - `--after ID` queues a follow-up that continues task `ID`'s conversation,
   with its agent and cwd, once `ID` is done. A follow-up gets write access
-  only from its own `--write`, never from its parent. A task may have only
+  only from its own `--write`, never from its parent; it keeps its parent's
+  model unless it gives `--model`. A task may have only
   one follow-up that has not failed.
 - `aits task work` claims one task, runs it, records the result and exits.
   Run it in a loop, or in several terminals for parallel workers;

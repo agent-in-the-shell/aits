@@ -63,6 +63,8 @@ const taskFields = `Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  model        Set by create --model, or taken from the parent of a
+               follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   lease        While running: token, pgid and, once the agent has started,
@@ -87,8 +89,8 @@ func taskCreate() *Command {
 		Name:    "create",
 		Args:    "(PROMPT | -)",
 		Summary: "Queue a prompt for an agent; prints the task id.",
-		Details: taskQueue + promptDetails + `The prompt, --cwd and --env names must be valid UTF-8: a task is stored as
-JSON text.
+		Details: taskQueue + promptDetails + `The prompt, --cwd, --model and --env names must be valid UTF-8: a task is
+stored as JSON text.
 
 Output: the task id; with --json {"id":"…","status":"queued"}.
 
@@ -100,10 +102,13 @@ queued follow-up whose parent does not exist, failed or has no session when
 done is failed by the next list or work (run status not_started); until then
 show reports it queued. An unreadable task file fails create (internal).
 
+A follow-up runs with its parent's model unless it gives --model, which
+applies to the follow-up only.
+
 With --write, work runs the task as shell submit --write does, without the
 warning. A follow-up takes its own --write, never its parent's: without it,
 the agent resumes without write access.
-` + writeDetails + `
+` + modelDetails + writeDetails + `
 Exit codes:
   0  Queued.
   1  The queue could not be read or written.
@@ -116,6 +121,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory, or with --after the parent's).", "a directory")
 			after := nonEmpty(fs, "after", "Continue the conversation of task `ID` once it is done, with its agent and cwd.", "a task id")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m, in whole milliseconds.")
+			model := nonEmpty(fs, "model", modelUsage, "a model name")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from the worker's environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
@@ -126,7 +132,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				if *after != "" && *cwd == "" {
 					dir = "" // the parent's
 				}
-				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Timeout: *timeout, Env: *pass, Write: *write})
+				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Model: *model, Timeout: *timeout, Env: *pass, Write: *write})
 				if err != nil {
 					return 0, taskError(err)
 				}

@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // DefaultTimeout bounds a run when the caller sets no other timeout.
@@ -38,6 +40,7 @@ type Request struct {
 	Environ []string      // the caller's environment, KEY=VALUE; its PATH also finds the agent
 	Pass    []string      // variable names passed from Environ beyond the allowlist (P8)
 	Session string        // a session to continue; empty starts a new one
+	Model   string        // the model, as the vendor names it; empty is the vendor's default (#119)
 	// Write lets the agent edit files and run commands in Dir without asking,
 	// inside its vendor's sandbox. Only an explicit choice of the caller sets
 	// it (P9).
@@ -118,7 +121,20 @@ func (r Request) validate() (agent, error) {
 	if r.Session != "" && !validSession(r.Session) {
 		return agent{}, invalid("session id %q must be letters, digits, '-', '_' or '.', and not start with '-'", r.Session)
 	}
+	if r.Model != "" && !validModel(r.Model) {
+		return agent{}, invalid("model %q must not start with '-' or contain spaces or control characters", r.Model)
+	}
 	return ag, nil
+}
+
+// validModel reports whether name is safe to place in the agent's argv: it
+// cannot be read as a flag, and has no spaces or control characters. Whether
+// the vendor knows it is the vendor's to say (#119).
+func validModel(name string) bool {
+	if strings.HasPrefix(name, "-") || !utf8.ValidString(name) {
+		return false
+	}
+	return !strings.ContainsFunc(name, func(c rune) bool { return unicode.IsSpace(c) || unicode.IsControl(c) })
 }
 
 // validSession reports whether id is safe to place in the agent's argv: it
