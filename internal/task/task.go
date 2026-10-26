@@ -49,8 +49,11 @@ type Task struct {
 	TimeoutMS int64    `json:"timeout_ms"`
 	Env       []string `json:"env,omitempty"`   // names only (P8)
 	After     string   `json:"after,omitempty"` // the task whose session this one continues (#63)
-	Model     string   `json:"model,omitempty"` // empty: the vendor's default (#119)
-	Write     bool     `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
+	// Session is the session this task continues, given at create (#123);
+	// a follow-up's is its parent's, read when it is claimed.
+	Session string `json:"session,omitempty"`
+	Model   string `json:"model,omitempty"` // empty: the vendor's default (#119)
+	Write   bool   `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
 	// AllowTools is set by create --allow-tool only, for this task alone
 	// (P9, #121).
 	AllowTools []string  `json:"allow_tools,omitempty"`
@@ -75,9 +78,10 @@ type Run struct {
 }
 
 // Spec is a task to create. With After set, an empty Agent or Cwd is taken
-// from that task.
+// from that task. Session and After exclude each other.
 type Spec struct {
 	Agent, Cwd, Prompt, After string
+	Session                   string // a session to continue (#123)
 	Model                     string // with After, empty is that task's model
 	Timeout                   time.Duration
 	Env                       []string
@@ -121,7 +125,10 @@ func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Model: s.Model, Write: s.Write, AllowTools: s.AllowTools, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Session: s.Session, Model: s.Model, Write: s.Write, AllowTools: s.AllowTools, CreatedAt: now,
+	}
+	if s.Session != "" && s.After != "" {
+		return Task{}, invalid("a task continues either a session or a task, not both: a follow-up continues its parent's session")
 	}
 	if s.After == "" {
 		if err := t.validate(s.Timeout); err != nil {
@@ -139,6 +146,11 @@ func Create(environ []string, s Spec) (Task, error) {
 	defer unlock()
 	if s.After != "" {
 		if err := t.follow(dir, s.Timeout); err != nil {
+			return Task{}, err
+		}
+	}
+	if s.Session != "" {
+		if err := sessionFree(dir, s.Session); err != nil {
 			return Task{}, err
 		}
 	}
@@ -223,22 +235,78 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 		if o.Status != Failed {
 			return invalid("task %s already has a follow-up: %s; follow up on %s instead", p.ID, o.ID, o.ID)
 		}
-		if o.Run == nil || o.Run.Status != WorkerDied {
-			continue // its agent had ended, or never ran, before it was recorded failed
+		if busy, err := stopping(dir, o); err != nil || busy {
+			if err == nil {
+				err = invalid("task %s, a follow-up of %s, failed but its agent is still being stopped; try again in a few seconds", o.ID, p.ID)
+			}
+			return err
 		}
-		// Its agent may still be running until the reclaim that failed it has
-		// stopped it; that reclaim holds its lock until then.
-		release, err := store.TryLock(lockPath(dir, o.ID), false)
-		switch {
-		case errors.Is(err, store.ErrLocked):
-			return invalid("task %s, a follow-up of %s, failed but its agent is still being stopped; try again in a few seconds", o.ID, p.ID)
-		case err == nil:
-			release()
-		case !errors.Is(err, os.ErrNotExist): // (no lock file: removed by hand, nothing to wait for)
-			return fmt.Errorf("task %s: %w", o.ID, err)
+	}
+	if p.Status != Done {
+		return nil // its session is not known yet
+	}
+	return sessionFree(dir, p.Run.SessionID)
+}
+
+// stopping reports whether failed task o's agent may still be running: its
+// worker died, and the reclaim that failed it holds its lock until it has
+// stopped the agent.
+func stopping(dir string, o Task) (bool, error) {
+	if o.Run == nil || o.Run.Status != WorkerDied {
+		return false, nil // its agent had ended, or never ran, before it was recorded failed
+	}
+	release, err := store.TryLock(lockPath(dir, o.ID), false)
+	switch {
+	case errors.Is(err, store.ErrLocked):
+		return true, nil
+	case err == nil:
+		release()
+	case !errors.Is(err, os.ErrNotExist): // (no lock file: removed by hand, nothing to wait for)
+		return false, fmt.Errorf("task %s: %w", o.ID, err)
+	}
+	return false, nil
+}
+
+// sessionFree checks, under the directory lock, that no task in the queue
+// may still write session id: one queued or running that continues it (by
+// --session, or as a follow-up of a task that ended in it), or a failed one
+// whose agent is still being stopped. Two agents continuing one conversation
+// at once leave it undefined (#123, as for follow-ups, #63).
+func sessionFree(dir, id string) error {
+	s, err := load(dir)
+	if err != nil {
+		return err
+	}
+	if len(s.Skipped) > 0 {
+		return fmt.Errorf("cannot tell whether session %s is already being continued: task %s could not be read", id, s.Skipped[0])
+	}
+	byID := index(s.tasks)
+	for _, o := range s.tasks {
+		if continues(o, byID) != id {
+			continue
+		}
+		switch busy, err := stopping(dir, o); {
+		case err != nil:
+			return err
+		case o.Status == Queued || o.Status == Running:
+			return invalid("session %s is already continued by task %s; follow up on %s instead", id, o.ID, o.ID)
+		case busy:
+			return invalid("task %s, which continued session %s, failed but its agent is still being stopped; try again in a few seconds", o.ID, id)
 		}
 	}
 	return nil
+}
+
+// continues is the session task t continues, as far as the queue knows: its
+// own, or a follow-up's parent's once the parent is done ("" before).
+func continues(t Task, byID map[string]*Task) string {
+	if t.After == "" {
+		return t.Session
+	}
+	if p := byID[t.After]; p != nil && p.Status == Done && p.Run != nil {
+		return p.Run.SessionID
+	}
+	return ""
 }
 
 // List reclaims tasks of dead workers and returns every readable task, oldest
@@ -428,6 +496,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 	})
 	if err == nil && i >= 0 {
 		t := &s.tasks[i]
+		session = t.Session
 		if t.After != "" {
 			session = byID[t.After].Run.SessionID // claimable checked it
 		}
@@ -660,7 +729,7 @@ func collect(dir string, names []string) snapshot {
 func (t Task) request(environ []string) shell.Request {
 	return shell.Request{
 		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
-		Environ: environ, Pass: t.Env, Model: t.Model, Write: t.Write, AllowTools: t.AllowTools,
+		Environ: environ, Pass: t.Env, Session: t.Session, Model: t.Model, Write: t.Write, AllowTools: t.AllowTools,
 	}
 }
 

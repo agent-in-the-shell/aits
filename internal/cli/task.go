@@ -63,6 +63,7 @@ const taskFields = `Task fields (--json):
   agent, cwd, prompt, timeout_ms, created_at
   env          Variable names passed from the worker's environment.
   after        For a follow-up: the task whose session it continues.
+  session      Set by create --session: the session it continues.
   model        Set by create --model, or taken from the parent of a
                follow-up: the model the agent runs with.
   write        Set by create --write: the agent runs in its vendor's
@@ -107,6 +108,20 @@ show reports it queued. An unreadable task file fails create (internal).
 A follow-up runs with its parent's model unless it gives --model, which
 applies to the follow-up only.
 
+Continuing a session (--session ID): work runs the task as shell submit
+--session ID does, in the same conversation, so a failed round or a session
+found with session search can be continued through the queue. --agent is
+required; --cwd defaults to the current directory, and should be the
+session's (the vendor reports a session it cannot find). It has no parent:
+it is claimable at once, and takes no --model, --write or --allow-tool from
+anything. --after cannot be combined with it. While another task that is
+queued or running continues ID (by --session, or as a follow-up of a task
+done in ID), or one that failed is still having its agent stopped, create
+refuses it: two agents continuing one conversation at once leave it
+undefined. aits cannot see an agent it did not start: continue a
+worker_died round only once no agent of it runs, since its agent may still
+be running while its worker is gone.
+
 With --write, work runs the task as shell submit --write does, without the
 warning. A follow-up takes its own --write, never its parent's: without it,
 the agent resumes without write access. --allow-tool is the same: work
@@ -123,6 +138,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required unless --after). One of: "+strings.Join(shell.Agents(), ", ")+".")
 			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory, or with --after the parent's).", "a directory")
 			after := nonEmpty(fs, "after", "Continue the conversation of task `ID` once it is done, with its agent and cwd.", "a task id")
+			session := nonEmpty(fs, "session", "Continue the conversation `ID`: a session_id of an earlier result or of session search.", "a session id")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m, in whole milliseconds.")
 			model := nonEmpty(fs, "model", modelUsage, "a model name")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from the worker's environment to the agent.")
@@ -136,7 +152,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				if *after != "" && *cwd == "" {
 					dir = "" // the parent's
 				}
-				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Model: *model, Timeout: *timeout, Env: *pass, Write: *write, AllowTools: *allow})
+				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Session: *session, Model: *model, Timeout: *timeout, Env: *pass, Write: *write, AllowTools: *allow})
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -157,8 +173,8 @@ func taskList() *Command {
 		Name:    "list",
 		Summary: "List tasks, oldest first.",
 		Details: taskQueue + `Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
-{"tasks":[{"id","status","agent","cwd","created_at","after"}],"skipped":["ID"]},
-with after only for a follow-up. Tasks of dead workers are reclaimed first,
+{"tasks":[{"id","status","agent","cwd","created_at","after","session"}],"skipped":["ID"]},
+with after only for a follow-up and session only for a --session task. Tasks of dead workers are reclaimed first,
 and queued follow-ups whose parent does not exist, failed or has no session
 when done are failed (run status not_started). A running task whose lock
 file is missing cannot be judged: it stays running, with
@@ -196,10 +212,11 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					Cwd       string      `json:"cwd"`
 					CreatedAt time.Time   `json:"created_at"`
 					After     string      `json:"after,omitempty"`
+					Session   string      `json:"session,omitempty"`
 				}
 				items := []item{}
 				for _, t := range tasks {
-					items = append(items, item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After})
+					items = append(items, item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After, t.Session})
 				}
 				if env.JSON {
 					reportNotes(env, task.Notes{Unknown: notes.Unknown}) // skipped ids are in the JSON

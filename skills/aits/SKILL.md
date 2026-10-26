@@ -23,6 +23,7 @@ installed with `aits version`.
 | Queue work and collect it later | `aits task create`, then `aits task work` |
 | Wait for a queued task to finish | `aits task wait ID --timeout 9m` |
 | Queue a follow-up in the same conversation | `aits task create --after ID` |
+| Queue a continuation of any session, e.g. a failed round's | `aits task create --session ID` |
 | See queued and finished work | `aits task list`, `aits task show ID` |
 | Which aits is installed | `aits version` |
 | Full help for any command | `aits help COMMAND...` or `aits COMMAND --help` |
@@ -162,6 +163,13 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   `--allow-tool`, never from its parent; it keeps its parent's
   model unless it gives `--model`. A task may have only
   one follow-up that has not failed.
+- `--session ID` queues a task that continues session `ID`, as
+  `shell submit --session` does: a failed round's `run.session_id`, or one
+  found with `session search`. `--agent` is required; pass the session's
+  `--cwd`. It is claimable at once and takes `--model`, `--write` and
+  `--allow-tool` only from its own flags. Not with `--after`. While another
+  queued or running task continues `ID`, create refuses it
+  (`invalid_input`, naming that task): one session, one writer.
 - `aits task work` claims one task, runs it, records the result and exits.
   Run it in a loop, or in several terminals for parallel workers;
   `--agent AGENT` claims only that agent's tasks. With nothing claimable it
@@ -269,10 +277,13 @@ done
 - **Stop.** Always cap the rounds, and report how the loop ended: clean,
   round limit, or a failure.
 - **After a failure.** `--after` follows only a `done` task with a session. If
-  a round fails (`timeout`, `agent_failed`, `worker_died`), read
-  `run.message`, then either queue a new task that says what happened, or
+  a round fails with `timeout` or `agent_failed`, read `run.message`, then
   continue its `run.session_id`, when it has one, with
-  `aits shell submit --session`.
+  `aits task create --session` and `task wait` (or, in a script,
+  `aits shell submit --session`); without a session id, queue a new task
+  that says what happened. A `worker_died` round's agent may still be
+  running: continue its session only once you have checked that no agent of
+  it runs, or queue a new task instead.
 - **One tree per loop.** Parallel loops each get their own `git worktree`
   and `--cwd`; never two writing agents in one tree.
 - **Blocking is fine in a script.** A script with no time limit can use
