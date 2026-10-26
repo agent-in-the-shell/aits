@@ -163,5 +163,6 @@ figure recorded in the pull request.
 
 ## 7. Out of scope
 
-`--session` on `task create` (P2: no caller once `--after` exists); fan-out
+`--session` on `task create` (P2: no caller once `--after` exists; since
+added by #123, whose caller is a failed round that `--after` cannot follow); fan-out
 (refused, §2); re-running a failed task.

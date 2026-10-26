@@ -27,6 +27,7 @@ type taskRecord struct {
 	TimeoutMS  int64    `json:"timeout_ms"`
 	Env        []string `json:"env"`
 	After      string   `json:"after"`
+	Session    string   `json:"session"`
 	Model      string   `json:"model"`
 	AllowTools []string `json:"allow_tools"`
 	Write      bool     `json:"write"`
@@ -65,6 +66,7 @@ type taskListItem struct {
 	Cwd       string `json:"cwd"`
 	CreatedAt string `json:"created_at"`
 	After     string `json:"after"`
+	Session   string `json:"session"`
 }
 
 // queue is a shared AITS_HOME and fake-agent PATH for one test.
@@ -1075,6 +1077,102 @@ func TestTaskCreateAfterInvalid(t *testing.T) {
 	}
 	// A plain create does not look for follow-ups, so it still succeeds (#78).
 	q.create("plain")
+}
+
+// A --session task runs as shell submit --session does: the agent resumes
+// that session; it is claimable at once, shown in show and list, and can be
+// followed up like any task (#123).
+func TestTaskSessionResumes(t *testing.T) {
+	eachAgent(t, func(t *testing.T, agent string) {
+		q := queue{t: t, home: t.TempDir(), path: vendorAs(t, agent, "ok")}
+		cwd := t.TempDir()
+		id := created(t, q.run("create", "--agent", agent, "--cwd", cwd, "--session", "sess-old-3", "--json", "continue"))
+		if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Session != "sess-old-3" || r.After != "" || r.Status != "queued" {
+			t.Errorf("show = %+v", r)
+		}
+		l := decodeOne[taskList](t, q.run("list", "--json").stdout)
+		if len(l.Tasks) != 1 || l.Tasks[0].Session != "sess-old-3" {
+			t.Errorf("list = %+v", l.Tasks)
+		}
+		w := decodeOne[taskRecord](t, q.run("work", "--json").stdout)
+		if w.ID != id || w.Status != "done" || w.Cwd != cwd {
+			t.Errorf("work = %+v", w)
+		}
+		rec := readRecord(t, q.path)
+		want := map[string][]string{"claude": {"--resume", "sess-old-3"}, "codex": {"resume", "sess-old-3"}}[agent]
+		if i := slices.Index(rec.Args, want[0]); i < 0 || i+1 >= len(rec.Args) || rec.Args[i+1] != want[1] {
+			t.Errorf("agent argv = %q, want %q", rec.Args, want)
+		}
+		q.after(id, "and then")
+	})
+}
+
+// create --session refuses what it cannot run as asked, and a second writer
+// of one session in the queue, and writes nothing (#123).
+func TestTaskCreateSessionInvalid(t *testing.T) {
+	q := newQueue(t, "ok")
+	done := func(id, session string) {
+		q.patch(id, map[string]any{"status": "done", "run": map[string]any{"status": "ok", "agent": "claude", "session_id": session, "answer": "a", "finished_at": time.Now().UTC()}})
+	}
+	queued := q.create("queued", "--session", "s-queued")
+	running := q.create("running", "--session", "s-running")
+	q.setRunning(running, map[string]any{"token": "live", "pgid": 0}) // create never reclaims
+	p := q.create("parent")
+	done(p, "s-parent")
+	f := q.after(p, "follow-up") // will continue s-parent
+	finished := q.create("finished", "--session", "s-done")
+	done(finished, "s-done")
+	for _, tt := range []struct {
+		name string
+		args []string
+		msg  string
+	}{
+		{"with --after", []string{"--agent", "claude", "--session", "s1", "--after", p}, "a task continues either a session or a task, not both: a follow-up continues its parent's session"},
+		{"empty session", []string{"--agent", "claude", "--session", ""}, `invalid value "" for flag -session: needs a session id`},
+		{"no agent", []string{"--session", "s1"}, "agent is required (one of: claude, codex)"},
+		{"bad session id", []string{"--agent", "claude", "--session", "-x"}, `session id "-x" must be letters, digits, '-', '_' or '.', and not start with '-'`},
+		{"queued writer", []string{"--agent", "claude", "--session", "s-queued"}, "session s-queued is already continued by task " + queued + "; follow up on " + queued + " instead"},
+		{"running writer", []string{"--agent", "claude", "--session", "s-running"}, "session s-running is already continued by task " + running + "; follow up on " + running + " instead"},
+		{"queued follow-up", []string{"--agent", "claude", "--session", "s-parent"}, "session s-parent is already continued by task " + f + "; follow up on " + f + " instead"},
+	} {
+		before := q.count()
+		out := q.run(append(append([]string{"create", "--cwd", t.TempDir()}, tt.args...), "--json", "x")...)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != tt.msg || q.count() != before {
+			t.Errorf("%s: code=%d stdout=%q; want %q", tt.name, out.code, out.stdout, tt.msg)
+		}
+	}
+	// --after is refused too while a --session task writes the parent's session.
+	p2 := q.create("parent 2")
+	done(p2, "s-queued")
+	out := q.run("create", "--after", p2, "--json", "x")
+	if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Message != "session s-queued is already continued by task "+queued+"; follow up on "+queued+" instead" {
+		t.Errorf("--after into a queued session: code=%d stdout=%q", out.code, out.stdout)
+	}
+	// A done task no longer writes its session: it can be continued again.
+	q.create("again", "--session", "s-done")
+	// A failed one does not either, once its agent is stopped.
+	q.patch(queued, map[string]any{"status": "failed", "run": map[string]any{"status": "timeout", "agent": "claude", "finished_at": time.Now().UTC()}})
+	q.create("retry", "--session", "s-queued")
+}
+
+// A worker_died task's agent may still run until its reclaim has stopped it:
+// until then its session cannot be continued (#123, #76).
+func TestTaskSessionRetryWaitsForStop(t *testing.T) {
+	q := newQueue(t, "ok")
+	id := q.create("first try", "--session", "s-died")
+	g := q.deadWorker(id, `trap '' TERM; : > "$0"; exec sleep 60`) // ignores TERM for the 5s grace
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "list", "--json"}}.start(t)
+	q.waitShow(id, func(r taskRecord) bool { return r.Status == "failed" })
+	out := q.run("create", "--agent", "claude", "--session", "s-died", "--json", "retry")
+	want := "task " + id + ", which continued session s-died, failed but its agent is still being stopped; try again in a few seconds"
+	if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Message != want {
+		t.Errorf("retry while %s's agent is being stopped: code=%d stdout=%q", id, out.code, out.stdout)
+	}
+	_ = syscall.Kill(-g, syscall.SIGKILL) // end the grace period early
+	if out := s.waitOrKill(t, 15*time.Second); out.code != 0 {
+		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
+	}
+	q.create("retry", "--session", "s-died")
 }
 
 // wait starts "task wait --json" on id with extra flags.
