@@ -25,6 +25,7 @@ installed with `aits version`.
 | Queue a follow-up in the same conversation | `aits task create --after ID` |
 | Queue a continuation of any session, e.g. a failed round's | `aits task create --session ID` |
 | See queued and finished work | `aits task list`, `aits task show ID` |
+| Withdraw a queued task before a worker takes it | `aits task cancel ID` |
 | Which aits is installed | `aits version` |
 | Full help for any command | `aits help COMMAND...` or `aits COMMAND --help` |
 
@@ -187,6 +188,11 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   below your shell tool's own limit (Claude Code's Bash tool stops a command
   after 2 minutes by default, 10 at most); on `timeout` (exit 1) the task is
   untouched: call `wait` again. A signal ends it with `stopped`.
+- `aits task cancel ID --json` withdraws a `queued` task that has the wrong
+  prompt, `--cwd` or `--write`: it becomes `failed` with run status
+  `cancelled`, its queued follow-up fails, and its session is free for the
+  corrected task. A `running`, `done` or `failed` task is refused
+  (`invalid_input`); cancel does not stop a running agent.
 
 Task `status` is `queued`, `running`, `done` or `failed`. A worked task has
 a `run`: the `shell submit` result fields plus `started_at` and
@@ -197,6 +203,8 @@ a `run`: the `shell submit` result fields plus `started_at` and
 - `worker_died`: the worker exited before recording a result. `list`,
   `work` and `wait` find this by themselves; nothing needs repairing. Create the task
   again to retry.
+- `cancelled`: withdrawn with `aits task cancel` before any worker claimed
+  it; the agent never ran.
 
 Only a `done` task's `run.answer` is the agent's answer; read
 `run.message` for any other.

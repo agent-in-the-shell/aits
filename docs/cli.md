@@ -242,6 +242,7 @@ Commands:
   show    Show one task and its run.
   wait    Wait until a task is done or failed, then show it.
   work    Claim the oldest claimable task, run it, record the result, exit.
+  cancel  Withdraw a queued task before a worker claims it.
 
 Run 'aits task COMMAND --help' for details.
 
@@ -457,10 +458,12 @@ Task fields (--json):
                status, not_started (the agent was never started: it could
                not be started after the claim, or the task is a follow-up
                whose parent does not exist, failed or has no session when
-               done), or worker_died (its worker exited first; set by the
-               next work or list). A not_started or worker_died
-               run has no exit_code and no duration_ms, which are unknown;
-               only a worker_died run whose agent started has started_at.
+               done), worker_died (its worker exited first; set by the
+               next work or list), or cancelled (set only by task cancel,
+               on a task no worker had claimed). A not_started,
+               worker_died or cancelled run has no exit_code and no
+               duration_ms, which are unknown; only a worker_died run
+               whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id, the denied tools and why a task failed on stderr,
@@ -508,10 +511,12 @@ Task fields (--json):
                status, not_started (the agent was never started: it could
                not be started after the claim, or the task is a follow-up
                whose parent does not exist, failed or has no session when
-               done), or worker_died (its worker exited first; set by the
-               next work or list). A not_started or worker_died
-               run has no exit_code and no duration_ms, which are unknown;
-               only a worker_died run whose agent started has started_at.
+               done), worker_died (its worker exited first; set by the
+               next work or list), or cancelled (set only by task cancel,
+               on a task no worker had claimed). A not_started,
+               worker_died or cancelled run has no exit_code and no
+               duration_ms, which are unknown; only a worker_died run
+               whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id, the denied tools and why a task failed on stderr,
@@ -570,10 +575,12 @@ Task fields (--json):
                status, not_started (the agent was never started: it could
                not be started after the claim, or the task is a follow-up
                whose parent does not exist, failed or has no session when
-               done), or worker_died (its worker exited first; set by the
-               next work or list). A not_started or worker_died
-               run has no exit_code and no duration_ms, which are unknown;
-               only a worker_died run whose agent started has started_at.
+               done), worker_died (its worker exited first; set by the
+               next work or list), or cancelled (set only by task cancel,
+               on a task no worker had claimed). A not_started,
+               worker_died or cancelled run has no exit_code and no
+               duration_ms, which are unknown; only a worker_died run
+               whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id, the denied tools and why a task failed on stderr,
@@ -598,6 +605,71 @@ Exit codes:
   2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
+```
+
+## aits task cancel
+
+```text
+Usage: aits task cancel [flags] ID
+
+Withdraw a queued task before a worker claims it.
+
+Flags:
+  --json  Print the result, or the error, as JSON on stdout.
+
+The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
+neither AITS_HOME nor HOME set, every task command fails (invalid_input).
+
+A queued task becomes failed with run status cancelled and finished_at,
+under the lock a worker's claim takes, so a cancel and a claim never both
+succeed. Its file is kept, as for any failed task. A queued follow-up of it
+is failed at once (run status not_started), and the session it would have
+continued is free for a new task. Tasks of dead workers are reclaimed
+first, as list does.
+
+A running, done or failed task cannot be cancelled: invalid_input, naming
+its status, and the task is unchanged. A running task is not stopped.
+
+Output: the task, as show prints it.
+
+Task fields (--json):
+  id           Created by "task create".
+  status       queued, running, done or failed.
+  agent, cwd, prompt, timeout_ms, created_at
+  env          Variable names passed from the worker's environment.
+  after        For a follow-up: the task whose session it continues.
+  session      Set by create --session: the session it continues.
+  model        Set by create --model, or taken from the parent of a
+               follow-up: the model the agent runs with.
+  write        Set by create --write: the agent runs in its vendor's
+               sandbox and may write without asking.
+  allow_tools  Set by create --allow-tool: the tools the agent runs
+               without asking.
+  lease        While running: token, pgid and, once the agent has started,
+               started_at.
+  run          Once worked: the result fields of "shell submit --help"
+               plus started_at and finished_at. run.status is a shell
+               status, not_started (the agent was never started: it could
+               not be started after the claim, or the task is a follow-up
+               whose parent does not exist, failed or has no session when
+               done), worker_died (its worker exited first; set by the
+               next work or list), or cancelled (set only by task cancel,
+               on a task no worker had claimed). A not_started,
+               worker_died or cancelled run has no exit_code and no
+               duration_ms, which are unknown; only a worker_died run
+               whose agent started has started_at.
+
+Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
+stdout; the session id, the denied tools and why a task failed on stderr,
+with control characters shown as Go escapes (\x1b, \r).
+
+Exit codes:
+  0  Cancelled.
+  1  The queue could not be read or written.
+  2  Unknown id, a task that is not queued, usage error or invalid input;
+     nothing was changed.
+
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```
 
 ## aits version
