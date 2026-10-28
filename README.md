@@ -66,6 +66,7 @@ same commit.
 | --- | --- |
 | `aits shell` | Run a prompt through a vendor agent CLI (Claude Code, Codex) and return the result and session id |
 | `aits task` | A local work queue: create tasks, run them through `shell`, and follow up on the same session (available) |
+| `aits job` | Run a scheduled command for cron or launchd: timeout, lock, bounded log, run record, deduplicated alerts through a hook (available) |
 | `aits session` | Full-text search over vendor transcripts; get back a resumable session id (available) |
 | `aits model` | OpenAI-compatible LLM gateway with routing and fallback |
 

@@ -250,9 +250,12 @@ fails when it exceeds the budget. Whether code is bigger than its job is
 
 **Rule.** aits is the tools an agent calls from a shell: it runs other agents
 (`shell`), finds earlier conversations (`session`), coordinates work
-(`task`), and, once each has a caller, calls models (`model`) and reaches
-people and chat platforms as a client of a service that hosts them. A
-feature belongs in aits when all of these hold:
+(`task`), runs the commands an OS scheduler starts (`job`), and, once each
+has a caller, calls models (`model`) and reaches people and chat platforms
+as a client of a service that hosts them. A command group is scoped by what
+aits adds to a run, not by what is run: `job` does not ask whether its
+command is an agent (#129). A feature belongs in aits when all of these
+hold:
 
 1. its caller is an agent or a script, one command per action, with a
    `--json` result (P5, P10);
@@ -274,7 +277,8 @@ Out of scope for now, each revisitable through its own issue:
   client for one is in scope;
 - loop control, stop conditions and workflow engines: the caller owns the
   loop, and aits runs one iteration;
-- a resident scheduler: the OS scheduler runs the queue (cron, launchd);
+- a resident scheduler: the OS scheduler runs the queue and the jobs (cron,
+  launchd), and aits keeps no schedule;
 - a TUI, or attaching to live agents: terminal multiplexers do this;
 - installing vendor CLIs, telemetry exporters, impersonating other clients,
   and Windows, as the foundation spec already excludes.

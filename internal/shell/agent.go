@@ -95,6 +95,11 @@ var agents = map[string]agent{
 // Agents returns the supported agent names, sorted.
 func Agents() []string { return slices.Sorted(maps.Keys(agents)) }
 
+// Environ builds the environment of a child that is not an agent, such as a
+// job's command (P8): the base allowlist and the names in pass, with values
+// taken from parent.
+func Environ(parent, pass []string) []string { return agent{}.environ(parent, pass) }
+
 // environ builds the child's environment from scratch (P8): the base
 // allowlist, the agent's own variables and the names in pass, with values
 // taken from parent.
