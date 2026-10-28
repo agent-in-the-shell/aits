@@ -32,6 +32,9 @@ const (
 	Failed  Status = "failed"
 )
 
+// Statuses are the statuses a task can have, in the order of its life.
+func Statuses() []Status { return []Status{Queued, Running, Done, Failed} }
+
 // Run statuses besides shell's: the agent was never started after the claim,
 // or the worker exited before it recorded a result.
 const (
@@ -779,7 +782,7 @@ func readFile(dir, id string) (Task, error) {
 	switch {
 	case t.ID != id:
 		return Task{}, fmt.Errorf("its id is %q, not %q", t.ID, id)
-	case !slices.Contains([]Status{Queued, Running, Done, Failed}, t.Status):
+	case !slices.Contains(Statuses(), t.Status):
 		return Task{}, fmt.Errorf("unknown status %q", t.Status)
 	case t.Status == Running && t.Lease == nil:
 		return Task{}, errors.New("running without a lease")

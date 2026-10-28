@@ -82,7 +82,7 @@ func TestOutputChannels(t *testing.T) {
 
 		{name: "task list empty", scenario: "ok", args: []string{"task", "list"}, result: jsonIs(`{"tasks":[],"skipped":[]}`)},
 		{name: "task list", scenario: "ok", args: []string{"task", "list"}, setup: queued,
-			result: listIs, stdout: "{ID}  queued  claude  {CREATED_AT}\n"},
+			result: listIs, stdout: "{ID}  queued    claude  {CREATED_AT}\n"},
 		{name: "task list with an argument", scenario: "ok", args: []string{"task", "list", "extra"}, code: 2,
 			errCode: "invalid_input", errMsg: "list takes no arguments"},
 		{name: "task list internal", scenario: "ok", args: []string{"task", "list"}, code: 1, setup: homeIsFile, errCode: "internal"},

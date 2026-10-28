@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -172,9 +173,20 @@ func taskList() *Command {
 	return &Command{
 		Name:    "list",
 		Summary: "List tasks, oldest first.",
-		Details: taskQueue + `Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
-{"tasks":[{"id","status","agent","cwd","created_at","after","session"}],"skipped":["ID"]},
-with after only for a follow-up and session only for a --session task. Tasks of dead workers are reclaimed first,
+		Details: taskQueue + `Output: one line per task, "ID  STATUS  RUN_STATUS  AGENT  CREATED_AT"
+(RUN_STATUS empty for a task with no run); with --json
+{"tasks":[{"id","status","agent","cwd","created_at","after","session","run"}],"skipped":["ID"]},
+with after only for a follow-up, session only for a --session task, and run
+only once a task has one: its status, session_id, started_at, finished_at
+and message as in show, without the answer (read it with show).
+
+--status STATUS keeps only the tasks with that status (queued, running,
+done or failed); skipped is not filtered. A morning check of a scheduled
+queue:
+
+  aits task list --status failed --json |
+    jq -r '.tasks[] | "\(.id) \(.run.status) \(.run.finished_at)"'
+ Tasks of dead workers are reclaimed first,
 and queued follow-ups whose parent does not exist, failed or has no session
 when done are failed (run status not_started). A running task whose lock
 file is missing cannot be judged: it stays running, with
@@ -196,7 +208,15 @@ Exit codes:
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 `,
-		Setup: func(*flag.FlagSet) Runner {
+		Setup: func(fs *flag.FlagSet) Runner {
+			var status task.Status
+			fs.Func("status", "Show only tasks whose status is `STATUS`: queued, running, done or failed.", func(s string) error {
+				status = task.Status(s)
+				if !slices.Contains(task.Statuses(), status) {
+					return fmt.Errorf("needs one of: %s", strings.Join(statusNames(), ", "))
+				}
+				return nil
+			})
 			return func(_ context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "list takes no arguments")
@@ -204,6 +224,15 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 				tasks, notes, err := task.List(env.Environ)
 				if err != nil {
 					return 0, taskError(err)
+				}
+				// The run as list shows it: show's fields without the answer
+				// and the agent's output, so the list stays small (#125).
+				type run struct {
+					Status     shell.Status `json:"status"`
+					SessionID  string       `json:"session_id,omitempty"`
+					StartedAt  time.Time    `json:"started_at,omitzero"`
+					FinishedAt time.Time    `json:"finished_at"`
+					Message    string       `json:"message,omitempty"`
 				}
 				type item struct {
 					ID        string      `json:"id"`
@@ -213,10 +242,18 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					CreatedAt time.Time   `json:"created_at"`
 					After     string      `json:"after,omitempty"`
 					Session   string      `json:"session,omitempty"`
+					Run       *run        `json:"run,omitempty"`
 				}
 				items := []item{}
 				for _, t := range tasks {
-					items = append(items, item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After, t.Session})
+					if status != "" && t.Status != status {
+						continue
+					}
+					i := item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After, t.Session, nil}
+					if r := t.Run; r != nil {
+						i.Run = &run{r.Status, r.SessionID, r.StartedAt, r.FinishedAt, r.Message}
+					}
+					items = append(items, i)
 				}
 				if env.JSON {
 					reportNotes(env, task.Notes{Unknown: notes.Unknown}) // skipped ids are in the JSON
@@ -228,7 +265,11 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 				}
 				reportNotes(env, notes)
 				for _, i := range items {
-					fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n", i.ID, i.Status, i.Agent, i.CreatedAt.Format(time.RFC3339))
+					var rs shell.Status
+					if i.Run != nil {
+						rs = i.Run.Status
+					}
+					fmt.Fprintf(env.Stdout, "%s  %s  %s  %s  %s\n", i.ID, i.Status, printable(string(rs)), i.Agent, i.CreatedAt.Format(time.RFC3339))
 				}
 				return exitOK, nil
 			}
@@ -416,4 +457,13 @@ func taskError(err error) error {
 		return failure("stopped", "%v", err)
 	}
 	return failure("internal", "%v", err)
+}
+
+// statusNames is task.Statuses as strings, for messages.
+func statusNames() []string {
+	var names []string
+	for _, s := range task.Statuses() {
+		names = append(names, string(s))
+	}
+	return names
 }

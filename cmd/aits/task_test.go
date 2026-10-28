@@ -67,6 +67,13 @@ type taskListItem struct {
 	CreatedAt string `json:"created_at"`
 	After     string `json:"after"`
 	Session   string `json:"session"`
+	Run       *struct {
+		Status     string `json:"status"`
+		SessionID  string `json:"session_id"`
+		StartedAt  string `json:"started_at"`
+		FinishedAt string `json:"finished_at"`
+		Message    string `json:"message"`
+	} `json:"run"`
 }
 
 // queue is a shared AITS_HOME and fake-agent PATH for one test.
@@ -1173,6 +1180,71 @@ func TestTaskSessionRetryWaitsForStop(t *testing.T) {
 		t.Fatalf("list: code=%d stderr=%q", out.code, out.stderr)
 	}
 	q.create("retry", "--session", "s-died")
+}
+
+// list --status keeps the tasks with that status, after reclaim; each task
+// carries its run without the answer, in JSON and text (#125).
+func TestTaskListStatus(t *testing.T) {
+	q := newQueue(t, "ok")
+	done := q.create("done")
+	if out := q.run("work"); out.code != 0 {
+		t.Fatalf("work: code=%d stderr=%q", out.code, out.stderr)
+	}
+	queued := q.create("queued")
+	failed := q.create("failed")
+	q.patch(failed, map[string]any{"status": "failed", "run": map[string]any{"status": "timeout", "agent": "claude", "session_id": "s-f", "message": "the agent did not finish before the timeout", "answer": "partial", "started_at": "2026-10-28T08:00:00Z", "finished_at": "2026-10-28T08:30:00Z"}})
+	dead := q.create("dead")
+	q.setRunning(dead, map[string]any{"token": "dead", "pgid": 0})
+	q.writeLockFile(dead) // no worker holds it: list reclaims it as worker_died
+	junk := "20000101T000000-00000a"
+	q.writeTaskFile(junk, "not json", 0o600)
+	for status, want := range map[string][]string{
+		"queued": {queued}, "running": nil, "done": {done}, "failed": {failed, dead},
+	} {
+		out := q.run("list", "--status", status, "--json")
+		l := decodeOne[taskList](t, out.stdout)
+		var ids []string
+		for _, e := range l.Tasks {
+			if e.Status != status {
+				t.Errorf("--status %s listed %s %s", status, e.ID, e.Status)
+			}
+			ids = append(ids, e.ID)
+		}
+		if !slices.Equal(ids, want) || !slices.Equal(l.Skipped, []string{junk}) {
+			t.Errorf("--status %s: tasks %q skipped %q; want %q and the unreadable file", status, ids, l.Skipped, want)
+		}
+	}
+	l := decodeOne[taskList](t, q.run("list", "--json").stdout)
+	byID := map[string]taskListItem{}
+	for _, e := range l.Tasks {
+		byID[e.ID] = e
+	}
+	if r := byID[failed].Run; r == nil || r.Status != "timeout" || r.SessionID != "s-f" || r.Message == "" ||
+		r.StartedAt != "2026-10-28T08:00:00Z" || r.FinishedAt != "2026-10-28T08:30:00Z" {
+		t.Errorf("failed task's run = %+v", r)
+	}
+	if r := byID[done].Run; r == nil || r.Status != "ok" || r.SessionID == "" || r.FinishedAt == "" {
+		t.Errorf("done task's run = %+v", r)
+	}
+	if r := byID[dead].Run; r == nil || r.Status != "worker_died" || r.StartedAt != "" {
+		t.Errorf("reclaimed task's run = %+v", r)
+	}
+	if byID[queued].Run != nil {
+		t.Errorf("queued task has a run: %+v", byID[queued].Run)
+	}
+	out := q.run("list")
+	for id, want := range map[string]string{done: "  done  ok  claude  ", queued: "  queued    claude  ", failed: "  failed  timeout  claude  "} {
+		if !strings.Contains(out.stdout, id+want) {
+			t.Errorf("text list: %q has no %q", out.stdout, id+want)
+		}
+	}
+	if strings.Contains(q.run("list", "--json").stdout, "partial") {
+		t.Errorf("list --json carries the answer")
+	}
+	bad := q.run("list", "--status", "cancelled", "--json")
+	if e := decode(t, bad.stdout).Error; bad.code != 2 || e == nil || e.Code != "invalid_input" {
+		t.Errorf("--status cancelled: code=%d stdout=%q", bad.code, bad.stdout)
+	}
 }
 
 // wait starts "task wait --json" on id with extra flags.
