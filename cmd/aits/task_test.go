@@ -1247,6 +1247,102 @@ func TestTaskListStatus(t *testing.T) {
 	}
 }
 
+// cancel withdraws a queued task: show, list and wait see it failed with
+// run status cancelled, its queued follow-up fails at once, and its session
+// is free for a new task (#126).
+func TestTaskCancel(t *testing.T) {
+	q := newQueue(t, "ok")
+	id := q.create("wrong", "--session", "s-123")
+	f := q.after(id, "its follow-up")
+	out := q.run("cancel", id, "--json")
+	c := decodeOne[taskRecord](t, out.stdout)
+	if out.code != 0 || c.ID != id || c.Status != "failed" || c.Run == nil || c.Run.Status != "cancelled" ||
+		c.Run.FinishedAt == "" || c.Run.StartedAt != "" || c.Lease != nil {
+		t.Fatalf("cancel: code=%d %+v", out.code, c)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Run == nil || r.Run.Status != "cancelled" {
+		t.Errorf("show = %+v", r)
+	}
+	if w, ok := q.wait(id).wait(t, 5*time.Second); !ok || w.code != 0 || decodeOne[taskRecord](t, w.stdout).Run.Status != "cancelled" {
+		t.Errorf("wait: ended=%v code=%d stdout=%q", ok, w.code, w.stdout)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", f, "--json").stdout); r.Status != "failed" || r.Run == nil ||
+		r.Run.Status != "not_started" || r.Run.Message != "its parent task "+id+" failed" {
+		t.Errorf("follow-up of a cancelled task = %+v", r)
+	}
+	l := decodeOne[taskList](t, q.run("list", "--status", "failed", "--json").stdout)
+	if len(l.Tasks) != 2 || l.Tasks[0].Run == nil || l.Tasks[0].Run.Status != "cancelled" {
+		t.Errorf("list = %+v", l.Tasks)
+	}
+	q.create("right", "--session", "s-123")
+	if text := q.run("cancel", q.create("text")); text.code != 0 || !strings.Contains(text.stderr, "cancelled: withdrawn by task cancel") {
+		t.Errorf("text cancel: code=%d stderr=%q", text.code, text.stderr)
+	}
+}
+
+// cancel refuses a task that is not queued, and an unknown id, and changes
+// nothing (#126).
+func TestTaskCancelRefuses(t *testing.T) {
+	q := newQueue(t, "sleep")
+	running := q.create("running")
+	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
+	waitFile(t, filepath.Join(q.path, "child.pid"))
+	q.waitLease(running, readPID(t, filepath.Join(q.path, "child.pid"))) // a live worker: reclaim leaves it running
+	defer s.waitOrKill(t, 10*time.Second)
+	defer s.signal(t, syscall.SIGTERM)
+	done, failed := q.create("done"), q.create("failed")
+	q.patch(done, map[string]any{"status": "done", "run": map[string]any{"status": "ok", "agent": "claude", "answer": "a", "finished_at": time.Now().UTC()}})
+	q.patch(failed, map[string]any{"status": "failed", "run": map[string]any{"status": "timeout", "agent": "claude", "finished_at": time.Now().UTC()}})
+	for _, tt := range []struct{ name, id, msg string }{
+		{"running", running, "task " + running + " is running; only a queued task can be cancelled"},
+		{"done", done, "task " + done + " is done; only a queued task can be cancelled"},
+		{"failed", failed, "task " + failed + " is failed; only a queued task can be cancelled"},
+		{"unknown", "20000101T000000-000000", "no task 20000101T000000-000000"},
+		{"empty", "", "no task "},
+	} {
+		before, _ := os.ReadFile(q.taskFile(tt.id))
+		out := q.run("cancel", tt.id, "--json")
+		after, _ := os.ReadFile(q.taskFile(tt.id))
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" || e.Message != tt.msg || string(before) != string(after) {
+			t.Errorf("%s: code=%d stdout=%q; want %q, task unchanged", tt.name, out.code, out.stdout, tt.msg)
+		}
+	}
+	if out := q.run("cancel", "--json"); out.code != 2 {
+		t.Errorf("no id: code=%d", out.code)
+	}
+}
+
+// A cancel racing a worker's claim of the same task: exactly one wins. Either
+// the cancel succeeds and the worker finds nothing, or the worker runs the
+// task and the cancel is refused (#126).
+func TestTaskCancelRacesClaim(t *testing.T) {
+	q := newQueue(t, "ok")
+	for i := range 10 {
+		id := q.create("race")
+		var work, cancel output
+		var wg sync.WaitGroup
+		wg.Add(2)
+		runWork := func() { defer wg.Done(); work = q.run("work", "--json") }
+		runCancel := func() { defer wg.Done(); cancel = q.run("cancel", id, "--json") }
+		if i%2 == 0 { // alternate which starts first, so each can win
+			go runWork()
+			runCancel()
+		} else {
+			go runCancel()
+			runWork()
+		}
+		wg.Wait()
+		r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout)
+		worked := !strings.Contains(work.stdout, `"status":"empty"`)
+		switch {
+		case cancel.code == 0 && !worked && r.Run != nil && r.Run.Status == "cancelled":
+		case cancel.code == 2 && worked && r.Status == "done":
+		default:
+			t.Fatalf("cancel code=%d stdout=%q; work stdout=%q; task %+v", cancel.code, cancel.stdout, work.stdout, r)
+		}
+	}
+}
+
 // wait starts "task wait --json" on id with extra flags.
 func (q queue) wait(id string, flags ...string) *started {
 	q.t.Helper()

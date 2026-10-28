@@ -36,10 +36,12 @@ const (
 func Statuses() []Status { return []Status{Queued, Running, Done, Failed} }
 
 // Run statuses besides shell's: the agent was never started after the claim,
-// or the worker exited before it recorded a result.
+// the worker exited before it recorded a result, or task cancel withdrew the
+// task before any worker claimed it (#126).
 const (
 	NotStarted shell.Status = "not_started"
 	WorkerDied shell.Status = "worker_died"
+	Cancelled  shell.Status = "cancelled"
 )
 
 // Task is one queued agent run and, once worked, its result.
@@ -327,6 +329,48 @@ func List(environ []string) ([]Task, Notes, error) {
 	unlock()
 	stop()
 	return s.tasks, s.Notes, err
+}
+
+// Cancel withdraws queued task id: it becomes failed with run status
+// cancelled. It takes the lock that claim takes, so a cancel and a claim
+// never both succeed, and reclaims as List does; a queued follow-up of the
+// task then fails at once (parentFault). A task that is not queued is
+// refused unchanged.
+func Cancel(environ []string, id string) (Task, error) {
+	dir, err := taskDir(environ)
+	if err != nil {
+		return Task{}, err
+	}
+	unlock, err := store.Lock(dir)
+	if err != nil {
+		return Task{}, err
+	}
+	s, stop, err := reclaim(dir)
+	defer stop()
+	defer unlock() // runs before stop: stop waits for dead workers' agents
+	if err != nil {
+		return Task{}, err
+	}
+	i := slices.IndexFunc(s.tasks, func(t Task) bool { return t.ID == id })
+	if i < 0 {
+		if _, err := find(dir, id); err != nil {
+			return Task{}, err // no such task, or one that cannot be read
+		}
+		return Task{}, fmt.Errorf("task %s could not be read", id)
+	}
+	t := &s.tasks[i]
+	if t.Status != Queued {
+		return Task{}, invalid("task %s is %s; only a queued task can be cancelled", id, t.Status)
+	}
+	t.Status = Failed
+	t.Run = &Run{Result: shell.Result{
+		Status: Cancelled, Agent: t.Agent, Message: "withdrawn by task cancel before a worker claimed it",
+	}, FinishedAt: time.Now().UTC()}
+	if err := write(dir, *t); err != nil {
+		return Task{}, err
+	}
+	done := *t
+	return done, failOrphans(dir, s)
 }
 
 // Show returns one task (see find).

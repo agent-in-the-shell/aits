@@ -18,7 +18,7 @@ func taskGroup() *Command {
 		Name:     "task",
 		Summary:  "Queue agent runs, work them one at a time, and read their results.",
 		Details:  taskSchedule,
-		Children: []*Command{taskCreate(), taskList(), taskShow(), taskWait(), taskWork()},
+		Children: []*Command{taskCreate(), taskList(), taskShow(), taskWait(), taskWork(), taskCancel()},
 	}
 }
 
@@ -78,10 +78,12 @@ const taskFields = `Task fields (--json):
                status, not_started (the agent was never started: it could
                not be started after the claim, or the task is a follow-up
                whose parent does not exist, failed or has no session when
-               done), or worker_died (its worker exited first; set by the
-               next work or list). A not_started or worker_died
-               run has no exit_code and no duration_ms, which are unknown;
-               only a worker_died run whose agent started has started_at.
+               done), worker_died (its worker exited first; set by the
+               next work or list), or cancelled (set only by task cancel,
+               on a task no worker had claimed). A not_started,
+               worker_died or cancelled run has no exit_code and no
+               duration_ms, which are unknown; only a worker_died run
+               whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id, the denied tools and why a task failed on stderr,
@@ -466,4 +468,48 @@ func statusNames() []string {
 		names = append(names, string(s))
 	}
 	return names
+}
+
+func taskCancel() *Command {
+	return &Command{
+		Name:    "cancel",
+		Args:    "ID",
+		Summary: "Withdraw a queued task before a worker claims it.",
+		Details: taskQueue + `A queued task becomes failed with run status cancelled and finished_at,
+under the lock a worker's claim takes, so a cancel and a claim never both
+succeed. Its file is kept, as for any failed task. A queued follow-up of it
+is failed at once (run status not_started), and the session it would have
+continued is free for a new task. Tasks of dead workers are reclaimed
+first, as list does.
+
+A running, done or failed task cannot be cancelled: invalid_input, naming
+its status, and the task is unchanged. A running task is not stopped.
+
+Output: the task, as show prints it.
+
+` + taskFields + `
+Exit codes:
+  0  Cancelled.
+  1  The queue could not be read or written.
+  2  Unknown id, a task that is not queued, usage error or invalid input;
+     nothing was changed.
+
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+`,
+		Setup: func(*flag.FlagSet) Runner {
+			return func(_ context.Context, env *Env, args []string) (int, error) {
+				if len(args) != 1 {
+					return 0, usageError("invalid_input", "expected one task id; got %d", len(args))
+				}
+				t, err := task.Cancel(env.Environ, args[0])
+				if err != nil {
+					return 0, taskError(err)
+				}
+				if err := writeTask(env, t); err != nil {
+					return 0, err
+				}
+				return exitOK, nil
+			}
+		},
+	}
 }
