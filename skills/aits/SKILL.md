@@ -1,6 +1,6 @@
 ---
 name: aits
-description: Run Claude Code or Codex as a sub-agent from the shell, queue agent work and collect it later, or find and continue an earlier agent conversation, with the aits CLI. Use when asked to hand a prompt to another coding agent, get a second agent's review or fix, run agent jobs in the background, or resume a past Claude Code or Codex session.
+description: Run Claude Code or Codex as a sub-agent from the shell, queue agent work and collect it later, find and continue an earlier agent conversation, or run scheduled commands with a timeout, a run record and deduplicated alerts, with the aits CLI. Use when asked to hand a prompt to another coding agent, get a second agent's review or fix, run agent jobs in the background, resume a past Claude Code or Codex session, or set up or check a cron or launchd job.
 ---
 
 # aits
@@ -26,6 +26,8 @@ installed with `aits version`.
 | Queue a continuation of any session, e.g. a failed round's | `aits task create --session ID` |
 | See queued and finished work | `aits task list`, `aits task show ID` |
 | Withdraw a queued task before a worker takes it | `aits task cancel ID` |
+| Run a cron or launchd job with a timeout, a lock and alerts | `aits job run NAME -- COMMAND` |
+| See how scheduled jobs last ran, and which are failing | `aits job list` |
 | Which aits is installed | `aits version` |
 | Full help for any command | `aits help COMMAND...` or `aits COMMAND --help` |
 
@@ -250,6 +252,48 @@ is running:
   `aits task list --status failed --json | jq -r '.tasks[] | "\(.id) \(.run.status) \(.run.finished_at)"'`.
   `not_started` lines point at the job's `PATH`; continue `timeout` ones with
   `task create --session`.
+
+## Scheduled commands: aits job
+
+`aits job run NAME --timeout DUR --on-alert PROGRAM -- COMMAND [ARG...]` is
+what a crontab line or a launchd agent runs: any command, an agent or not.
+aits runs it once and exits; the schedule stays with the OS scheduler. It
+gives each run what a bare cron line lacks:
+
+- COMMAND runs in its own process group with stdin `/dev/null` and the
+  same bare environment an agent gets, plus `--env NAME`; on `--timeout`
+  (default 30m) or a signal the whole group is stopped, and anything it
+  leaves running in the background is killed once it exits.
+- Its stdout and stderr go to `$AITS_HOME/job/NAME.log`, rotated at 5 MiB.
+- A run that finds the previous one still going is `skipped` and exits 0.
+- Alerts are decided by aits and delivered by `--on-alert PROGRAM` (an
+  absolute path), which gets one JSON object on stdin with `kind`
+  (`failure`, `repeat`, `recovery`), `status`, `message`, `failures`,
+  `output_tail` and `log`. The same failure repeats 15m, 30m, 1h, 2h, 4h
+  apart, then every 6h; a different one alerts at once; the first `ok`
+  after a failure sends one `recovery`. A stop from outside never alerts.
+  aits sends nothing itself: the program posts to chat, mails, or pages.
+
+```sh
+# crontab -e
+MAILTO=""
+30 23 * * *  /Users/YOU/.local/bin/aits job run notes-backup --timeout 10m --on-alert /Users/YOU/bin/notify -- /Users/YOU/bin/notes-backup.sh
+```
+
+`--json` prints one record: `name`, `status`, `exit_code` (once COMMAND
+ran), `started_at`, `finished_at`, `duration_ms`, `message`, `alert`
+(`none`, `failure`, `repeat`, `suppressed`, `recovery`) and `alert_error`
+when the program failed, which never changes the status. Statuses:
+
+- `ok`: COMMAND exited 0. `failed`: it exited non-zero or a signal killed it.
+- `timeout`: `--timeout` elapsed. `stopped`: aits got a signal.
+- `start_failed`: COMMAND could not start, or an `--env` variable is unset.
+- `skipped`: the previous run still holds the lock; nothing ran.
+
+aits exits 0 for `ok` and `skipped`, 1 for the others. Check every job in
+one call: `aits job list --json | jq -r '.jobs[] | select(.failing) |
+"\(.name) \(.failing.since)"'`; each job has `last` (its last record),
+`last_ok_at` and, while it fails, `failing`.
 
 ## Run a loop: implement, check, fix, review, stop
 

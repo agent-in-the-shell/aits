@@ -59,6 +59,32 @@ func WriteFile(path string, data []byte) error {
 	return err
 }
 
+// OpenAppend opens path for appending, creating it 0600, and refuses
+// anything but a regular file, as OpenRegular does.
+func OpenAppend(path string) (*os.File, error) {
+	f, _, err := OpenRegular(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	return f, err
+}
+
+// Rotate renames path to path.1, path.1 to path.2 and so on, dropping
+// path.keep, once path has reached max bytes. A missing path is left alone.
+func Rotate(path string, max int64, keep int) error {
+	fi, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) || err == nil && fi.Size() < max {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for i := keep - 1; i > 0; i-- {
+		old := fmt.Sprintf("%s.%d", path, i)
+		if err := os.Rename(old, fmt.Sprintf("%s.%d", path, i+1)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return os.Rename(path, path+".1")
+}
+
 // Lock takes an exclusive lock on dir/.lock, waiting for it if another
 // process holds it, and returns the function that releases it.
 func Lock(dir string) (func(), error) {

@@ -130,7 +130,7 @@ func TestSkill(t *testing.T) {
 			}
 		}
 	})
-	for _, glob := range []string{"../../internal/shell/*.go", "../../internal/task/*.go"} {
+	for _, glob := range []string{"../../internal/shell/*.go", "../../internal/task/*.go", "../../internal/job/*.go"} {
 		for _, m := range sourceMatches(t, glob, `\bStatus\s*=\s*"(\w+)"`) {
 			if !strings.Contains(skill, "`"+m[1]+"`") {
 				t.Errorf("the skill does not name the status %q", m[1])
@@ -160,6 +160,8 @@ func TestHelpDocumentsErrors(t *testing.T) {
 	}{
 		{[]string{"session", "search"}, "session.go"},
 		{[]string{"version"}, "version.go"},
+		{[]string{"job", "run"}, "job.go"},
+		{[]string{"job", "list"}, "job.go"},
 	} {
 		documented := helpErrors(t, c.path)
 		for code, exit := range errorCodes(t, "../../internal/cli/"+c.src) {

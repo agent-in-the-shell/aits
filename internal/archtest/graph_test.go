@@ -16,6 +16,7 @@ var allowed = map[string][]string{
 	"shell":   nil,
 	"session": nil,
 	"task":    {"shell"},
+	"job":     {"shell"},
 }
 
 // TestGroupDependencies enforces P1: every import between command groups is

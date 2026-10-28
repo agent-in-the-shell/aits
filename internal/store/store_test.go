@@ -159,3 +159,38 @@ func TestTryLockRefusesOddFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAppendAndRotate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.log")
+	for i := range 5 {
+		if err := Rotate(path, 4, 3); err != nil {
+			t.Fatalf("rotate %d: %v", i, err)
+		}
+		f, err := OpenAppend(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.WriteString(string(rune('a'+i)) + "1234"); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+	}
+	for suffix, want := range map[string]string{"": "e1234", ".1": "d1234", ".2": "c1234", ".3": "b1234"} {
+		if b, err := os.ReadFile(path + suffix); err != nil || string(b) != want {
+			t.Errorf("x.log%s = %q, %v; want %q", suffix, b, err, want)
+		}
+	}
+	if _, err := os.Stat(path + ".4"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("x.log.4 kept: %v", err)
+	}
+	if m := mode(t, path); m != 0o600 {
+		t.Errorf("mode %v, want 0600", m)
+	}
+	link := filepath.Join(t.TempDir(), "link.log")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenAppend(link); err == nil {
+		t.Error("OpenAppend followed a symlink")
+	}
+}
