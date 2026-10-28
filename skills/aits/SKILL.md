@@ -175,8 +175,11 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   `--agent AGENT` claims only that agent's tasks. With nothing claimable it
   prints `{"status":"empty"}` and exits 0: stop looping then. Its exit code
   is 1 when the task failed.
-- `aits task list --json` lists every task oldest first; ids it could not
-  read are in `"skipped"`. `aits task show ID --json` prints the whole task.
+- `aits task list --json` lists every task oldest first, each with its `run`
+  (`status`, `session_id`, `started_at`, `finished_at`, `message`; no
+  `answer`) once it has one; ids it could not read are in `"skipped"`.
+  `--status STATUS` (`queued`, `running`, `done`, `failed`) keeps only those.
+  `aits task show ID --json` prints the whole task, with the answer.
 - `aits task wait ID --json` blocks until the task is `done` or `failed`,
   then prints it as `show` does, with exit 0 either way: read `status`. Use
   it instead of polling `show`, which never notices a dead worker. It starts
@@ -235,6 +238,10 @@ is running:
 - An idle run prints `{"status":"empty"}` and exits 0. Overlapping cron runs
   claim different tasks, so slow tasks can pile up workers; use launchd, or
   `flock -n` on Linux, to keep one.
+- Check what failed, and why, in one call:
+  `aits task list --status failed --json | jq -r '.tasks[] | "\(.id) \(.run.status) \(.run.finished_at)"'`.
+  `not_started` lines point at the job's `PATH`; continue `timeout` ones with
+  `task create --session`.
 
 ## Run a loop: implement, check, fix, review, stop
 

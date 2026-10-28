@@ -382,14 +382,26 @@ Usage: aits task list [flags]
 List tasks, oldest first.
 
 Flags:
-  --json  Print the result, or the error, as JSON on stdout.
+  --json           Print the result, or the error, as JSON on stdout.
+  --status STATUS  Show only tasks whose status is STATUS: queued, running, done or failed.
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
 neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 
-Output: one line per task, "ID  STATUS  AGENT  CREATED_AT"; with --json
-{"tasks":[{"id","status","agent","cwd","created_at","after","session"}],"skipped":["ID"]},
-with after only for a follow-up and session only for a --session task. Tasks of dead workers are reclaimed first,
+Output: one line per task, "ID  STATUS  RUN_STATUS  AGENT  CREATED_AT"
+(RUN_STATUS empty for a task with no run); with --json
+{"tasks":[{"id","status","agent","cwd","created_at","after","session","run"}],"skipped":["ID"]},
+with after only for a follow-up, session only for a --session task, and run
+only once a task has one: its status, session_id, started_at, finished_at
+and message as in show, without the answer (read it with show).
+
+--status STATUS keeps only the tasks with that status (queued, running,
+done or failed); skipped is not filtered. A morning check of a scheduled
+queue:
+
+  aits task list --status failed --json |
+    jq -r '.tasks[] | "\(.id) \(.run.status) \(.run.finished_at)"'
+ Tasks of dead workers are reclaimed first,
 and queued follow-ups whose parent does not exist, failed or has no session
 when done are failed (run status not_started). A running task whose lock
 file is missing cannot be judged: it stays running, with
