@@ -58,7 +58,10 @@ type Task struct {
 	// a follow-up's is its parent's, read when it is claimed.
 	Session string `json:"session,omitempty"`
 	Model   string `json:"model,omitempty"` // empty: the vendor's default (#119)
-	Write   bool   `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
+	// Label groups tasks, such as the runs of one scheduled runbook, for
+	// list and work (#131); a follow-up's is its parent's unless given.
+	Label string `json:"label,omitempty"`
+	Write bool   `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
 	// AllowTools is set by create --allow-tool only, for this task alone
 	// (P9, #121).
 	AllowTools []string  `json:"allow_tools,omitempty"`
@@ -88,6 +91,7 @@ type Spec struct {
 	Agent, Cwd, Prompt, After string
 	Session                   string // a session to continue (#123)
 	Model                     string // with After, empty is that task's model
+	Label                     string // with After, empty is that task's label (#131)
 	Timeout                   time.Duration
 	Env                       []string
 	Write                     bool     // never taken from After (#104)
@@ -130,7 +134,7 @@ func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Session: s.Session, Model: s.Model, Write: s.Write, AllowTools: s.AllowTools, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Session: s.Session, Model: s.Model, Label: s.Label, Write: s.Write, AllowTools: s.AllowTools, CreatedAt: now,
 	}
 	if s.Session != "" && s.After != "" {
 		return Task{}, invalid("a task continues either a session or a task, not both: a follow-up continues its parent's session")
@@ -185,6 +189,9 @@ func (t Task) validate(timeout time.Duration) error {
 	if !utf8.ValidString(t.Model) {
 		return invalid("model %q is not valid UTF-8", t.Model)
 	}
+	if t.Label != "" && !ValidLabel(t.Label) {
+		return invalid("label %q %s", t.Label, labelRule)
+	}
 	for _, name := range t.Env {
 		if !utf8.ValidString(name) {
 			return invalid("environment variable name %q is not valid UTF-8", name)
@@ -222,6 +229,9 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 	t.Agent, t.Cwd = p.Agent, p.Cwd
 	if t.Model == "" {
 		t.Model = p.Model
+	}
+	if t.Label == "" {
+		t.Label = p.Label
 	}
 	if err := t.validate(timeout); err != nil {
 		return err
@@ -470,18 +480,22 @@ func find(dir, id string) (Task, error) {
 
 // Work reclaims tasks of dead workers, claims the oldest claimable task (of
 // agent, if not empty), runs it through shell and records the run. It also
-// returns the notes of the reclaim. The task is nil when nothing is claimable;
+// returns the notes of the reclaim. With label, only tasks with that label
+// are claimed (#131). The task is nil when nothing is claimable;
 // the error is shell.ErrStopped when ctx is done before the claim, and
 // errReclaimed, wrapped with the task id, when the task was reclaimed.
-func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent string) (*Task, Notes, error) {
+func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, label string) (*Task, Notes, error) {
 	if agent != "" && !slices.Contains(shell.Agents(), agent) {
 		return nil, Notes{}, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
+	}
+	if label != "" && !ValidLabel(label) {
+		return nil, Notes{}, invalid("label %q %s", label, labelRule)
 	}
 	dir, err := taskDir(environ)
 	if err != nil {
 		return nil, Notes{}, err
 	}
-	t, session, release, notes, err := claim(ctx, dir, agent)
+	t, session, release, notes, err := claim(ctx, dir, agent, label)
 	if t == nil || err != nil {
 		return nil, notes, err
 	}
@@ -519,12 +533,12 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent str
 }
 
 // claim, under the lock, reclaims tasks of dead workers and marks the oldest
-// claimable queued task of agent running with a fresh lease. It locks the
+// claimable queued task of agent and label running with a fresh lease. It locks the
 // task's lock file first, so that a running task's lock is never free while
 // its worker lives, and returns the session the task continues ("" for a new
 // one), the function that releases the lock, and the notes of the reclaim. A
 // signal that arrived while it waited for the lock claims nothing.
-func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes, error) {
+func claim(ctx context.Context, dir, agent, label string) (*Task, string, func(), Notes, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
 		return nil, "", nil, Notes{}, err
@@ -539,7 +553,7 @@ func claim(ctx context.Context, dir, agent string) (*Task, string, func(), Notes
 	var session string
 	var release func()
 	i := slices.IndexFunc(s.tasks, func(t Task) bool {
-		return t.Status == Queued && (agent == "" || t.Agent == agent) && claimable(t, byID)
+		return t.Status == Queued && (agent == "" || t.Agent == agent) && (label == "" || t.Label == label) && claimable(t, byID)
 	})
 	if err == nil && i >= 0 {
 		t := &s.tasks[i]
@@ -778,6 +792,18 @@ func (t Task) request(environ []string) shell.Request {
 		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
 		Environ: environ, Pass: t.Env, Session: t.Session, Model: t.Model, Write: t.Write, AllowTools: t.AllowTools,
 	}
+}
+
+// labelRule says what ValidLabel accepts, for messages.
+const labelRule = "must be letters, digits, '.', '_' or '-', start with a letter or digit, and be at most 100 bytes"
+
+// ValidLabel reports whether label can label a task (#131).
+func ValidLabel(label string) bool {
+	alnum := func(c rune) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' }
+	if label == "" || len(label) > 100 || !alnum(rune(label[0])) {
+		return false
+	}
+	return !strings.ContainsFunc(label, func(c rune) bool { return !alnum(c) && !strings.ContainsRune("._-", c) })
 }
 
 // validID reports whether id is a task id as Create makes them,

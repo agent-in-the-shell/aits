@@ -25,6 +25,7 @@ installed with `aits version`.
 | Queue a follow-up in the same conversation | `aits task create --after ID` |
 | Queue a continuation of any session, e.g. a failed round's | `aits task create --session ID` |
 | See queued and finished work | `aits task list`, `aits task show ID` |
+| Keep one runbook's scheduled runs together | `aits task create --label NAME`, `aits task list --label NAME` |
 | Withdraw a queued task before a worker takes it | `aits task cancel ID` |
 | Run a cron or launchd job with a timeout, a lock and alerts | `aits job run NAME -- COMMAND` |
 | See how scheduled jobs last ran, and which are failing | `aits job list` |
@@ -164,8 +165,16 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   with its agent and cwd, once `ID` is done. A follow-up gets write access
   only from its own `--write` and allowed tools only from its own
   `--allow-tool`, never from its parent; it keeps its parent's
-  model unless it gives `--model`. A task may have only
+  model and `--label` unless it gives its own. A task may have only
   one follow-up that has not failed.
+- `--label LABEL` (letters, digits, `.`, `_`, `-`) groups tasks, such as
+  the runs of one scheduled runbook: `task list --label LABEL` shows only
+  them and `task work --label LABEL` claims only them, so one runbook's job
+  never runs another's queued task. A scheduled runbook job:
+  `aits task create --label oss-radar --agent claude --cwd ~/notes --json - < prompt.md`
+  then `aits task work --label oss-radar --json`; every run keeps its answer
+  and `session_id`, so any run can be continued later with `--after ID`,
+  or interactively with `claude --resume SESSION_ID` in its `cwd`.
 - `--session ID` queues a task that continues session `ID`, as
   `shell submit --session` does: a failed round's `run.session_id`, or one
   found with `session search`. `--agent` is required; pass the session's
@@ -175,13 +184,15 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   (`invalid_input`, naming that task): one session, one writer.
 - `aits task work` claims one task, runs it, records the result and exits.
   Run it in a loop, or in several terminals for parallel workers;
-  `--agent AGENT` claims only that agent's tasks. With nothing claimable it
+  `--agent AGENT` claims only that agent's tasks, `--label LABEL` only
+  that label's. With nothing claimable it
   prints `{"status":"empty"}` and exits 0: stop looping then. Its exit code
   is 1 when the task failed.
 - `aits task list --json` lists every task oldest first, each with its `run`
   (`status`, `session_id`, `started_at`, `finished_at`, `message`; no
   `answer`) once it has one; ids it could not read are in `"skipped"`.
-  `--status STATUS` (`queued`, `running`, `done`, `failed`) keeps only those.
+  `--status STATUS` (`queued`, `running`, `done`, `failed`) keeps only those,
+  and `--label LABEL` only that label's.
   `aits task show ID --json` prints the whole task, with the answer.
 - `aits task wait ID --json` blocks until the task is `done` or `failed`,
   then prints it as `show` does, with exit 0 either way: read `status`. Use
