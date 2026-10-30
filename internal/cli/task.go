@@ -67,6 +67,8 @@ const taskFields = `Task fields (--json):
   session      Set by create --session: the session it continues.
   model        Set by create --model, or taken from the parent of a
                follow-up: the model the agent runs with.
+  label        Set by create --label, or taken from the parent of a
+               follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   allow_tools  Set by create --allow-tool: the tools the agent runs
@@ -109,7 +111,13 @@ done is failed by the next list or work (run status not_started); until then
 show reports it queued. An unreadable task file fails create (internal).
 
 A follow-up runs with its parent's model unless it gives --model, which
-applies to the follow-up only.
+applies to the follow-up only. It also takes its parent's --label unless it
+gives its own.
+
+Labels (--label LABEL): letters, digits, '.', '_' and '-', starting with a
+letter or digit, at most 100 bytes. A label groups tasks, such as the runs
+of one scheduled runbook: list --label shows only them, and work --label
+claims only them.
 
 Continuing a session (--session ID): work runs the task as shell submit
 --session ID does, in the same conversation, so a failed round or a session
@@ -147,6 +155,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 			pass := repeated(fs, "env", "Pass the variable `NAME` from the worker's environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
 			allow := repeated(fs, "allow-tool", allowToolUsage)
+			label := nonEmpty(fs, "label", "Label the task `LABEL`, e.g. the runbook it runs, for list --label and work --label.", "a label")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
@@ -155,7 +164,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				if *after != "" && *cwd == "" {
 					dir = "" // the parent's
 				}
-				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Session: *session, Model: *model, Timeout: *timeout, Env: *pass, Write: *write, AllowTools: *allow})
+				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Session: *session, Model: *model, Label: *label, Timeout: *timeout, Env: *pass, Write: *write, AllowTools: *allow})
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -177,13 +186,15 @@ func taskList() *Command {
 		Summary: "List tasks, oldest first.",
 		Details: taskQueue + `Output: one line per task, "ID  STATUS  RUN_STATUS  AGENT  CREATED_AT"
 (RUN_STATUS empty for a task with no run); with --json
-{"tasks":[{"id","status","agent","cwd","created_at","after","session","run"}],"skipped":["ID"]},
-with after only for a follow-up, session only for a --session task, and run
+{"tasks":[{"id","status","agent","cwd","created_at","after","session","label","run"}],"skipped":["ID"]},
+with after only for a follow-up, session only for a --session task, label
+only for a labelled task, and run
 only once a task has one: its status, session_id, started_at, finished_at
 and message as in show, without the answer (read it with show).
 
 --status STATUS keeps only the tasks with that status (queued, running,
-done or failed); skipped is not filtered. A morning check of a scheduled
+done or failed), and --label LABEL only those labelled LABEL; given both, a
+task must match both. skipped is not filtered. A morning check of a scheduled
 queue:
 
   aits task list --status failed --json |
@@ -219,6 +230,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 				}
 				return nil
 			})
+			label := labelFlag(fs, "Show only tasks labelled `LABEL` (create --label).")
 			return func(_ context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "list takes no arguments")
@@ -244,14 +256,15 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					CreatedAt time.Time   `json:"created_at"`
 					After     string      `json:"after,omitempty"`
 					Session   string      `json:"session,omitempty"`
+					Label     string      `json:"label,omitempty"`
 					Run       *run        `json:"run,omitempty"`
 				}
 				items := []item{}
 				for _, t := range tasks {
-					if status != "" && t.Status != status {
+					if status != "" && t.Status != status || *label != "" && t.Label != *label {
 						continue
 					}
-					i := item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After, t.Session, nil}
+					i := item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After, t.Session, t.Label, nil}
 					if r := t.Run; r != nil {
 						i.Run = &run{r.Status, r.SessionID, r.StartedAt, r.FinishedAt, r.Message}
 					}
@@ -365,7 +378,8 @@ func taskWork() *Command {
 		Name:    "work",
 		Summary: "Claim the oldest claimable task, run it, record the result, exit.",
 		Details: taskQueue + taskFields + `
-With nothing claimable (no task queued, none for AGENT with --agent, or only
+With nothing claimable (no task queued, none for AGENT with --agent or
+labelled LABEL with --label, or only
 follow-ups whose parent is not done or cannot be read), work exits 0,
 printing {"status":"empty"} with --json and nothing otherwise. A worker whose
 task was reclaimed records nothing and fails with
@@ -387,11 +401,12 @@ Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 `,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := nonEmpty(fs, "agent", "Only claim tasks for `AGENT`.", "an agent (one of: "+strings.Join(shell.Agents(), ", ")+")")
+			label := labelFlag(fs, "Only claim tasks labelled `LABEL` (create --label).")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "work takes no arguments")
 				}
-				t, notes, err := task.Work(ctx, env.Kill, env.Environ, *agent)
+				t, notes, err := task.Work(ctx, env.Kill, env.Environ, *agent, *label)
 				reportNotes(env, notes)
 				if err != nil {
 					return 0, taskError(err)
@@ -459,6 +474,19 @@ func taskError(err error) error {
 		return failure("stopped", "%v", err)
 	}
 	return failure("internal", "%v", err)
+}
+
+// labelFlag declares --label for list and work: a label as create takes it.
+func labelFlag(fs *flag.FlagSet, usage string) *string {
+	v := new(string)
+	fs.Func("label", usage, func(s string) error {
+		if !task.ValidLabel(s) {
+			return errors.New("needs a label: letters, digits, '.', '_' or '-', starting with a letter or digit")
+		}
+		*v = s
+		return nil
+	})
+	return v
 }
 
 // statusNames is task.Statuses as strings, for messages.

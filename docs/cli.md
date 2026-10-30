@@ -290,6 +290,7 @@ Flags:
   --cwd DIR           Run the agent in DIR (default: the current directory, or with --after the parent's).
   --env NAME          Pass the variable NAME from the worker's environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
+  --label LABEL       Label the task LABEL, e.g. the runbook it runs, for list --label and work --label.
   --model MODEL       Run the agent with MODEL, as its vendor names it (default: the vendor's default).
   --session ID        Continue the conversation ID: a session_id of an earlier result or of session search.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
@@ -315,7 +316,13 @@ done is failed by the next list or work (run status not_started); until then
 show reports it queued. An unreadable task file fails create (internal).
 
 A follow-up runs with its parent's model unless it gives --model, which
-applies to the follow-up only.
+applies to the follow-up only. It also takes its parent's --label unless it
+gives its own.
+
+Labels (--label LABEL): letters, digits, '.', '_' and '-', starting with a
+letter or digit, at most 100 bytes. A label groups tasks, such as the runs
+of one scheduled runbook: list --label shows only them, and work --label
+claims only them.
 
 Continuing a session (--session ID): work runs the task as shell submit
 --session ID does, in the same conversation, so a failed round or a session
@@ -385,6 +392,7 @@ List tasks, oldest first.
 
 Flags:
   --json           Print the result, or the error, as JSON on stdout.
+  --label LABEL    Show only tasks labelled LABEL (create --label).
   --status STATUS  Show only tasks whose status is STATUS: queued, running, done or failed.
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
@@ -392,13 +400,15 @@ neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 
 Output: one line per task, "ID  STATUS  RUN_STATUS  AGENT  CREATED_AT"
 (RUN_STATUS empty for a task with no run); with --json
-{"tasks":[{"id","status","agent","cwd","created_at","after","session","run"}],"skipped":["ID"]},
-with after only for a follow-up, session only for a --session task, and run
+{"tasks":[{"id","status","agent","cwd","created_at","after","session","label","run"}],"skipped":["ID"]},
+with after only for a follow-up, session only for a --session task, label
+only for a labelled task, and run
 only once a task has one: its status, session_id, started_at, finished_at
 and message as in show, without the answer (read it with show).
 
 --status STATUS keeps only the tasks with that status (queued, running,
-done or failed); skipped is not filtered. A morning check of a scheduled
+done or failed), and --label LABEL only those labelled LABEL; given both, a
+task must match both. skipped is not filtered. A morning check of a scheduled
 queue:
 
   aits task list --status failed --json |
@@ -448,6 +458,8 @@ Task fields (--json):
   session      Set by create --session: the session it continues.
   model        Set by create --model, or taken from the parent of a
                follow-up: the model the agent runs with.
+  label        Set by create --label, or taken from the parent of a
+               follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   allow_tools  Set by create --allow-tool: the tools the agent runs
@@ -501,6 +513,8 @@ Task fields (--json):
   session      Set by create --session: the session it continues.
   model        Set by create --model, or taken from the parent of a
                follow-up: the model the agent runs with.
+  label        Set by create --label, or taken from the parent of a
+               follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   allow_tools  Set by create --allow-tool: the tools the agent runs
@@ -552,6 +566,7 @@ Claim the oldest claimable task, run it, record the result, exit.
 Flags:
   --agent AGENT  Only claim tasks for AGENT.
   --json         Print the result, or the error, as JSON on stdout.
+  --label LABEL  Only claim tasks labelled LABEL (create --label).
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
 neither AITS_HOME nor HOME set, every task command fails (invalid_input).
@@ -565,6 +580,8 @@ Task fields (--json):
   session      Set by create --session: the session it continues.
   model        Set by create --model, or taken from the parent of a
                follow-up: the model the agent runs with.
+  label        Set by create --label, or taken from the parent of a
+               follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   allow_tools  Set by create --allow-tool: the tools the agent runs
@@ -587,7 +604,8 @@ Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
 stdout; the session id, the denied tools and why a task failed on stderr,
 with control characters shown as Go escapes (\x1b, \r).
 
-With nothing claimable (no task queued, none for AGENT with --agent, or only
+With nothing claimable (no task queued, none for AGENT with --agent or
+labelled LABEL with --label, or only
 follow-ups whose parent is not done or cannot be read), work exits 0,
 printing {"status":"empty"} with --json and nothing otherwise. A worker whose
 task was reclaimed records nothing and fails with
@@ -642,6 +660,8 @@ Task fields (--json):
   session      Set by create --session: the session it continues.
   model        Set by create --model, or taken from the parent of a
                follow-up: the model the agent runs with.
+  label        Set by create --label, or taken from the parent of a
+               follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
   allow_tools  Set by create --allow-tool: the tools the agent runs

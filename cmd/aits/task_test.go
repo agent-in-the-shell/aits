@@ -29,6 +29,7 @@ type taskRecord struct {
 	After      string   `json:"after"`
 	Session    string   `json:"session"`
 	Model      string   `json:"model"`
+	Label      string   `json:"label"`
 	AllowTools []string `json:"allow_tools"`
 	Write      bool     `json:"write"`
 	CreatedAt  string   `json:"created_at"`
@@ -67,6 +68,7 @@ type taskListItem struct {
 	CreatedAt string `json:"created_at"`
 	After     string `json:"after"`
 	Session   string `json:"session"`
+	Label     string `json:"label"`
 	Run       *struct {
 		Status     string `json:"status"`
 		SessionID  string `json:"session_id"`
@@ -1498,4 +1500,74 @@ func TestTaskScheduledOverlap(t *testing.T) {
 	}
 	slow.signal(t, syscall.SIGTERM)
 	slow.waitOrKill(t, 10*time.Second)
+}
+
+// --label groups tasks: work claims only its label's, even when another
+// label's task is older; list filters by it, with --status too; a
+// follow-up takes its parent's label unless it gives one (#131).
+func TestTaskLabel(t *testing.T) {
+	q := newQueue(t, "ok")
+	other := q.create("older, another runbook", "--label", "news")
+	first := q.create("radar run 1", "--label", "oss-radar")
+	plain := q.create("no label")
+	w := decodeOne[taskRecord](t, q.run("work", "--label", "oss-radar", "--json").stdout)
+	if w.ID != first || w.Label != "oss-radar" || w.Status != "done" {
+		t.Fatalf("work --label oss-radar = %+v, want %s", w, first)
+	}
+	if out := q.run("work", "--label", "oss-radar", "--json"); out.code != 0 || out.stdout != "{\"status\":\"empty\"}\n" {
+		t.Errorf("nothing left with the label: code=%d stdout=%q", out.code, out.stdout)
+	}
+	if out := q.run("work", "--label", "news", "--agent", "codex", "--json"); out.stdout != "{\"status\":\"empty\"}\n" {
+		t.Errorf("--label with another agent claimed: %q", out.stdout)
+	}
+	q.patch(first, map[string]any{"run": map[string]any{"status": "ok", "agent": "claude", "session_id": "sess-r1", "answer": "a", "finished_at": w.Run.FinishedAt}})
+	inherited := q.after(first, "dig into item 2")
+	n := decodeOne[taskRecord](t, q.run("work", "--label", "news", "--json").stdout)
+	if n.ID != other {
+		t.Fatalf("work --label news = %+v, want %s", n, other)
+	}
+	q.patch(other, map[string]any{"run": map[string]any{"status": "ok", "agent": "claude", "session_id": "sess-n1", "answer": "a", "finished_at": n.Run.FinishedAt}})
+	own := q.after(other, "file an issue", "--label", "oss-radar-issues")
+	if r := decodeOne[taskRecord](t, q.run("show", inherited, "--json").stdout); r.Label != "oss-radar" {
+		t.Errorf("follow-up label %q, want its parent's", r.Label)
+	}
+	if r := decodeOne[taskRecord](t, q.run("show", own, "--json").stdout); r.Label != "oss-radar-issues" {
+		t.Errorf("follow-up --label %q, want its own", r.Label)
+	}
+	ids := func(args ...string) []string {
+		l := decodeOne[taskList](t, q.run(append([]string{"list", "--json"}, args...)...).stdout)
+		var out []string
+		for _, e := range l.Tasks {
+			out = append(out, e.ID)
+		}
+		return out
+	}
+	if got := ids("--label", "oss-radar"); !slices.Equal(got, []string{first, inherited}) {
+		t.Errorf("list --label oss-radar = %q, want %q", got, []string{first, inherited})
+	}
+	if got := ids("--label", "oss-radar", "--status", "queued"); !slices.Equal(got, []string{inherited}) {
+		t.Errorf("list --label --status queued = %q", got)
+	}
+	l := decodeOne[taskList](t, q.run("list", "--json").stdout)
+	for _, e := range l.Tasks {
+		if e.ID == plain && e.Label != "" || e.ID == other && e.Label != "news" {
+			t.Errorf("list item %+v", e)
+		}
+	}
+	if strings.Contains(q.run("list", "--json").stdout, `"label":""`) {
+		t.Error("an unlabelled task lists an empty label")
+	}
+	for _, args := range [][]string{
+		{"create", "--agent", "claude", "--label", "bad label", "--json", "hi"},
+		{"create", "--agent", "claude", "--label", "-x", "--json", "hi"},
+		{"create", "--agent", "claude", "--label=", "--json", "hi"},
+		{"create", "--agent", "claude", "--label", strings.Repeat("a", 101), "--json", "hi"},
+		{"list", "--label", ".hidden", "--json"},
+		{"work", "--label", "a/b", "--json"},
+	} {
+		out := q.run(args...)
+		if e := decode(t, out.stdout).Error; out.code != 2 || e == nil || e.Code != "invalid_input" {
+			t.Errorf("%q: code=%d stdout=%q", args, out.code, out.stdout)
+		}
+	}
 }
