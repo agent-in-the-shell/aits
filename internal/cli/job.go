@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/agent-in-the-shell/aits/internal/job"
@@ -15,7 +17,7 @@ func jobGroup() *Command {
 		Name:     "job",
 		Summary:  "Run scheduled commands with a timeout, a lock, a run record and alerts.",
 		Details:  jobSchedule,
-		Children: []*Command{jobRun(), jobList()},
+		Children: []*Command{jobRun(), jobList(), jobApply()},
 	}
 }
 
@@ -30,7 +32,8 @@ crontab that backs up notes nightly and checks prices every 5 minutes:
 
 cron does not expand ~ in the path of a program, only the shell does: give
 absolute paths in a launchd agent's ProgramArguments. A job does not get
-your shell's environment (see "aits task --help").
+your shell's environment (see "aits task --help"). To keep the jobs in a
+file and install them on each machine, see "aits job apply --help".
 `
 
 // jobDirNote says where jobs live, for every job command (P5).
@@ -208,4 +211,102 @@ func stampOr(t time.Time) string {
 		return "-"
 	}
 	return t.Format(time.RFC3339)
+}
+
+func jobApply() *Command {
+	return &Command{
+		Name:    "apply",
+		Args:    "FILE",
+		Summary: "Install the jobs FILE declares for this host into your crontab.",
+		Details: `FILE is JSON, for example:
+
+  {"path": "~/.local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+   "jobs": [{"name": "notes-backup", "schedule": "30 23 * * *",
+             "timeout": "10m", "on_alert": "~/bin/notify", "env": ["NAME"],
+             "hosts": ["mbp"], "command": ["~/bin/notes-backup.sh"]}]}
+
+  name      Required: the job's NAME, as job run takes it.
+  schedule  Required: 5 cron fields (minute hour day month weekday).
+  command   Required: the program, an absolute path or ~/, and its
+            arguments.
+  timeout, env, on_alert
+            job run's --timeout, --env (each) and --on-alert; on_alert is
+            an absolute path or ~/.
+  hosts     The short host names (the host name up to its first dot) to
+            install the job on; without it, every host.
+  path      The PATH every job starts with; each entry absolute or ~/.
+~/ is $HOME. A key FILE does not know is an error.
+
+Each job for this host becomes one line that runs this aits binary's job
+run, with every argument quoted for sh. The lines go in a block of your
+crontab between "# BEGIN aits job apply FILE" and "# END aits job apply
+FILE" (FILE as an absolute path); the block is replaced as a whole, and
+every line outside it is kept as it is. A job no longer in FILE, or no
+longer for this host, is removed; with no job for this host the block is
+removed. Edit FILE, not the block: apply refuses a block with a line it did
+not write. A host's paths are checked only on that host. After installing,
+apply reads the crontab back to check it.
+
+--dry-run checks FILE and the crontab and reports what would change, and
+changes nothing.
+
+Output: one line per job, "NAME  added|changed|removed|unchanged"; with
+--json {"host", "added", "changed", "removed", "unchanged"}, each a list of
+job names.
+
+Exit codes:
+  0  Installed, nothing to change, or --dry-run.
+  1  crontab is not on PATH or failed; the host name could not be read.
+  2  Usage error or invalid input: FILE, or the crontab's block; nothing
+     was changed.
+
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+`,
+		Setup: func(fs *flag.FlagSet) Runner {
+			dryRun := fs.Bool("dry-run", false, "Report what would change, and change nothing.")
+			return func(ctx context.Context, env *Env, args []string) (int, error) {
+				if len(args) != 1 {
+					return 0, usageError("invalid_input", "expected FILE")
+				}
+				self, err := selfPath(env)
+				if err != nil {
+					return 0, failure("internal", "%v", err)
+				}
+				res, err := job.Apply(ctx, job.ApplyRequest{File: args[0], Aits: self, DryRun: *dryRun, Environ: env.Environ})
+				if err != nil {
+					return 0, taskError(err)
+				}
+				if env.JSON {
+					writeJSON(env.Stdout, res)
+					return exitOK, nil
+				}
+				for _, g := range []struct {
+					what  string
+					names []string
+				}{{"added", res.Added}, {"changed", res.Changed}, {"removed", res.Removed}, {"unchanged", res.Unchanged}} {
+					for _, name := range g.names {
+						fmt.Fprintf(env.Stdout, "%s  %s\n", name, g.what)
+					}
+				}
+				return exitOK, nil
+			}
+		},
+	}
+}
+
+// selfPath is the absolute path aits was started as, found as the shell
+// found it: a name without a slash on PATH. A symlink stays a symlink, so a
+// crontab line follows an upgrade.
+func selfPath(env *Env) (string, error) {
+	switch {
+	case env.Self == "":
+		return "", fmt.Errorf("the path aits was started as is unknown")
+	case strings.Contains(env.Self, "/"):
+		return filepath.Abs(env.Self)
+	}
+	p, err := shell.LookPath(env.Environ, env.Self)
+	if err != nil {
+		return "", fmt.Errorf("%s is not on PATH", env.Self)
+	}
+	return p, nil
 }

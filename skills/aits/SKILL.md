@@ -29,6 +29,7 @@ installed with `aits version`.
 | Withdraw a queued task before a worker takes it | `aits task cancel ID` |
 | Run a cron or launchd job with a timeout, a lock and alerts | `aits job run NAME -- COMMAND` |
 | See how scheduled jobs last ran, and which are failing | `aits job list` |
+| Install the jobs a file declares into this machine's crontab | `aits job apply FILE` |
 | Which aits is installed | `aits version` |
 | Full help for any command | `aits help COMMAND...` or `aits COMMAND --help` |
 
@@ -305,6 +306,27 @@ aits exits 0 for `ok` and `skipped`, 1 for the others. Check every job in
 one call: `aits job list --json | jq -r '.jobs[] | select(.failing) |
 "\(.name) \(.failing.since)"'`; each job has `last` (its last record),
 `last_ok_at` and, while it fails, `failing`.
+
+To keep the jobs in a repo and install them on each machine, declare them in
+a JSON file and run `aits job apply FILE` there (`--dry-run` first to see
+what changes). Each job has `name`, `schedule` (5 cron fields) and
+`command` (an absolute or `~/` path, then its arguments), and optionally
+`timeout`, `env`, `on_alert` and `hosts` (short host names; without it,
+every host); a top-level `path` is the PATH every job starts with:
+
+```json
+{"path": "~/.local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+ "jobs": [{"name": "notes-backup", "schedule": "30 23 * * *", "timeout": "10m",
+           "on_alert": "~/bin/notify", "hosts": ["mbp"],
+           "command": ["~/bin/notes-backup.sh"]}]}
+```
+
+apply owns one block of the crontab, between `# BEGIN aits job apply FILE`
+and `# END aits job apply FILE`; every other line stays. It reports each job
+as `added`, `changed`, `removed` or `unchanged` (`--json`: those lists and
+`host`). Edit the file and apply again, never the block: apply refuses a
+block line it did not write, an unknown key, a bad schedule or a missing
+program, with exit 2 and the crontab untouched.
 
 ## Run a loop: implement, check, fix, review, stop
 

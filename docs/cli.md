@@ -701,8 +701,9 @@ Usage: aits job COMMAND
 Run scheduled commands with a timeout, a lock, a run record and alerts.
 
 Commands:
-  run   Run a scheduled command once: timeout, lock, log, run record, alerts.
-  list  List every job that has run: its last run, last success and failure.
+  run    Run a scheduled command once: timeout, lock, log, run record, alerts.
+  list   List every job that has run: its last run, last success and failure.
+  apply  Install the jobs FILE declares for this host into your crontab.
 
 Run 'aits job COMMAND --help' for details.
 
@@ -718,7 +719,8 @@ crontab that backs up notes nightly and checks prices every 5 minutes:
 
 cron does not expand ~ in the path of a program, only the shell does: give
 absolute paths in a launchd agent's ProgramArguments. A job does not get
-your shell's environment (see "aits task --help").
+your shell's environment (see "aits task --help"). To keep the jobs in a
+file and install them on each machine, see "aits job apply --help".
 ```
 
 ## aits job run
@@ -833,6 +835,62 @@ Exit codes:
   0  Listed.
   1  The job directory could not be read.
   2  Usage error or invalid input.
+
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+```
+
+## aits job apply
+
+```text
+Usage: aits job apply [flags] FILE
+
+Install the jobs FILE declares for this host into your crontab.
+
+Flags:
+  --dry-run  Report what would change, and change nothing.
+  --json     Print the result, or the error, as JSON on stdout.
+
+FILE is JSON, for example:
+
+  {"path": "~/.local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+   "jobs": [{"name": "notes-backup", "schedule": "30 23 * * *",
+             "timeout": "10m", "on_alert": "~/bin/notify", "env": ["NAME"],
+             "hosts": ["mbp"], "command": ["~/bin/notes-backup.sh"]}]}
+
+  name      Required: the job's NAME, as job run takes it.
+  schedule  Required: 5 cron fields (minute hour day month weekday).
+  command   Required: the program, an absolute path or ~/, and its
+            arguments.
+  timeout, env, on_alert
+            job run's --timeout, --env (each) and --on-alert; on_alert is
+            an absolute path or ~/.
+  hosts     The short host names (the host name up to its first dot) to
+            install the job on; without it, every host.
+  path      The PATH every job starts with; each entry absolute or ~/.
+~/ is $HOME. A key FILE does not know is an error.
+
+Each job for this host becomes one line that runs this aits binary's job
+run, with every argument quoted for sh. The lines go in a block of your
+crontab between "# BEGIN aits job apply FILE" and "# END aits job apply
+FILE" (FILE as an absolute path); the block is replaced as a whole, and
+every line outside it is kept as it is. A job no longer in FILE, or no
+longer for this host, is removed; with no job for this host the block is
+removed. Edit FILE, not the block: apply refuses a block with a line it did
+not write. A host's paths are checked only on that host. After installing,
+apply reads the crontab back to check it.
+
+--dry-run checks FILE and the crontab and reports what would change, and
+changes nothing.
+
+Output: one line per job, "NAME  added|changed|removed|unchanged"; with
+--json {"host", "added", "changed", "removed", "unchanged"}, each a list of
+job names.
+
+Exit codes:
+  0  Installed, nothing to change, or --dry-run.
+  1  crontab is not on PATH or failed; the host name could not be read.
+  2  Usage error or invalid input: FILE, or the crontab's block; nothing
+     was changed.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```
