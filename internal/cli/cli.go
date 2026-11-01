@@ -26,6 +26,7 @@ type Env struct {
 	Environ []string        // KEY=VALUE entries, as os.Environ returns them
 	JSON    bool            // set from --json before the command runs
 	Kill    <-chan struct{} // closed on a second stop signal: see shell.Request.Kill
+	Self    string          // the path aits was started as: os.Args[0]
 }
 
 // Error is a failure reported to the caller under a stable code (P5).

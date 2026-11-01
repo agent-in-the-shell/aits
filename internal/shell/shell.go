@@ -220,6 +220,10 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	return res, nil
 }
 
+// LookPath finds name on the PATH in env as lookPath does, for the other
+// groups that start a program by name.
+func LookPath(env []string, name string) (string, error) { return lookPath(env, name) }
+
 // lookPath finds name on the PATH in env, the agent's own environment (P8),
 // never on aits's. A first match in an empty or relative entry is refused, as
 // exec.LookPath does: it would resolve against aits's working directory, not

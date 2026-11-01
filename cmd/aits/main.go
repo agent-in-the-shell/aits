@@ -32,5 +32,6 @@ func main() {
 		Stderr:  os.Stderr,
 		Environ: os.Environ(),
 		Kill:    kill,
+		Self:    os.Args[0],
 	}))
 }
