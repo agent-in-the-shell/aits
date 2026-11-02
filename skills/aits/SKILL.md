@@ -102,6 +102,15 @@ runs; ask the agent to put such a step in a script file.
 | `output_too_large` | One output event exceeded 16 MiB | Ask for a shorter answer, or have the agent write a file |
 | `timeout` | `--timeout` elapsed; the agent was stopped | Continue with `--session` and a narrower prompt, or raise `--timeout` |
 | `stopped` | aits got a signal; the agent was stopped | Rerun or continue with `--session` |
+| `incomplete` | The agent answered, but background work it waited for was stopped (`stopped_tasks`) | `answer` lacks that work: continue with `--session`, or raise `--timeout` |
+
+Background work (claude): an agent may start background agents or
+workflows and answer once they report back. aits sets
+`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, so Claude Code waits for them
+until `--timeout`; pass the variable with `--env` to set your own limit.
+Work stopped before it reported back makes the run `incomplete`. A command
+the agent ran with `run_in_background` is not waited for, and Codex waits
+for no background work: ask for long steps in the foreground.
 
 Every status but `ok` has a one-line `message`. `session_id` is present
 whenever the agent reported one, on any status, so a timed-out conversation

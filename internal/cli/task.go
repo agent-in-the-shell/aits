@@ -49,6 +49,10 @@ A scheduled job does not get your shell's environment:
          unless AITS_HOME is set; create and work must use the same queue.
   --env  names variables that work passes to the agent from the worker's
          own environment, so set them in the work job, not the create job.
+
+A long unattended task may start background agents or workflows (claude):
+it waits for them until its --timeout, and ends incomplete, not done, if
+one was stopped before it reported back (see "shell submit --help").
 `
 
 // taskQueue says where the queue lives, for every task command (P5, #98).

@@ -71,7 +71,8 @@ Result fields:
   status       Always. One of the statuses below.
   agent        Always.
   session_id   When the agent reported one, on every status; pass it to --session.
-  answer       Only for ok.
+  answer       For ok, and for incomplete: what the agent wrote before
+               its background work was stopped.
   exit_code    Always. The agent's exit code; -1 if a signal ended it.
   duration_ms  Always.
   stderr_tail  Only for agent_failed: the last 4 KiB of the agent's stderr.
@@ -87,6 +88,9 @@ Result fields:
                refuses a loop or a command substitution (for, $(...))
                even when each command in it is allowed; a pipe of
                allowed commands runs. Put such a step in a script.
+  stopped_tasks
+               Only for incomplete, Claude Code only: the description of
+               each background agent or workflow that was stopped.
 
 Statuses:
   ok                The agent answered.
@@ -96,6 +100,18 @@ Statuses:
   timeout           --timeout elapsed before the agent exited; it was stopped.
   stopped           aits got SIGTERM, SIGINT or SIGHUP before the agent
                     exited, even after a timeout; it was stopped.
+  incomplete        The agent answered, but background work it was waiting
+                    for was stopped before it reported back.
+
+Background work: Claude Code runs agents and workflows in the background
+and gives the agent another turn when each one reports back; the answer is
+the last turn's. aits sets CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 for
+claude, so Claude Code waits for that work until --timeout; pass the
+variable with --env to set your own limit. Background work Claude Code
+stopped, at that limit or for any other reason, before it reported back
+makes the run incomplete. A command the agent ran in the background
+(run_in_background) is not waited for: it is stopped when the agent exits,
+and the status stays as it is. Codex waits for no background work.
 
 Stopping: on a timeout or a signal, aits sends TERM to the agent's process
 group and KILL 5s later, or at once on a second signal. It still waits for
@@ -282,6 +298,10 @@ A scheduled job does not get your shell's environment:
          unless AITS_HOME is set; create and work must use the same queue.
   --env  names variables that work passes to the agent from the worker's
          own environment, so set them in the work job, not the create job.
+
+A long unattended task may start background agents or workflows (claude):
+it waits for them until its --timeout, and ends incomplete, not done, if
+one was stopped before it reported back (see "shell submit --help").
 ```
 
 ## aits task create

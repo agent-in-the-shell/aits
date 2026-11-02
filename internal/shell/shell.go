@@ -29,6 +29,9 @@ const (
 	StatusTooLarge    Status = "output_too_large"
 	StatusTimeout     Status = "timeout"
 	StatusStopped     Status = "stopped"
+	// StatusIncomplete is an answer written before background work the agent
+	// was waiting for ended: the vendor stopped that work (#139).
+	StatusIncomplete Status = "incomplete"
 )
 
 // Request is one prompt to run.
@@ -74,6 +77,9 @@ type Result struct {
 	// DeniedCalls is each of those calls with its main argument, so a
 	// missing grant is found without the transcript (#136).
 	DeniedCalls []DeniedCall `json:"denied_calls,omitempty"`
+	// StoppedTasks describes the background work the vendor stopped in an
+	// incomplete run, in order; Claude Code only.
+	StoppedTasks []string `json:"stopped_tasks,omitempty"`
 }
 
 // DeniedCall is one tool call the agent was refused.
@@ -226,6 +232,8 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	switch status {
 	case StatusOK:
 		res.Answer = obs.events.answer
+	case StatusIncomplete:
+		res.Answer, res.StoppedTasks = obs.events.answer, obs.events.stopped
 	case StatusAgentFailed:
 		res.StderrTail = obs.stderrTail
 	}

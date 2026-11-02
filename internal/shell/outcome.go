@@ -40,6 +40,8 @@ func decide(o observation) (Status, string) {
 		return StatusBadOutput, "the agent's answer is empty"
 	case ev.sessionID == "":
 		return StatusBadOutput, "the agent output has no session id"
+	case len(ev.stopped) > 0 || ev.killed:
+		return StatusIncomplete, "the agent answered before its background work ended, and that work was stopped"
 	}
 	return StatusOK, ""
 }

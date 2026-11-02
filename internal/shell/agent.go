@@ -19,7 +19,10 @@ type agent struct {
 	// asking (#121).
 	allowTools bool
 	env        []string // the agent's own variables, passed on top of baseEnv when set
-	parse      parser   // turns one line of the agent's output into events
+	// defaults are KEY=VALUE settings aits gives the agent unless the caller
+	// passes KEY itself (P8).
+	defaults []string
+	parse    parser // turns one line of the agent's output into events
 }
 
 // baseEnv is passed to every agent when set, together with every LC_*
@@ -80,7 +83,11 @@ var agents = map[string]agent{
 		argv:       claudeArgv,
 		allowTools: true,
 		env:        []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
-		parse:      parseClaude,
+		// Claude Code stops background agents and workflows 10 minutes after
+		// the last turn unless told to wait; aits's timeout bounds the wait
+		// instead (P10, #139).
+		defaults: []string{"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0"},
+		parse:    parseClaude,
 	},
 	"codex": {
 		name:       "codex",
@@ -102,7 +109,7 @@ func Environ(parent, pass []string) []string { return agent{}.environ(parent, pa
 
 // environ builds the child's environment from scratch (P8): the base
 // allowlist, the agent's own variables and the names in pass, with values
-// taken from parent.
+// taken from parent, then the agent's defaults that pass does not name.
 func (a agent) environ(parent, pass []string) []string {
 	var out []string
 	for _, kv := range parent {
@@ -112,6 +119,11 @@ func (a agent) environ(parent, pass []string) []string {
 		}
 		if slices.Contains(baseEnv, name) || strings.HasPrefix(name, "LC_") ||
 			slices.Contains(a.env, name) || slices.Contains(pass, name) {
+			out = append(out, kv)
+		}
+	}
+	for _, kv := range a.defaults {
+		if name, _, _ := strings.Cut(kv, "="); !slices.Contains(pass, name) {
 			out = append(out, kv)
 		}
 	}

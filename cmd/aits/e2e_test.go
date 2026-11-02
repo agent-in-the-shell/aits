@@ -174,6 +174,7 @@ type submitResult struct {
 	Message     string       `json:"message"`
 	DeniedTools []string     `json:"denied_tools"`
 	DeniedCalls []deniedCall `json:"denied_calls"`
+	Stopped     []string     `json:"stopped_tasks"`
 	Error       *errorBody   `json:"error"`
 }
 
@@ -378,6 +379,36 @@ func TestSubmitDeniedTools(t *testing.T) {
 		if len(r.DeniedCalls) != len(tt.denied) || tt.scenario == "denied" && !slices.Equal(r.DeniedCalls, deniedCalls) {
 			t.Errorf("%s: denied_calls %q", tt.scenario, r.DeniedCalls)
 		}
+	}
+}
+
+// TestSubmitBackground pins #139: Claude Code is told to wait for background
+// work unless the caller sets its own limit, and an answer written before
+// that work was stopped is incomplete, never ok (P6).
+func TestSubmitBackground(t *testing.T) {
+	const ceiling = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+	bin := vendor(t, "background_stopped")
+	out := call{path: bin, env: []string{ceiling + "=5000"}, args: submitArgs("--json", "hi")}.run(t)
+	r := decode(t, out.stdout)
+	if out.code != 1 || r.Status != "incomplete" || r.Answer != "I'll reply when it finishes" ||
+		!slices.Equal(r.Stopped, []string{"Run slow.sh\x1b[2K"}) || r.SessionID != "sess-fake-1" {
+		t.Fatalf("code=%d %+v", out.code, r)
+	}
+	if env := readRecord(t, bin).Env; !slices.Contains(env, ceiling+"=0") || slices.Contains(env, ceiling+"=5000") {
+		t.Errorf("not passed: the agent got %q", env)
+	}
+	out = call{path: bin, env: []string{ceiling + "=5000"}, args: submitArgs("--env", ceiling, "hi")}.run(t)
+	if env := readRecord(t, bin).Env; !slices.Contains(env, ceiling+"=5000") || slices.Contains(env, ceiling+"=0") {
+		t.Errorf("passed: the agent got %q", env)
+	}
+	if out.code != 1 || out.stdout != "" || !strings.Contains(out.stderr, "aits: incomplete: ") ||
+		!strings.Contains(out.stderr, "stopped: Run slow.sh\\x1b[2K\n") {
+		t.Errorf("text mode: code=%d stdout=%q stderr=%q", out.code, out.stdout, out.stderr)
+	}
+	codex := vendorAs(t, "codex", "ok")
+	out = call{path: codex, args: agentArgs("codex", "--json", "hi")}.run(t)
+	if env := readRecord(t, codex).Env; out.code != 0 || slices.ContainsFunc(env, func(kv string) bool { return strings.HasPrefix(kv, ceiling) }) {
+		t.Errorf("codex: code=%d env %q", out.code, env)
 	}
 }
 
