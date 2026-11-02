@@ -164,16 +164,22 @@ type errorBody struct {
 }
 
 type submitResult struct {
-	Status      string     `json:"status"`
-	Agent       string     `json:"agent"`
-	SessionID   string     `json:"session_id"`
-	Answer      string     `json:"answer"`
-	ExitCode    *int       `json:"exit_code"`
-	DurationMS  *int64     `json:"duration_ms"`
-	StderrTail  string     `json:"stderr_tail"`
-	Message     string     `json:"message"`
-	DeniedTools []string   `json:"denied_tools"`
-	Error       *errorBody `json:"error"`
+	Status      string       `json:"status"`
+	Agent       string       `json:"agent"`
+	SessionID   string       `json:"session_id"`
+	Answer      string       `json:"answer"`
+	ExitCode    *int         `json:"exit_code"`
+	DurationMS  *int64       `json:"duration_ms"`
+	StderrTail  string       `json:"stderr_tail"`
+	Message     string       `json:"message"`
+	DeniedTools []string     `json:"denied_tools"`
+	DeniedCalls []deniedCall `json:"denied_calls"`
+	Error       *errorBody   `json:"error"`
+}
+
+type deniedCall struct {
+	Tool  string `json:"tool"`
+	Input string `json:"input"`
 }
 
 // decodeOne parses stdout as exactly one JSON object with known fields (P5).
@@ -313,6 +319,27 @@ const (
 	ctrlTool, ctrlToolShown       = "Bash\x1b[2K", `Bash\x1b[2K` // a tool the denied scenario names
 )
 
+// deniedCalls are the calls the fake's denied scenario reports refused, as
+// aits gives them: the main argument only, cut to 500 bytes (#136).
+var deniedCalls = []deniedCall{
+	{"Write", "/tmp/x"},
+	{ctrlTool, "/tmp/x"},
+	{"Bash", "for f in *; do echo \"$f\"; done\x1b[2K"},
+	{"Write", "/tmp/y"},
+	{"Bash", strings.Repeat("é", 248) + "…"},
+	{"mcp__x__y", ""},
+	{"Read", ""},
+}
+
+// deniedTools are the tools of deniedCalls.
+func deniedTools() []string {
+	var tools []string
+	for _, c := range deniedCalls {
+		tools = append(tools, c.Tool)
+	}
+	return tools
+}
+
 // In text mode, the agent's error and session id reach the terminal with
 // their control characters spelled as Go escapes, as session search prints
 // transcript text; --json keeps them as the agent sent them (P5, #83).
@@ -337,15 +364,19 @@ func TestSubmitDeniedTools(t *testing.T) {
 		code             int
 		denied           []string
 	}{
-		{"denied", "ok", 0, []string{"Write", ctrlTool}},
+		{"denied", "ok", 0, deniedTools()},
 		{"denied_error", "agent_failed", 1, []string{"Write"}},
 		{"denied_empty_answer", "bad_agent_output", 1, []string{"Write"}},
 		// Denials aits cannot read are not taken as none (P6).
 		{"denial_without_tool", "bad_agent_output", 1, nil},
 	} {
 		out := call{path: vendor(t, tt.scenario), args: submitArgs("--json", "hi")}.run(t)
-		if r := decode(t, out.stdout); out.code != tt.code || r.Status != tt.status || !slices.Equal(r.DeniedTools, tt.denied) {
+		r := decode(t, out.stdout)
+		if out.code != tt.code || r.Status != tt.status || !slices.Equal(r.DeniedTools, tt.denied) {
 			t.Errorf("%s: code=%d %+v", tt.scenario, out.code, r)
+		}
+		if len(r.DeniedCalls) != len(tt.denied) || tt.scenario == "denied" && !slices.Equal(r.DeniedCalls, deniedCalls) {
+			t.Errorf("%s: denied_calls %q", tt.scenario, r.DeniedCalls)
 		}
 	}
 }

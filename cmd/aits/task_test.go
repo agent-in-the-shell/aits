@@ -39,17 +39,18 @@ type taskRecord struct {
 		StartedAt string `json:"started_at"`
 	} `json:"lease"`
 	Run *struct {
-		Status      string   `json:"status"`
-		Agent       string   `json:"agent"`
-		SessionID   string   `json:"session_id"`
-		Answer      string   `json:"answer"`
-		ExitCode    int      `json:"exit_code"`
-		DurationMS  int64    `json:"duration_ms"`
-		StderrTail  string   `json:"stderr_tail"`
-		Message     string   `json:"message"`
-		DeniedTools []string `json:"denied_tools"`
-		StartedAt   string   `json:"started_at"`
-		FinishedAt  string   `json:"finished_at"`
+		Status      string       `json:"status"`
+		Agent       string       `json:"agent"`
+		SessionID   string       `json:"session_id"`
+		Answer      string       `json:"answer"`
+		ExitCode    int          `json:"exit_code"`
+		DurationMS  int64        `json:"duration_ms"`
+		StderrTail  string       `json:"stderr_tail"`
+		Message     string       `json:"message"`
+		DeniedTools []string     `json:"denied_tools"`
+		DeniedCalls []deniedCall `json:"denied_calls"`
+		StartedAt   string       `json:"started_at"`
+		FinishedAt  string       `json:"finished_at"`
 	} `json:"run"`
 }
 
@@ -314,7 +315,7 @@ func TestTaskDeniedTools(t *testing.T) {
 	q.create("hi")
 	out := q.run("work", "--json")
 	if w := decodeOne[taskRecord](t, out.stdout); out.code != 0 || w.Status != "done" || w.Run == nil ||
-		!slices.Equal(w.Run.DeniedTools, []string{"Write", ctrlTool}) {
+		!slices.Equal(w.Run.DeniedTools, deniedTools()) || !slices.Equal(w.Run.DeniedCalls, deniedCalls) {
 		t.Fatalf("work: code=%d %+v", out.code, w)
 	}
 }

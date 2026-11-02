@@ -34,9 +34,18 @@ func TestParseClaude(t *testing.T) {
 		{"result of wrong type", `{"type":"result","result":42}`, events{badLine: true}},
 		{"no result event", initLine, events{sessionID: "s1"}},
 		{"denials", `{"type":"result","result":"a","session_id":"s1","permission_denials":[{"tool_name":"Write","tool_input":{}},{"tool_name":"Bash"}]}`,
-			events{sessionID: "s1", answer: "a", done: true, denied: []string{"Write", "Bash"}}},
+			events{sessionID: "s1", answer: "a", done: true, denied: []string{"Write", "Bash"}, calls: []DeniedCall{{Tool: "Write"}, {Tool: "Bash"}}}},
+		{"denied calls", `{"type":"result","result":"a","session_id":"s1","permission_denials":[` +
+			`{"tool_name":"Bash","tool_input":{"description":"d","command":"ls $(pwd)"}},` +
+			`{"tool_name":"Write","tool_input":{"content":"secret","file_path":"/a"}},` +
+			`{"tool_name":"Grep","tool_input":{"pattern":"x","path":"/src"}},` +
+			`{"tool_name":"WebFetch","tool_input":{"url":"https://example.com","prompt":"p"}},` +
+			`{"tool_name":"Bash","tool_input":{"command":42}},` +
+			"{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"bad \xff\"}}]}",
+			events{sessionID: "s1", answer: "a", done: true, denied: []string{"Bash", "Write", "Grep", "WebFetch", "Bash", "Bash"},
+				calls: []DeniedCall{{"Bash", "ls $(pwd)"}, {"Write", "/a"}, {"Grep", "/src"}, {"WebFetch", "https://example.com"}, {"Bash", ""}, {"Bash", "bad \uFFFD"}}}},
 		{"denials on an error", `{"type":"result","is_error":true,"result":"bad","session_id":"s1","permission_denials":[{"tool_name":"Write"}]}`,
-			events{sessionID: "s1", failure: "bad", done: true, failed: true, denied: []string{"Write"}}},
+			events{sessionID: "s1", failure: "bad", done: true, failed: true, denied: []string{"Write"}, calls: []DeniedCall{{Tool: "Write"}}}},
 		{"no denials", `{"type":"result","result":"a","session_id":"s1","permission_denials":[]}`,
 			events{sessionID: "s1", answer: "a", done: true}},
 		{"null denials", `{"type":"result","result":"a","session_id":"s1","permission_denials":null}`,

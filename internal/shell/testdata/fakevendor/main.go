@@ -199,7 +199,12 @@ func play(d dialect, scenario, dir, exe string) {
 		os.Exit(1)
 	case "denied": // Claude only: tool calls refused for want of the user's approval
 		d.start()
-		emit(withDenials(claudeResult(false, "fake answer", sessionID), denial("Write"), denial("Bash\x1b[2K")))
+		emit(withDenials(claudeResult(false, "fake answer", sessionID), denial("Write"), denial("Bash\x1b[2K"),
+			map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "for f in *; do echo \"$f\"; done\x1b[2K", "description": "loop"}},
+			map[string]any{"tool_name": "Write", "tool_input": map[string]any{"file_path": "/tmp/y", "content": "secret"}},
+			map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": strings.Repeat("é", 300)}},
+			map[string]any{"tool_name": "mcp__x__y", "tool_input": map[string]any{"q": "x"}},
+			map[string]any{"tool_name": "Read", "tool_input": "not an object"}))
 	case "denied_error": // Claude only
 		d.start()
 		emit(withDenials(claudeResult(true, "fake failure", sessionID), denial("Write")))

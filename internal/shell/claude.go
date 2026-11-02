@@ -3,6 +3,7 @@ package shell
 import (
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 )
 
 // claudeHeader holds the fields aits reads from every Claude Code event.
@@ -18,7 +19,8 @@ type claudeResult struct {
 	Result            string          `json:"result"`
 	Errors            json.RawMessage `json:"errors"` // where some errors are reported instead of result
 	PermissionDenials []struct {
-		ToolName string `json:"tool_name"`
+		ToolName  string          `json:"tool_name"`
+		ToolInput json.RawMessage `json:"tool_input"`
 	} `json:"permission_denials"`
 }
 
@@ -42,13 +44,15 @@ func parseClaude(ev *events, line []byte) bool {
 		return false
 	}
 	var denied []string // kept only if every entry names its tool (P6)
+	var calls []DeniedCall
 	for _, d := range res.PermissionDenials {
 		if d.ToolName == "" {
 			return false
 		}
 		denied = append(denied, d.ToolName)
+		calls = append(calls, DeniedCall{Tool: d.ToolName, Input: mainInput(d.ToolInput)})
 	}
-	ev.denied = denied
+	ev.denied, ev.calls = denied, calls
 	ev.done = true
 	if res.IsError {
 		ev.failed, ev.failure = true, res.Result
@@ -60,4 +64,39 @@ func parseClaude(ev *events, line []byte) bool {
 		ev.answer = res.Result
 	}
 	return true
+}
+
+// deniedInputMax bounds a denied call's input in a result (P8).
+const deniedInputMax = 500
+
+// inputKeys are the arguments that tell what a refused call wanted, first
+// match wins: Bash's command, the file tools' paths, WebFetch's URL, Glob's
+// and Grep's pattern. The rest of the input, such as a Write's content, is
+// never copied (P8).
+var inputKeys = []string{"command", "file_path", "notebook_path", "path", "url", "pattern"}
+
+// mainInput returns the first string among inputKeys in the call's input,
+// cut to deniedInputMax bytes on a UTF-8 boundary, or "". An input of another
+// shape has none: the denial itself still counts.
+func mainInput(raw json.RawMessage) string {
+	var input map[string]json.RawMessage
+	if json.Unmarshal(raw, &input) != nil {
+		return ""
+	}
+	for _, k := range inputKeys {
+		var s string
+		if json.Unmarshal(input[k], &s) != nil || s == "" {
+			continue
+		}
+		s = strings.ToValidUTF8(s, "\uFFFD")
+		if len(s) > deniedInputMax {
+			cut := deniedInputMax - len("…")
+			for cut > 0 && !utf8.RuneStart(s[cut]) {
+				cut--
+			}
+			s = s[:cut] + "…"
+		}
+		return s
+	}
+	return ""
 }

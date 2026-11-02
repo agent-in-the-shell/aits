@@ -36,7 +36,9 @@ type outputCase struct {
 // row's error code with its exit.
 func TestOutputChannels(t *testing.T) {
 	const failed = "aits: task {ID} failed: agent_failed: the agent exited with code 3\n"
-	const denied = "denied_tools: Write, " + ctrlToolShown + "\n"
+	denied := "denied: Write /tmp/x\ndenied: " + ctrlToolShown + " /tmp/x\n" +
+		`denied: Bash for f in *; do echo "$f"; done\x1b[2K` + "\ndenied: Write /tmp/y\n" +
+		"denied: Bash " + strings.Repeat("é", 248) + "…\ndenied: mcp__x__y\ndenied: Read\n"
 	tests := []outputCase{
 		{name: "unknown flag", scenario: "ok", args: submitArgs("--bogus", "hi"), code: 2, errCode: "unknown_flag"},
 		{name: "unknown command", scenario: "ok", args: []string{"nope"}, code: 2, errCode: "unknown_command"},
