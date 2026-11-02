@@ -25,7 +25,10 @@ type claudeResult struct {
 }
 
 // parseClaude reads one line of `claude -p --output-format stream-json`: any
-// event may carry session_id, and the "result" event ends the run.
+// event may carry session_id, and a "result" event ends a turn. A run has one
+// more turn for each background task that reports back after the first, so
+// the last result holds the answer, while each result lists only its own
+// turn's denials: those add up.
 func parseClaude(ev *events, line []byte) bool {
 	var h *claudeHeader // stays nil for the JSON literal null
 	if err := json.Unmarshal(line, &h); err != nil || h == nil {
@@ -43,7 +46,7 @@ func parseClaude(ev *events, line []byte) bool {
 	if err := json.Unmarshal(line, &res); err != nil {
 		return false
 	}
-	var denied []string // kept only if every entry names its tool (P6)
+	var denied []string // this result's, kept only if every entry names its tool (P6)
 	var calls []DeniedCall
 	for _, d := range res.PermissionDenials {
 		if d.ToolName == "" {
@@ -52,7 +55,7 @@ func parseClaude(ev *events, line []byte) bool {
 		denied = append(denied, d.ToolName)
 		calls = append(calls, DeniedCall{Tool: d.ToolName, Input: mainInput(d.ToolInput)})
 	}
-	ev.denied, ev.calls = denied, calls
+	ev.denied, ev.calls = append(ev.denied, denied...), append(ev.calls, calls...)
 	ev.done = true
 	if res.IsError {
 		ev.failed, ev.failure = true, res.Result

@@ -44,6 +44,11 @@ func TestParseClaude(t *testing.T) {
 			"{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"bad \xff\"}}]}",
 			events{sessionID: "s1", answer: "a", done: true, denied: []string{"Bash", "Write", "Grep", "WebFetch", "Bash", "Bash"},
 				calls: []DeniedCall{{"Bash", "ls $(pwd)"}, {"Write", "/a"}, {"Grep", "/src"}, {"WebFetch", "https://example.com"}, {"Bash", ""}, {"Bash", "bad \uFFFD"}}}},
+		{"denials of every turn", `{"type":"result","result":"wait","session_id":"s1","permission_denials":[{"tool_name":"Bash","tool_input":{"command":"for f in *; do :; done"}}]}` + "\n" +
+			`{"type":"result","result":"done","session_id":"s1","permission_denials":[{"tool_name":"Write","tool_input":{"file_path":"/a"}}]}` + "\n" +
+			`{"type":"result","result":"final","session_id":"s1","permission_denials":[]}`,
+			events{sessionID: "s1", answer: "final", done: true, denied: []string{"Bash", "Write"},
+				calls: []DeniedCall{{"Bash", "for f in *; do :; done"}, {"Write", "/a"}}}},
 		{"denials on an error", `{"type":"result","is_error":true,"result":"bad","session_id":"s1","permission_denials":[{"tool_name":"Write"}]}`,
 			events{sessionID: "s1", failure: "bad", done: true, failed: true, denied: []string{"Write"}, calls: []DeniedCall{{Tool: "Write"}}}},
 		{"no denials", `{"type":"result","result":"a","session_id":"s1","permission_denials":[]}`,
