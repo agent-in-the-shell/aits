@@ -88,7 +88,7 @@ const taskFields = `Task fields (--json):
                whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id, the denied tools and why a task failed on stderr,
+stdout; the session id, the denied calls and why a task failed on stderr,
 with control characters shown as Go escapes (\x1b, \r).
 `
 

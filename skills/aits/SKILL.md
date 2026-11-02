@@ -85,6 +85,12 @@ Without `--write` the agent can read but not change anything: Claude Code
 refuses tools that need approval (listed in `denied_tools`), Codex runs
 read-only. A refused tool does not change the status; the agent may have
 answered another way, so read `answer` and `denied_tools` together.
+`denied_calls` says what each refused call wanted, as `{tool, input}`:
+the command of a `Bash` call, the path of a file tool, the URL or the
+pattern (500 bytes at most), which tells you the `--allow-tool` to add.
+Claude Code refuses a loop or a command substitution (`for`, `$(...)`)
+even when every command in it is allowed, while a pipe of allowed commands
+runs; ask the agent to put such a step in a script file.
 
 ### Statuses
 

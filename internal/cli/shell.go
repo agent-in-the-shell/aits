@@ -32,7 +32,8 @@ const submitDetails = promptDetails + `Output:
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
   goes to stderr, with control characters in the message, session id and
-  denied tools shown as Go escapes (\x1b, \r).
+  denied calls shown as Go escapes (\x1b, \r): one "denied: TOOL INPUT"
+  line per call.
 
 Result fields:
   status       Always. One of the statuses below.
@@ -47,6 +48,13 @@ Result fields:
                refused for want of your approval, in order.
                claude -p never stops to ask, and a refusal leaves the
                status as it is: the agent may have finished another way.
+  denied_calls With denied_tools: one {tool, input} per call, in the same
+               order. input is the call's command, file_path,
+               notebook_path, path, url or pattern (the first it has), at
+               most 500 bytes; none for a call without one. Claude Code
+               refuses a loop or a command substitution (for, $(...))
+               even when each command in it is allowed; a pipe of
+               allowed commands runs. Put such a step in a script.
 
 Statuses:
   ok                The agent answered.
@@ -246,14 +254,14 @@ func warnGrants(env *Env, write bool, tools []string) {
 	}
 }
 
-// writeRunNotes prints, in text mode, the run's session id and the tools the
+// writeRunNotes prints, in text mode, the run's session id and the calls the
 // agent was refused, if any, on stderr.
 func writeRunNotes(env *Env, res shell.Result) {
 	if res.SessionID != "" {
 		fmt.Fprintf(env.Stderr, "session: %s\n", printable(res.SessionID))
 	}
-	if len(res.DeniedTools) > 0 {
-		fmt.Fprintf(env.Stderr, "denied_tools: %s\n", printable(strings.Join(res.DeniedTools, ", ")))
+	for _, c := range res.DeniedCalls {
+		fmt.Fprintf(env.Stderr, "denied: %s\n", printable(strings.TrimSpace(c.Tool+" "+c.Input)))
 	}
 }
 

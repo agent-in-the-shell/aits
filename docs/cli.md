@@ -64,7 +64,8 @@ Output:
   started, otherwise {"error":{"code":"…","message":"…"}}. Without --json,
   stdout is the answer for status ok and empty otherwise; everything else
   goes to stderr, with control characters in the message, session id and
-  denied tools shown as Go escapes (\x1b, \r).
+  denied calls shown as Go escapes (\x1b, \r): one "denied: TOOL INPUT"
+  line per call.
 
 Result fields:
   status       Always. One of the statuses below.
@@ -79,6 +80,13 @@ Result fields:
                refused for want of your approval, in order.
                claude -p never stops to ask, and a refusal leaves the
                status as it is: the agent may have finished another way.
+  denied_calls With denied_tools: one {tool, input} per call, in the same
+               order. input is the call's command, file_path,
+               notebook_path, path, url or pattern (the first it has), at
+               most 500 bytes; none for a call without one. Claude Code
+               refuses a loop or a command substitution (for, $(...))
+               even when each command in it is allowed; a pipe of
+               allowed commands runs. Put such a step in a script.
 
 Statuses:
   ok                The agent answered.
@@ -479,7 +487,7 @@ Task fields (--json):
                whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id, the denied tools and why a task failed on stderr,
+stdout; the session id, the denied calls and why a task failed on stderr,
 with control characters shown as Go escapes (\x1b, \r).
 
 Exit codes:
@@ -534,7 +542,7 @@ Task fields (--json):
                whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id, the denied tools and why a task failed on stderr,
+stdout; the session id, the denied calls and why a task failed on stderr,
 with control characters shown as Go escapes (\x1b, \r).
 
 wait looks at the queue every 250ms and reclaims as list does, so a task
@@ -601,7 +609,7 @@ Task fields (--json):
                whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id, the denied tools and why a task failed on stderr,
+stdout; the session id, the denied calls and why a task failed on stderr,
 with control characters shown as Go escapes (\x1b, \r).
 
 With nothing claimable (no task queued, none for AGENT with --agent or
@@ -681,7 +689,7 @@ Task fields (--json):
                whose agent started has started_at.
 
 Text output: "ID  STATUS  AGENT  CWD" and, for a done task, the answer on
-stdout; the session id, the denied tools and why a task failed on stderr,
+stdout; the session id, the denied calls and why a task failed on stderr,
 with control characters shown as Go escapes (\x1b, \r).
 
 Exit codes:

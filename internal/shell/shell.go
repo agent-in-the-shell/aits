@@ -71,6 +71,17 @@ type Result struct {
 	// DeniedTools names the tool of each call the agent was refused for want
 	// of the user's approval, in order; Claude Code only.
 	DeniedTools []string `json:"denied_tools,omitempty"`
+	// DeniedCalls is each of those calls with its main argument, so a
+	// missing grant is found without the transcript (#136).
+	DeniedCalls []DeniedCall `json:"denied_calls,omitempty"`
+}
+
+// DeniedCall is one tool call the agent was refused.
+type DeniedCall struct {
+	Tool string `json:"tool"`
+	// Input is the call's main argument (a command, a path, a URL or a
+	// pattern), at most deniedInputMax bytes; empty when it has none.
+	Input string `json:"input,omitempty"`
 }
 
 // ErrAgentNotFound means the agent's executable is not on the PATH in
@@ -210,6 +221,7 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		// Reported on every status, like the session id: a refusal can explain
 		// a failure too.
 		DeniedTools: obs.events.denied,
+		DeniedCalls: obs.events.calls,
 	}
 	switch status {
 	case StatusOK:
