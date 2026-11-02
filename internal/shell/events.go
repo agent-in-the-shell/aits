@@ -19,10 +19,16 @@ type events struct {
 	failure   string       // the error the agent reported
 	denied    []string     // the tools of the calls the agent was refused, in order
 	calls     []DeniedCall // those calls, with their main argument
-	done      bool         // the agent's final event was seen
-	failed    bool         // the agent reported that the run failed
-	badLine   bool         // a line was not a usable event
-	tooLarge  bool         // a line exceeded maxEventSize
+	// background maps each task the agent ran in the background to its
+	// description, and stopped lists those the vendor stopped after the
+	// agent's last message, which so never saw their work (#139).
+	background map[string]string
+	stopped    []string
+	killed     bool // the vendor reported stopping background work itself
+	done       bool // the agent's final event was seen
+	failed     bool // the agent reported that the run failed
+	badLine    bool // a line was not a usable event
+	tooLarge   bool // a line exceeded maxEventSize
 }
 
 // setSession records id unless a session id was already seen.

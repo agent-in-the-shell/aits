@@ -24,6 +24,10 @@ func TestDecide(t *testing.T) {
 		{"no final event", observation{events: events{sessionID: "s1", answer: "a"}}, StatusBadOutput},
 		{"empty answer", observation{events: events{sessionID: "s1", done: true}}, StatusBadOutput},
 		{"no session id", observation{events: events{answer: "answer", done: true}}, StatusBadOutput},
+		{"background work stopped", observation{events: events{sessionID: "s1", answer: "a", done: true, stopped: []string{"x"}}}, StatusIncomplete},
+		{"background agents killed", observation{events: events{sessionID: "s1", answer: "a", done: true, killed: true}}, StatusIncomplete},
+		{"failure before incomplete", observation{events: events{sessionID: "s1", done: true, failed: true, killed: true}}, StatusAgentFailed},
+		{"timeout before incomplete", observation{timedOut: true, exitCode: -1, events: events{sessionID: "s1", answer: "a", done: true, killed: true}}, StatusTimeout},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

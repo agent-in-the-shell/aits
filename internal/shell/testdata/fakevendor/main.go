@@ -205,6 +205,14 @@ func play(d dialect, scenario, dir, exe string) {
 			map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": strings.Repeat("é", 300)}},
 			map[string]any{"tool_name": "mcp__x__y", "tool_input": map[string]any{"q": "x"}},
 			map[string]any{"tool_name": "Read", "tool_input": "not an object"}))
+	case "background_stopped": // Claude only: Claude Code stopped a background agent after the last turn (#139)
+		d.start()
+		emit(map[string]any{"type": "system", "subtype": "task_started", "task_id": "a1", "task_type": "local_agent",
+			"description": "Run slow.sh\x1b[2K", "is_backgrounded": true, "session_id": sessionID})
+		d.progress()
+		emit(map[string]any{"type": "system", "subtype": "task_notification", "task_id": "a1", "status": "stopped", "session_id": sessionID})
+		emit(claudeResult(false, "I'll reply when it finishes", sessionID))
+		os.Stderr.WriteString("Background tasks still running 20s after the last turn (subagent \"Run slow.sh\"); stopping them.\n")
 	case "denied_error": // Claude only
 		d.start()
 		emit(withDenials(claudeResult(true, "fake failure", sessionID), denial("Write")))

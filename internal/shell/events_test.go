@@ -84,3 +84,52 @@ func TestReadEventsSizeLimit(t *testing.T) {
 		t.Errorf("a %d-byte event was accepted", maxEventSize+1)
 	}
 }
+
+// TestParseClaudeBackground follows the task events of Claude Code 2.1.316
+// runs (#139): only a background agent or workflow stopped after the agent's
+// last message makes the run incomplete.
+func TestParseClaudeBackground(t *testing.T) {
+	const (
+		agentStarted    = `{"type":"system","subtype":"task_started","task_id":"a1","task_type":"local_agent","description":"Run slow.sh","is_backgrounded":true,"session_id":"s1"}`
+		workflowStarted = `{"type":"system","subtype":"task_started","task_id":"w1","task_type":"local_workflow","description":"run slow","session_id":"s1"}`
+		shellStarted    = `{"type":"system","subtype":"task_started","task_id":"b1","task_type":"local_bash","description":"sleep","is_backgrounded":true,"session_id":"s1"}`
+		ownedStarted    = `{"type":"system","subtype":"task_started","task_id":"b2","task_type":"local_agent","owned_by_subagent":true,"description":"nested","is_backgrounded":true,"session_id":"s1"}`
+		fgStarted       = `{"type":"system","subtype":"task_started","task_id":"f1","task_type":"local_agent","description":"fg","is_backgrounded":false,"session_id":"s1"}`
+		assistant       = `{"type":"assistant","session_id":"s1","message":{}}`
+		result          = `{"type":"result","result":"a","session_id":"s1"}`
+		killedResult    = `{"type":"result","result":"a","session_id":"s1","subagent_stats":{"killed":{"parent":0,"user":0,"system":1}}}`
+	)
+	stopped := func(id string) string {
+		return `{"type":"system","subtype":"task_notification","task_id":"` + id + `","status":"stopped","summary":"s","session_id":"s1"}`
+	}
+	completed := `{"type":"system","subtype":"task_notification","task_id":"a1","status":"completed","session_id":"s1"}`
+	tests := []struct {
+		name    string
+		lines   []string
+		stopped []string
+		killed  bool
+	}{
+		{"agent stopped after the last message", []string{agentStarted, assistant, stopped("a1"), killedResult}, []string{"Run slow.sh"}, true},
+		{"workflow stopped, not counted as killed", []string{workflowStarted, assistant, stopped("w1"), result}, []string{"run slow"}, false},
+		{"agent completed", []string{agentStarted, assistant, completed, assistant, result, result}, nil, false},
+		{"agent stopped, then the agent went on", []string{agentStarted, stopped("a1"), assistant, result}, nil, false},
+		{"background command stopped at exit", []string{shellStarted, assistant, result, stopped("b1")}, nil, false},
+		{"a subagent's own task", []string{ownedStarted, assistant, stopped("b2"), result}, nil, false},
+		{"foreground agent", []string{fgStarted, assistant, stopped("f1"), result}, nil, false},
+		{"unknown task", []string{assistant, stopped("zz"), result}, nil, false},
+		{"killed count alone", []string{assistant, killedResult}, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ev := readEvents(strings.NewReader(strings.Join(tt.lines, "\n")), parseClaude)
+			if ev.badLine || !reflect.DeepEqual(ev.stopped, tt.stopped) || ev.killed != tt.killed {
+				t.Errorf("stopped %q, killed %v, badLine %v; want %q, %v", ev.stopped, ev.killed, ev.badLine, tt.stopped, tt.killed)
+			}
+		})
+	}
+	long := strings.Replace(agentStarted, "Run slow.sh", strings.Repeat("é", 200), 1)
+	ev := readEvents(strings.NewReader(long+"\n"+stopped("a1")+"\n"+result), parseClaude)
+	if len(ev.stopped) != 1 || len(ev.stopped[0]) > stoppedMax || !strings.HasSuffix(ev.stopped[0], "…") {
+		t.Errorf("a long description was kept as %q", ev.stopped)
+	}
+}
