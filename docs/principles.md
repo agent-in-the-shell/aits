@@ -271,22 +271,9 @@ hold:
    client;
 5. it has a caller today (P2).
 
-Out of scope for now, each revisitable through its own issue:
-
-- hosting a messaging gateway or platform adapters (conditions 2 and 4); a
-  client for one is in scope;
-- loop control, stop conditions and workflow engines: the caller owns the
-  loop, and aits runs one iteration;
-- a resident scheduler: the OS scheduler runs the queue and the jobs (cron,
-  launchd), and aits keeps no schedule;
-- a TUI, or attaching to live agents: terminal multiplexers do this;
-- installing vendor CLIs, telemetry exporters, impersonating other clients,
-  and Windows, as the foundation spec already excludes.
-
 **Prevents.** aits growing into a platform: hosting services that callers
 depend on; every user shipping integrations only a few run; releases tied to
-third-party platform fixes; a workflow engine that takes loop control away
-from the caller.
+third-party platform fixes.
 
 **Guard.** *review-only.* An issue for a new command group, or for a change
 that adds a network dependency, says how it meets each of the five
