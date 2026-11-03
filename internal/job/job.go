@@ -2,7 +2,8 @@
 // way aits runs an agent (P10) — in its own process group, with a timeout, a
 // lock against an overlapping run, a bounded log and a run record — and
 // decides when its failures are worth an alert, which a hook the user owns
-// delivers (#129). When a job runs is the OS scheduler's (#109).
+// delivers (#129). When a job runs is the OS scheduler's (#109), or job
+// sched's, which a LaunchAgent supervises (#143).
 package job
 
 import (

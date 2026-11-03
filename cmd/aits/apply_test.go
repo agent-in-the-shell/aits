@@ -10,12 +10,13 @@ import (
 )
 
 type applyResult struct {
-	Host      string     `json:"host"`
-	Added     []string   `json:"added"`
-	Changed   []string   `json:"changed"`
-	Removed   []string   `json:"removed"`
-	Unchanged []string   `json:"unchanged"`
-	Error     *errorBody `json:"error"`
+	Host      string        `json:"host"`
+	Added     []string      `json:"added"`
+	Changed   []string      `json:"changed"`
+	Removed   []string      `json:"removed"`
+	Unchanged []string      `json:"unchanged"`
+	Sched     *schedApplied `json:"sched"`
+	Error     *errorBody    `json:"error"`
 }
 
 // cron is a fake crontab command on PATH: its table is a file next to it,
@@ -23,11 +24,12 @@ type applyResult struct {
 // (P12).
 type cron struct {
 	bin, home, spec string
+	aitsHome        string // one AITS_HOME for every apply, as a user has
 }
 
 func newCron(t *testing.T, table string) cron {
 	t.Helper()
-	c := cron{bin: t.TempDir(), home: t.TempDir()}
+	c := cron{bin: t.TempDir(), home: t.TempDir(), aitsHome: t.TempDir()}
 	c.spec = filepath.Join(t.TempDir(), "jobs.json")
 	script := `#!/bin/sh
 d=${0%/*}
@@ -82,7 +84,7 @@ func (c cron) apply(t *testing.T, spec string, flags ...string) (applyResult, ou
 	if err := os.WriteFile(c.spec, []byte(spec), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := call{path: c.bin, env: []string{"HOME=" + c.home}, args: append([]string{"job", "apply", c.spec, "--json"}, flags...)}.run(t)
+	out := call{path: c.bin, env: []string{"HOME=" + c.home, "AITS_HOME=" + c.aitsHome}, args: append([]string{"job", "apply", c.spec, "--json"}, flags...)}.run(t)
 	return decodeOne[applyResult](t, out.stdout), out
 }
 

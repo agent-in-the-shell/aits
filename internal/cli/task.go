@@ -22,11 +22,12 @@ func taskGroup() *Command {
 	}
 }
 
-// taskSchedule says how to run the queue from the OS scheduler: aits itself
-// never stays in the background (P10, #109).
-const taskSchedule = `Running on a schedule: let the OS scheduler start aits; aits never stays
-in the background. A crontab that queues a review each weekday at 09:00 and
-works the queue every 5 minutes:
+// taskSchedule says how to run the queue from the OS scheduler, or from job
+// sched under it (P10, #109, #143).
+const taskSchedule = `Running on a schedule: let the OS scheduler start aits, or declare the
+commands as jobs and run them from aits job sched (see "aits job --help").
+A crontab that queues a review each weekday at 09:00 and works the queue
+every 5 minutes:
 
   0 9 * * 1-5  aits task create --agent claude --cwd ~/src/proj "Review the commits since yesterday for bugs"
   */5 * * * *  aits task work --json >> ~/aits-work.log
@@ -62,6 +63,9 @@ aits passes CLAUDE_CODE_OAUTH_TOKEN, like ANTHROPIC_API_KEY, to claude when
 it is set; never put the token itself in a crontab line or an argument. Do
 not rely on ~/.claude/.credentials.json, which Claude Code writes when the
 keychain refuses a write: two copies of one login can sign each other out.
+A token run has no claude.ai connectors. To keep the keychain login and its
+connectors, run the jobs from a LaunchAgent instead: declare them in a file
+and install it with "aits job apply FILE --sched".
 
 A long unattended task may start background agents or workflows (claude):
 it waits for them until its --timeout, and ends incomplete, not done, if

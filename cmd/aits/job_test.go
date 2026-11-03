@@ -351,7 +351,8 @@ type jobList struct {
 		LastOKAt time.Time       `json:"last_ok_at"`
 		Failing  json.RawMessage `json:"failing"`
 	} `json:"jobs"`
-	Skipped []string `json:"skipped"`
+	Sched   []heartbeat `json:"sched"`
+	Skipped []string    `json:"skipped"`
 }
 
 func TestJobList(t *testing.T) {
