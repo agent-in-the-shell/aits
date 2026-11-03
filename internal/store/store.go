@@ -59,6 +59,14 @@ func WriteFile(path string, data []byte) error {
 	return err
 }
 
+// MkdirAll creates dir and its parents, as os.MkdirAll does, for a directory
+// outside the root that another program reads, such as
+// ~/Library/LaunchAgents.
+func MkdirAll(dir string, perm os.FileMode) error { return os.MkdirAll(dir, perm) }
+
+// Remove removes the file path.
+func Remove(path string) error { return os.Remove(path) }
+
 // OpenAppend opens path for appending, creating it 0600, and refuses
 // anything but a regular file, as OpenRegular does.
 func OpenAppend(path string) (*os.File, error) {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -43,22 +44,27 @@ type ApplyRequest struct {
 	File    string // the spec; relative to aits's working directory
 	Aits    string // the absolute path of aits, which each line runs
 	DryRun  bool
+	Sched   bool     // run the jobs from one LaunchAgent's job sched, not cron (macOS)
 	Environ []string // the caller's environment: HOME for ~/, PATH for crontab
 }
 
 // Applied is what an apply changed, or would change, by job name.
 type Applied struct {
-	Host      string   `json:"host"`
-	Added     []string `json:"added"`
-	Changed   []string `json:"changed"`
-	Removed   []string `json:"removed"`
-	Unchanged []string `json:"unchanged"`
+	Host      string        `json:"host"`
+	Added     []string      `json:"added"`
+	Changed   []string      `json:"changed"`
+	Removed   []string      `json:"removed"`
+	Unchanged []string      `json:"unchanged"`
+	Sched     *SchedApplied `json:"sched,omitempty"` // on macOS, once --sched was used for the file
 }
 
 // Apply installs the jobs of r.File declared for this host into the user's
 // crontab, in the block apply owns for that file, and removes the ones no
-// longer declared. Every other line of the crontab is kept as it is. A non-nil
-// error means the crontab was not changed.
+// longer declared. Every other line of the crontab is kept as it is. With
+// r.Sched, on macOS, it installs instead a LaunchAgent that runs job sched
+// for the file, and removes the block; without it, it removes that agent. A
+// non-nil error means nothing was changed, except when the agent was
+// installed and the crontab then failed.
 func Apply(ctx context.Context, r ApplyRequest) (Applied, error) {
 	file, err := filepath.Abs(r.File)
 	if err != nil {
@@ -66,6 +72,9 @@ func Apply(ctx context.Context, r ApplyRequest) (Applied, error) {
 	}
 	if !filepath.IsAbs(r.Aits) {
 		return Applied{}, invalid("aits %q is not an absolute path", r.Aits)
+	}
+	if r.Sched && runtime.GOOS != "darwin" {
+		return Applied{}, invalid("--sched installs a LaunchAgent, so it works only on macOS for now")
 	}
 	spec, err := readSpec(file)
 	if err != nil {
@@ -77,9 +86,18 @@ func Apply(ctx context.Context, r ApplyRequest) (Applied, error) {
 	}
 	host, _, _ = strings.Cut(host, ".")
 	home, _ := lookup(r.Environ, "HOME")
-	names, lines, err := render(spec, host, home, r.Aits)
+	path, jobs, err := plan(spec, host, home)
 	if err != nil {
 		return Applied{}, err
+	}
+	var names, lines []string
+	if !r.Sched {
+		for _, j := range jobs {
+			names = append(names, j.name)
+		}
+		if lines, err = render(path, jobs, r.Aits); err != nil {
+			return Applied{}, err
+		}
 	}
 	for _, s := range append([]string{file}, lines...) {
 		if strings.ContainsAny(s, "\n\r\x00") {
@@ -134,18 +152,67 @@ func Apply(ctx context.Context, r ApplyRequest) (Applied, error) {
 		want = append(want, end)
 	}
 	want = append(want, after...)
-	if r.DryRun || slices.Equal(want, table) {
+
+	// The agent: what is installed, and what this apply wants.
+	var ag agent
+	var have, text string
+	if runtime.GOOS == "darwin" {
+		if ag, err = newAgent(file, home, env); err != nil && r.Sched {
+			return Applied{}, err
+		}
+		if err == nil {
+			if have, err = ag.read(); err != nil {
+				return Applied{}, err
+			}
+		}
+		if r.Sched {
+			dir, err := jobDir(r.Environ)
+			if err != nil {
+				return Applied{}, err
+			}
+			aitsHome, _ := lookup(r.Environ, "AITS_HOME")
+			text = ag.render(r.Aits, file, SchedLog(dir, file), aitsHome)
+		}
+		if have != "" || r.Sched {
+			res.Sched = &SchedApplied{Label: ag.label, Plist: ag.plist}
+			switch {
+			case !r.Sched:
+				res.Sched.Change = "removed"
+			case have == "":
+				res.Sched.Change = "added"
+			case have != text:
+				res.Sched.Change = "changed"
+			default:
+				res.Sched.Change = "unchanged"
+			}
+		}
+	}
+	if r.DryRun {
 		return res, nil
 	}
-	if err := writeCrontab(ctx, crontab, env, want); err != nil {
-		return Applied{}, err
+	// One file runs one way: start the agent before removing the block, and
+	// install the block before removing the agent.
+	if r.Sched && (have != text || !ag.loaded(ctx)) {
+		if err := ag.install(ctx, text); err != nil {
+			return Applied{}, err
+		}
 	}
-	got, err := readCrontab(ctx, crontab, env)
-	if err != nil {
-		return Applied{}, err
+	if !slices.Equal(want, table) {
+		if err := writeCrontab(ctx, crontab, env, want); err != nil {
+			return Applied{}, err
+		}
+		got, err := readCrontab(ctx, crontab, env)
+		if err != nil {
+			return Applied{}, err
+		}
+		if !slices.Equal(got, want) {
+			return Applied{}, errors.New("crontab did not install the table apply gave it; check it with crontab -l")
+		}
 	}
-	if !slices.Equal(got, want) {
-		return Applied{}, errors.New("crontab did not install the table apply gave it; check it with crontab -l")
+	if !r.Sched && have != "" {
+		if err := ag.remove(ctx); err != nil {
+			return Applied{}, err
+		}
 	}
 	return res, nil
 }
@@ -168,9 +235,22 @@ func readSpec(file string) (Spec, error) {
 	return spec, nil
 }
 
-// render checks every job of spec and returns the names and crontab lines of
-// those declared for host, in the spec's order.
-func render(spec Spec, host, home, aits string) ([]string, []string, error) {
+// planned is one job of a spec declared for this host, checked, with its
+// paths expanded.
+type planned struct {
+	name     string
+	schedule string // its fields joined by one space
+	cron     cron
+	timeout  time.Duration // 0: job run's default
+	given    string        // the timeout as the spec gives it
+	env      []string
+	onAlert  string
+	command  []string
+}
+
+// plan checks every job of spec and returns the PATH entries of the spec and
+// the jobs declared for host, in the spec's order.
+func plan(spec Spec, host, home string) ([]string, []planned, error) {
 	expand := func(what, p string) (string, error) {
 		if rest, ok := strings.CutPrefix(p, "~/"); ok {
 			if home == "" {
@@ -193,7 +273,7 @@ func render(spec Spec, host, home, aits string) ([]string, []string, error) {
 			path = append(path, dir)
 		}
 	}
-	var names, lines []string
+	var jobs []planned
 	seen := map[string]bool{}
 	for _, j := range spec.Jobs {
 		if !validName(j.Name) {
@@ -206,17 +286,16 @@ func render(spec Spec, host, home, aits string) ([]string, []string, error) {
 		bad := func(format string, a ...any) error {
 			return invalid("job %s: %s", j.Name, fmt.Sprintf(format, a...))
 		}
-		schedule := strings.Fields(j.Schedule)
-		if len(schedule) != 5 || slices.ContainsFunc(schedule, func(f string) bool {
-			return strings.ContainsFunc(f, func(c rune) bool { return !isAlnum(c) && !strings.ContainsRune("*/,-", c) })
-		}) {
-			return nil, nil, bad("schedule %q is not 5 cron fields", j.Schedule)
+		c, err := parseCron(j.Schedule)
+		if err != nil {
+			return nil, nil, bad("schedule %q: %v", j.Schedule, err)
 		}
+		p := planned{name: j.Name, schedule: strings.Join(strings.Fields(j.Schedule), " "), cron: c, env: j.Env}
 		if len(j.Command) == 0 {
 			return nil, nil, bad("no command")
 		}
-		if j.Timeout != "" {
-			if d, err := time.ParseDuration(j.Timeout); err != nil || d <= 0 {
+		if p.given = j.Timeout; j.Timeout != "" {
+			if p.timeout, err = time.ParseDuration(j.Timeout); err != nil || p.timeout <= 0 {
 				return nil, nil, bad("timeout %q is not a positive duration such as 30m", j.Timeout)
 			}
 		}
@@ -231,50 +310,60 @@ func render(spec Spec, host, home, aits string) ([]string, []string, error) {
 		if len(j.Hosts) > 0 && !slices.Contains(j.Hosts, host) {
 			continue // its paths are its own host's to check
 		}
-		argv := slices.Clone(j.Command)
-		var err error
-		if argv[0], err = expand("command", argv[0]); err != nil {
+		p.command = slices.Clone(j.Command)
+		if p.command[0], err = expand("command", p.command[0]); err != nil {
 			return nil, nil, err
 		}
-		if err := executable(argv[0]); err != nil {
+		if err := executable(p.command[0]); err != nil {
 			return nil, nil, bad("command %v", err)
 		}
-		args := []string{aits, "job", "run", j.Name}
-		if j.Timeout != "" {
-			args = append(args, "--timeout", j.Timeout)
-		}
-		for _, name := range j.Env {
-			args = append(args, "--env", name)
-		}
 		if j.OnAlert != "" {
-			hook, err := expand("on_alert", j.OnAlert)
-			if err != nil {
+			if p.onAlert, err = expand("on_alert", j.OnAlert); err != nil {
 				return nil, nil, err
 			}
-			if err := executable(hook); err != nil {
+			if err := executable(p.onAlert); err != nil {
 				return nil, nil, bad("on_alert %v", err)
 			}
-			args = append(args, "--on-alert", hook)
 		}
-		args = append(append(args, "--"), argv...)
+		jobs = append(jobs, p)
+	}
+	return path, jobs, nil
+}
+
+// render returns the crontab line of each job: aits's job run with the
+// job's flags, after PATH from path.
+func render(path []string, jobs []planned, aits string) ([]string, error) {
+	var lines []string
+	for _, j := range jobs {
+		args := []string{aits, "job", "run", j.name}
+		if j.given != "" {
+			args = append(args, "--timeout", j.given)
+		}
+		for _, name := range j.env {
+			args = append(args, "--env", name)
+		}
+		if j.onAlert != "" {
+			args = append(args, "--on-alert", j.onAlert)
+		}
+		args = append(append(args, "--"), j.command...)
 		var b strings.Builder
-		b.WriteString(strings.Join(schedule, " ") + " ")
+		b.WriteString(j.schedule + " ")
 		if path != nil {
 			b.WriteString(quote("PATH="+strings.Join(path, string(filepath.ListSeparator))) + " ")
 		}
 		for i, a := range args {
 			if strings.Contains(a, "%") {
 				// cron turns % into a line break.
-				return nil, nil, bad("%q holds a %%, which cron reads as a line break", a)
+				return nil, invalid("job %s: %q holds a %%, which cron reads as a line break", j.name, a)
 			}
 			if i > 0 {
 				b.WriteByte(' ')
 			}
 			b.WriteString(quote(a))
 		}
-		names, lines = append(names, j.Name), append(lines, b.String())
+		lines = append(lines, b.String())
 	}
-	return names, lines, nil
+	return lines, nil
 }
 
 // executable checks that p is an absolute path to an executable file.

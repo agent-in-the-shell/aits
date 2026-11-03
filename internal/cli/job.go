@@ -17,14 +17,17 @@ func jobGroup() *Command {
 		Name:     "job",
 		Summary:  "Run scheduled commands with a timeout, a lock, a run record and alerts.",
 		Details:  jobSchedule,
-		Children: []*Command{jobRun(), jobList(), jobApply()},
+		Children: []*Command{jobRun(), jobList(), jobApply(), jobSched()},
 	}
 }
 
-// jobSchedule says how a job is scheduled: by the OS, never by aits (#109).
-const jobSchedule = `A job is any command the OS scheduler starts through aits job run: aits
-runs it once and exits, and the schedule stays with cron or launchd. A
-crontab that backs up notes nightly and checks prices every 5 minutes:
+// jobSchedule says how a job is scheduled: by the OS (#109), or by job sched,
+// which the OS supervises (#143).
+const jobSchedule = `A job is any command aits job run runs once, with a timeout, a lock, a log
+and alerts. Its schedule is cron's, or job sched's: one aits process that
+runs the jobs of a file when they are due, under a LaunchAgent that job
+apply --sched installs (see "aits job sched --help"). A crontab that backs
+up notes nightly and checks prices every 5 minutes:
 
   MAILTO=""
   30 23 * * *  aits job run notes-backup --timeout 10m --on-alert ~/bin/notify -- ~/bin/notes-backup.sh
@@ -152,12 +155,21 @@ func jobList() *Command {
 		Name:    "list",
 		Summary: "List every job that has run: its last run, last success and failure.",
 		Details: jobDirNote + `Output: one line per job, by name,
-"NAME  STATUS  FINISHED_AT  LAST_OK_AT  FAILING_SINCE" (empty columns as -);
-with --json {"jobs":[{name, last, last_ok_at, failing}], "skipped":[NAME]}:
+"NAME  STATUS  FINISHED_AT  LAST_OK_AT  FAILING_SINCE" (empty columns as -),
+then one line per jobs file a job sched has run,
+"sched  FILE  CHECKED_AT"; with --json
+{"jobs":[{name, last, last_ok_at, failing}], "sched":[{file, checked_at,
+next, error}], "skipped":[NAME]}:
   last        The last run that was not skipped: job run's record.
   last_ok_at  When the job last ran ok.
   failing     While it fails: since, failures, signature, alerts,
               last_alert_at and unalerted, as job run --help describes.
+  checked_at  The minute job sched last checked FILE: a stale time means
+              no sched is running for it.
+  next        [{name, at}]: when each of FILE's jobs for this host is due
+              next, as of checked_at; without at, never.
+  error       Why sched could not reread FILE; it still runs the jobs it
+              read last.
 A NAME.json that cannot be read is skipped and named in "skipped" or,
 without --json, on stderr. A morning check:
 
@@ -179,11 +191,16 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 				if err != nil {
 					return 0, taskError(err)
 				}
+				scheds, err := job.Heartbeats(env.Environ)
+				if err != nil {
+					return 0, taskError(err)
+				}
 				if env.JSON {
 					writeJSON(env.Stdout, struct {
-						Jobs    []job.State `json:"jobs"`
-						Skipped []string    `json:"skipped"`
-					}{states, skipped})
+						Jobs    []job.State     `json:"jobs"`
+						Sched   []job.Heartbeat `json:"sched"`
+						Skipped []string        `json:"skipped"`
+					}{states, scheds, skipped})
 					return exitOK, nil
 				}
 				for _, name := range skipped {
@@ -198,6 +215,12 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 						failing = stampOr(st.Failing.Since)
 					}
 					fmt.Fprintf(env.Stdout, "%s  %s  %s  %s  %s\n", st.Name, status, finished, stampOr(st.LastOKAt), failing)
+				}
+				for _, hb := range scheds {
+					fmt.Fprintf(env.Stdout, "sched  %s  %s\n", printable(hb.File), stampOr(hb.CheckedAt))
+					if hb.Error != "" {
+						fmt.Fprintf(env.Stderr, "aits: job sched cannot reread %s: %s\n", printable(hb.File), printable(hb.Error))
+					}
 				}
 				return exitOK, nil
 			}
@@ -250,20 +273,37 @@ apply reads the crontab back to check it.
 --dry-run checks FILE and the crontab and reports what would change, and
 changes nothing.
 
-Output: one line per job, "NAME  added|changed|removed|unchanged"; with
---json {"host", "added", "changed", "removed", "unchanged"}, each a list of
-job names.
+--sched (macOS): run FILE's jobs from job sched instead of cron, under the
+claude.ai login and connectors a terminal has: cron cannot read the login
+keychain, a LaunchAgent can. apply writes
+~/Library/LaunchAgents/aits.sched.ID.plist (ID from FILE's path), which
+runs this aits binary's "job sched FILE --json", at login and again when it
+exits, with AITS_HOME when set and its output in the job directory's
+sched-ID.log; loads it with launchctl bootstrap gui/UID, after a bootout
+when it changed; then removes FILE's crontab block, so its jobs show as
+removed. Edits to FILE need no apply: sched rereads it. apply without
+--sched reverses this: it installs the block, then boots the agent out and
+deletes its plist. apply refuses a plist at that path it did not write. A
+LaunchAgent runs only while you are logged in; after upgrading aits,
+restart it with launchctl kickstart -k gui/$(id -u)/LABEL.
+
+Output: one line per job, "NAME  added|changed|removed|unchanged", then
+"LABEL  added|changed|removed|unchanged" for the agent; with --json
+{"host", "added", "changed", "removed", "unchanged", "sched"}: job names,
+and, on macOS once --sched was used for FILE, sched {label, plist, change}.
 
 Exit codes:
   0  Installed, nothing to change, or --dry-run.
-  1  crontab is not on PATH or failed; the host name could not be read.
-  2  Usage error or invalid input: FILE, or the crontab's block; nothing
-     was changed.
+  1  crontab or launchctl is not on PATH or failed; the host name could not
+     be read.
+  2  Usage error or invalid input: FILE, the crontab's block, a plist apply
+     did not write, or --sched off macOS; nothing was changed.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 `,
 		Setup: func(fs *flag.FlagSet) Runner {
 			dryRun := fs.Bool("dry-run", false, "Report what would change, and change nothing.")
+			sched := fs.Bool("sched", false, "Run the jobs from a LaunchAgent's job sched, not cron (macOS).")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
 					return 0, usageError("invalid_input", "expected FILE")
@@ -272,7 +312,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 				if err != nil {
 					return 0, failure("internal", "%v", err)
 				}
-				res, err := job.Apply(ctx, job.ApplyRequest{File: args[0], Aits: self, DryRun: *dryRun, Environ: env.Environ})
+				res, err := job.Apply(ctx, job.ApplyRequest{File: args[0], Aits: self, DryRun: *dryRun, Sched: *sched, Environ: env.Environ})
 				if err != nil {
 					return 0, taskError(err)
 				}
@@ -287,6 +327,72 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					for _, name := range g.names {
 						fmt.Fprintf(env.Stdout, "%s  %s\n", name, g.what)
 					}
+				}
+				if res.Sched != nil {
+					fmt.Fprintf(env.Stdout, "%s  %s\n", res.Sched.Label, res.Sched.Change)
+				}
+				return exitOK, nil
+			}
+		},
+	}
+}
+
+func jobSched() *Command {
+	return &Command{
+		Name:    "sched",
+		Args:    "FILE",
+		Summary: "Run the jobs FILE declares for this host when they are due, until stopped.",
+		Details: jobDirNote + `FILE is job apply's (see "aits job apply --help"). sched runs in the
+foreground until a signal, and is meant to be started and restarted by a
+supervisor: job apply --sched installs a LaunchAgent for it on macOS, where
+a job then has the login keychain, and so claude's claude.ai login and
+connectors, which cron does not.
+
+Each minute sched rereads FILE and runs each job due since it last checked,
+as job run does: its own process group, timeout, lock, log, run record and
+alerts, with FILE's path as PATH and its env passed. A job is due when its
+schedule matches a minute, in local time; cron's day rule holds (with both
+day of month and day of week restricted, either matches). A job due more
+than once since the last check, such as while the Mac slept or sched was
+not running, runs once. A job whose previous run still holds its lock is
+skipped. A FILE that cannot be reread is reported on stderr and in job
+list; the jobs read last keep running. Only one sched runs per FILE.
+
+On a signal (SIGTERM, SIGINT, SIGHUP) the running jobs are stopped as job
+run stops them (status stopped), and sched exits 0 once they have.
+
+Output: one line per run as it ends, job run's: "NAME  STATUS  ALERT", or
+its record with --json. Each minute sched writes a heartbeat that job list
+shows: when it last checked FILE and when each job is due next.
+
+Exit codes:
+  0  Stopped by a signal.
+  1  Another sched holds FILE, or the job directory could not be written.
+  2  Usage error or invalid input: FILE; nothing was run.
+
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+`,
+		Setup: func(*flag.FlagSet) Runner {
+			return func(ctx context.Context, env *Env, args []string) (int, error) {
+				if len(args) != 1 {
+					return 0, usageError("invalid_input", "expected FILE")
+				}
+				err := job.Sched(ctx, job.SchedRequest{
+					File: args[0], Environ: env.Environ, Kill: env.Kill,
+					Report: func(rec job.Record) {
+						if env.JSON {
+							writeJSON(env.Stdout, rec)
+							return
+						}
+						fmt.Fprintf(env.Stdout, "%s  %s  %s\n", rec.Name, rec.Status, rec.Alert)
+						if rec.Message != "" {
+							fmt.Fprintf(env.Stderr, "aits: job %s %s: %s\n", rec.Name, rec.Status, printable(rec.Message))
+						}
+					},
+					Warn: func(msg string) { fmt.Fprintf(env.Stderr, "aits: job sched: %s\n", printable(msg)) },
+				})
+				if err != nil {
+					return 0, taskError(err)
 				}
 				return exitOK, nil
 			}

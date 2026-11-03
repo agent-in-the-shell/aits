@@ -273,9 +273,10 @@ Run 'aits task COMMAND --help' for details.
 
 Errors: unknown_command, unknown_flag (exit 2).
 
-Running on a schedule: let the OS scheduler start aits; aits never stays
-in the background. A crontab that queues a review each weekday at 09:00 and
-works the queue every 5 minutes:
+Running on a schedule: let the OS scheduler start aits, or declare the
+commands as jobs and run them from aits job sched (see "aits job --help").
+A crontab that queues a review each weekday at 09:00 and works the queue
+every 5 minutes:
 
   0 9 * * 1-5  aits task create --agent claude --cwd ~/src/proj "Review the commits since yesterday for bugs"
   */5 * * * *  aits task work --json >> ~/aits-work.log
@@ -311,6 +312,9 @@ aits passes CLAUDE_CODE_OAUTH_TOKEN, like ANTHROPIC_API_KEY, to claude when
 it is set; never put the token itself in a crontab line or an argument. Do
 not rely on ~/.claude/.credentials.json, which Claude Code writes when the
 keychain refuses a write: two copies of one login can sign each other out.
+A token run has no claude.ai connectors. To keep the keychain login and its
+connectors, run the jobs from a LaunchAgent instead: declare them in a file
+and install it with "aits job apply FILE --sched".
 
 A long unattended task may start background agents or workflows (claude):
 it waits for them until its --timeout, and ends incomplete, not done, if
@@ -745,14 +749,17 @@ Commands:
   run    Run a scheduled command once: timeout, lock, log, run record, alerts.
   list   List every job that has run: its last run, last success and failure.
   apply  Install the jobs FILE declares for this host into your crontab.
+  sched  Run the jobs FILE declares for this host when they are due, until stopped.
 
 Run 'aits job COMMAND --help' for details.
 
 Errors: unknown_command, unknown_flag (exit 2).
 
-A job is any command the OS scheduler starts through aits job run: aits
-runs it once and exits, and the schedule stays with cron or launchd. A
-crontab that backs up notes nightly and checks prices every 5 minutes:
+A job is any command aits job run runs once, with a timeout, a lock, a log
+and alerts. Its schedule is cron's, or job sched's: one aits process that
+runs the jobs of a file when they are due, under a LaunchAgent that job
+apply --sched installs (see "aits job sched --help"). A crontab that backs
+up notes nightly and checks prices every 5 minutes:
 
   MAILTO=""
   30 23 * * *  aits job run notes-backup --timeout 10m --on-alert ~/bin/notify -- ~/bin/notes-backup.sh
@@ -861,12 +868,21 @@ NAME.log (rotated), NAME.json (its state) and NAME.lock. With neither
 AITS_HOME nor HOME set, every job command fails (invalid_input).
 
 Output: one line per job, by name,
-"NAME  STATUS  FINISHED_AT  LAST_OK_AT  FAILING_SINCE" (empty columns as -);
-with --json {"jobs":[{name, last, last_ok_at, failing}], "skipped":[NAME]}:
+"NAME  STATUS  FINISHED_AT  LAST_OK_AT  FAILING_SINCE" (empty columns as -),
+then one line per jobs file a job sched has run,
+"sched  FILE  CHECKED_AT"; with --json
+{"jobs":[{name, last, last_ok_at, failing}], "sched":[{file, checked_at,
+next, error}], "skipped":[NAME]}:
   last        The last run that was not skipped: job run's record.
   last_ok_at  When the job last ran ok.
   failing     While it fails: since, failures, signature, alerts,
               last_alert_at and unalerted, as job run --help describes.
+  checked_at  The minute job sched last checked FILE: a stale time means
+              no sched is running for it.
+  next        [{name, at}]: when each of FILE's jobs for this host is due
+              next, as of checked_at; without at, never.
+  error       Why sched could not reread FILE; it still runs the jobs it
+              read last.
 A NAME.json that cannot be read is skipped and named in "skipped" or,
 without --json, on stderr. A morning check:
 
@@ -890,6 +906,7 @@ Install the jobs FILE declares for this host into your crontab.
 Flags:
   --dry-run  Report what would change, and change nothing.
   --json     Print the result, or the error, as JSON on stdout.
+  --sched    Run the jobs from a LaunchAgent's job sched, not cron (macOS).
 
 FILE is JSON, for example:
 
@@ -923,15 +940,76 @@ apply reads the crontab back to check it.
 --dry-run checks FILE and the crontab and reports what would change, and
 changes nothing.
 
-Output: one line per job, "NAME  added|changed|removed|unchanged"; with
---json {"host", "added", "changed", "removed", "unchanged"}, each a list of
-job names.
+--sched (macOS): run FILE's jobs from job sched instead of cron, under the
+claude.ai login and connectors a terminal has: cron cannot read the login
+keychain, a LaunchAgent can. apply writes
+~/Library/LaunchAgents/aits.sched.ID.plist (ID from FILE's path), which
+runs this aits binary's "job sched FILE --json", at login and again when it
+exits, with AITS_HOME when set and its output in the job directory's
+sched-ID.log; loads it with launchctl bootstrap gui/UID, after a bootout
+when it changed; then removes FILE's crontab block, so its jobs show as
+removed. Edits to FILE need no apply: sched rereads it. apply without
+--sched reverses this: it installs the block, then boots the agent out and
+deletes its plist. apply refuses a plist at that path it did not write. A
+LaunchAgent runs only while you are logged in; after upgrading aits,
+restart it with launchctl kickstart -k gui/$(id -u)/LABEL.
+
+Output: one line per job, "NAME  added|changed|removed|unchanged", then
+"LABEL  added|changed|removed|unchanged" for the agent; with --json
+{"host", "added", "changed", "removed", "unchanged", "sched"}: job names,
+and, on macOS once --sched was used for FILE, sched {label, plist, change}.
 
 Exit codes:
   0  Installed, nothing to change, or --dry-run.
-  1  crontab is not on PATH or failed; the host name could not be read.
-  2  Usage error or invalid input: FILE, or the crontab's block; nothing
-     was changed.
+  1  crontab or launchctl is not on PATH or failed; the host name could not
+     be read.
+  2  Usage error or invalid input: FILE, the crontab's block, a plist apply
+     did not write, or --sched off macOS; nothing was changed.
+
+Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+```
+
+## aits job sched
+
+```text
+Usage: aits job sched [flags] FILE
+
+Run the jobs FILE declares for this host when they are due, until stopped.
+
+Flags:
+  --json  Print the result, or the error, as JSON on stdout.
+
+Jobs live in $AITS_HOME/job (default ~/.local/share/aits/job): per job
+NAME.log (rotated), NAME.json (its state) and NAME.lock. With neither
+AITS_HOME nor HOME set, every job command fails (invalid_input).
+
+FILE is job apply's (see "aits job apply --help"). sched runs in the
+foreground until a signal, and is meant to be started and restarted by a
+supervisor: job apply --sched installs a LaunchAgent for it on macOS, where
+a job then has the login keychain, and so claude's claude.ai login and
+connectors, which cron does not.
+
+Each minute sched rereads FILE and runs each job due since it last checked,
+as job run does: its own process group, timeout, lock, log, run record and
+alerts, with FILE's path as PATH and its env passed. A job is due when its
+schedule matches a minute, in local time; cron's day rule holds (with both
+day of month and day of week restricted, either matches). A job due more
+than once since the last check, such as while the Mac slept or sched was
+not running, runs once. A job whose previous run still holds its lock is
+skipped. A FILE that cannot be reread is reported on stderr and in job
+list; the jobs read last keep running. Only one sched runs per FILE.
+
+On a signal (SIGTERM, SIGINT, SIGHUP) the running jobs are stopped as job
+run stops them (status stopped), and sched exits 0 once they have.
+
+Output: one line per run as it ends, job run's: "NAME  STATUS  ALERT", or
+its record with --json. Each minute sched writes a heartbeat that job list
+shows: when it last checked FILE and when each job is due next.
+
+Exit codes:
+  0  Stopped by a signal.
+  1  Another sched holds FILE, or the job directory could not be written.
+  2  Usage error or invalid input: FILE; nothing was run.
 
 Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ```

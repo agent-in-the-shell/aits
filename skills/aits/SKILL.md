@@ -241,8 +241,8 @@ Only a `done` task's `run.answer` is the agent's answer; read
 ### Running on a schedule
 
 To run agent work at set times or keep draining the queue with no terminal
-open, have the OS scheduler start aits: aits never stays in the background,
-and has no schedule of its own. See `aits task --help`.
+open, have the OS scheduler start aits, or declare the commands as jobs and
+run them from `aits job sched` (below). See `aits task --help`.
 
 ```sh
 # crontab -e
@@ -278,7 +278,9 @@ is running:
   have the `work` job's script `export CLAUDE_CODE_OAUTH_TOKEN="$(cat FILE)"`;
   aits passes that variable to claude without `--env`. Never put the token
   in a crontab line or argv, and do not rely on `~/.claude/.credentials.json`
-  (two copies of one login can sign each other out).
+  (two copies of one login can sign each other out). A token run has no
+  claude.ai connectors: to keep the keychain login and its connectors, run
+  the commands as jobs from `aits job apply FILE --sched` (below).
 - An idle run prints `{"status":"empty"}` and exits 0. Overlapping cron runs
   claim different tasks, so slow tasks can pile up workers; use launchd, or
   `flock -n` on Linux, to keep one.
@@ -291,8 +293,8 @@ is running:
 
 `aits job run NAME --timeout DUR --on-alert PROGRAM -- COMMAND [ARG...]` is
 what a crontab line or a launchd agent runs: any command, an agent or not.
-aits runs it once and exits; the schedule stays with the OS scheduler. It
-gives each run what a bare cron line lacks:
+aits runs it once and exits; the schedule stays with cron, launchd or
+`aits job sched`. It gives each run what a bare cron line lacks:
 
 - COMMAND runs in its own process group with stdin `/dev/null` and the
   same bare environment an agent gets, plus `--env NAME`; on `--timeout`
@@ -349,6 +351,28 @@ as `added`, `changed`, `removed` or `unchanged` (`--json`: those lists and
 `host`). Edit the file and apply again, never the block: apply refuses a
 block line it did not write, an unknown key, a bad schedule or a missing
 program, with exit 2 and the crontab untouched.
+
+### One scheduler process: aits job sched
+
+`aits job sched FILE` runs the same file's jobs itself, in the foreground
+until a signal: each minute it rereads FILE and runs every job due since its
+last check, exactly as `job run` would (lock, log, record, alerts). A job
+due several times while the Mac slept or sched was down runs once; cron's
+day-of-month/day-of-week rule holds. Use it on macOS, where cron cannot
+read the login keychain: `aits job apply FILE --sched` installs
+`~/Library/LaunchAgents/aits.sched.ID.plist` (KeepAlive, output in
+`$AITS_HOME/job/sched-ID.log`), bootstraps it in `gui/UID` and removes
+FILE's crontab block, so each job runs one way. Its jobs then have the
+keychain login and claude.ai connectors a terminal has. Apply again without
+`--sched` to go back to cron. `--json` adds `sched`: `label`, `plist` and
+`change`. Edits to FILE need no apply; after upgrading aits run
+`launchctl kickstart -k gui/$(id -u)/LABEL`. A LaunchAgent runs only while
+the user is logged in. `job list --json` adds `sched`: per file
+`checked_at` (stale means no sched runs), `next` (`[{name, at}]`) and
+`error` (FILE could not be reread; the last good jobs still run). sched
+prints each run's record as it ends, exits 0 on a signal after stopping
+running jobs (`stopped`), 1 when another sched holds FILE, 2 for an
+invalid FILE. `--sched` off macOS is exit 2.
 
 ## Run a loop: implement, check, fix, review, stop
 
