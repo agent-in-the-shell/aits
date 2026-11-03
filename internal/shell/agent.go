@@ -22,7 +22,10 @@ type agent struct {
 	// defaults are KEY=VALUE settings aits gives the agent unless the caller
 	// passes KEY itself (P8).
 	defaults []string
-	parse    parser // turns one line of the agent's output into events
+	// hint, if set, returns a line on the likely cause of an error the agent
+	// reported, or "" (#141).
+	hint  func(failure string) string
+	parse parser // turns one line of the agent's output into events
 }
 
 // baseEnv is passed to every agent when set, together with every LC_*
@@ -57,6 +60,20 @@ func claudeArgv(r Request) []string {
 	return args
 }
 
+// claudeLoginHint follows Claude Code's "Not logged in" error. On macOS its
+// login lives in the login keychain, which a process started by cron,
+// launchd or SSH cannot read, so a login that works in a terminal fails there
+// (#141).
+const claudeLoginHint = "if started from cron, launchd or SSH on macOS, claude cannot read the login keychain: " +
+	"pass CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` (see aits task --help)"
+
+func claudeHint(failure string) string {
+	if strings.Contains(failure, "Not logged in") {
+		return claudeLoginHint
+	}
+	return ""
+}
+
 // codexArgv always names the sandbox: Codex keeps a session's sandbox when it
 // is resumed without one, so a session started with write access would keep
 // it (P9). No --skip-git-repo-check or approval flags: Codex keeps its own
@@ -82,11 +99,12 @@ var agents = map[string]agent{
 		executable: "claude",
 		argv:       claudeArgv,
 		allowTools: true,
-		env:        []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY"},
+		env:        []string{"CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"},
 		// Claude Code stops background agents and workflows 10 minutes after
 		// the last turn unless told to wait; aits's timeout bounds the wait
 		// instead (P10, #139).
 		defaults: []string{"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0"},
+		hint:     claudeHint,
 		parse:    parseClaude,
 	},
 	"codex": {

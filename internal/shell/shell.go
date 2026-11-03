@@ -216,6 +216,11 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		return Result{}, err
 	}
 	status, msg := decide(obs)
+	if status == StatusAgentFailed && ag.hint != nil {
+		if h := ag.hint(obs.events.failure); h != "" {
+			msg += "; " + h
+		}
+	}
 	code, ms := obs.exitCode, time.Since(start).Milliseconds()
 	res := Result{
 		Status:     status,

@@ -140,6 +140,9 @@ func play(d dialect, scenario, dir, exe string) {
 		d.start()
 		d.fail("fake failure\nsecond line")
 		os.Exit(1)
+	case "not_logged_in": // Claude only: what claude -p prints without a readable login (#141)
+		emit(claudeResult(true, "Not logged in · Please run /login", ""))
+		os.Exit(1)
 	case "agent_error_exit0":
 		d.start()
 		d.fail("fake failure\nsecond line")
