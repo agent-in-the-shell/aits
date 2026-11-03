@@ -272,6 +272,13 @@ is running:
   `create` and `work` must use the same queue.
 - `--env NAME` is read from the worker's environment: set the variable in the
   `work` job, not the `create` job.
+- Claude on macOS fails with `Not logged in` under cron, launchd or SSH: its
+  login is in the login keychain, which those jobs cannot read. Create a
+  token once with `claude setup-token`, keep it in a mode-600 file, and
+  have the `work` job's script `export CLAUDE_CODE_OAUTH_TOKEN="$(cat FILE)"`;
+  aits passes that variable to claude without `--env`. Never put the token
+  in a crontab line or argv, and do not rely on `~/.claude/.credentials.json`
+  (two copies of one login can sign each other out).
 - An idle run prints `{"status":"empty"}` and exits 0. Overlapping cron runs
   claim different tasks, so slow tasks can pile up workers; use launchd, or
   `flock -n` on Linux, to keep one.

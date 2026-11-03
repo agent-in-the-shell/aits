@@ -412,6 +412,24 @@ func TestSubmitBackground(t *testing.T) {
 	}
 }
 
+// TestSubmitNotLoggedIn pins #141: Claude Code's "Not logged in" names the
+// likely cause of a scheduled run's failure, and other errors keep theirs.
+func TestSubmitNotLoggedIn(t *testing.T) {
+	out := call{path: vendor(t, "not_logged_in"), args: submitArgs("--json", "hi")}.run(t)
+	r := decode(t, out.stdout)
+	if out.code != 1 || r.Status != "agent_failed" ||
+		!strings.HasPrefix(r.Message, "the agent reported an error: Not logged in · Please run /login; ") ||
+		!strings.Contains(r.Message, "login keychain") || !strings.Contains(r.Message, "CLAUDE_CODE_OAUTH_TOKEN") {
+		t.Fatalf("code=%d %+v", out.code, r)
+	}
+	eachAgent(t, func(t *testing.T, agent string) {
+		out := call{path: vendorAs(t, agent, "agent_error"), args: agentArgs(agent, "--json", "hi")}.run(t)
+		if r := decode(t, out.stdout); r.Message != "the agent reported an error: fake failure" {
+			t.Errorf("message %q", r.Message)
+		}
+	})
+}
+
 // An agent CLI that is found but cannot be started is agent_start_failed,
 // and nothing runs (P6, #60).
 func TestSubmitAgentStartFailed(t *testing.T) {
@@ -491,7 +509,7 @@ func assertNoCanary(t *testing.T, out output) {
 
 func TestSubmitEnvironment(t *testing.T) {
 	own := map[string][]string{
-		"claude": {"ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"},
+		"claude": {"ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN"},
 		"codex":  {"OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "CODEX_HOME"},
 	}
 	eachAgent(t, func(t *testing.T, agent string) {

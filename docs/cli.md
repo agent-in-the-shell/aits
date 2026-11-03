@@ -299,6 +299,19 @@ A scheduled job does not get your shell's environment:
   --env  names variables that work passes to the agent from the worker's
          own environment, so set them in the work job, not the create job.
 
+Claude on macOS keeps its login in the login keychain, which a job started
+by cron, launchd or SSH cannot read: claude fails with "Not logged in" there
+even though it works in a terminal. Create a token once with
+"claude setup-token" (valid a year), keep it in a mode-600 file, and have
+the work job's script export it before aits task work:
+
+  export CLAUDE_CODE_OAUTH_TOKEN="$(cat ~/.config/claude-token)"
+
+aits passes CLAUDE_CODE_OAUTH_TOKEN, like ANTHROPIC_API_KEY, to claude when
+it is set; never put the token itself in a crontab line or an argument. Do
+not rely on ~/.claude/.credentials.json, which Claude Code writes when the
+keychain refuses a write: two copies of one login can sign each other out.
+
 A long unattended task may start background agents or workflows (claude):
 it waits for them until its --timeout, and ends incomplete, not done, if
 one was stopped before it reported back (see "shell submit --help").
