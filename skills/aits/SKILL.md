@@ -230,8 +230,13 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
 - `aits task cancel ID --json` withdraws a `queued` task that has the wrong
   prompt, `--cwd` or `--write`: it becomes `failed` with run status
   `cancelled`, its queued follow-up fails, and its session is free for the
-  corrected task. A `running`, `done` or `failed` task is refused
-  (`invalid_input`); cancel does not stop a running agent.
+  corrected task. On a `running` task it asks the task's worker to stop the
+  agent (TERM, then KILL 5s later), waits up to `--timeout` (default 30s),
+  and prints the task `failed` with run status `stopped` and message
+  `stopped by task cancel`; `run.session_id` stays, so redirect it with
+  `task create --session`. A task whose worker is gone prints `worker_died`.
+  On `timeout` (exit 1) the request stays and the worker still acts on it.
+  A `done` or `failed` task is refused (`invalid_input`).
 
 Task `status` is `queued`, `running`, `done` or `failed`. A worked task has
 a `run`: the `shell submit` result fields plus `started_at` and
@@ -243,7 +248,8 @@ a `run`: the `shell submit` result fields plus `started_at` and
   `work` and `wait` find this by themselves; nothing needs repairing. Create the task
   again to retry.
 - `cancelled`: withdrawn with `aits task cancel` before any worker claimed
-  it; the agent never ran.
+  it; the agent never ran. (A running task that cancel stopped is
+  `stopped`, message `stopped by task cancel`.)
 
 Only a `done` task's `run.answer` is the agent's answer; read
 `run.message` for any other.
@@ -424,6 +430,10 @@ done
   follow-up.
 - **Stop.** Always cap the rounds, and report how the loop ended: clean,
   round limit, or a failure.
+- **Redirect a running round.** When another task's result shows a running
+  one is going the wrong way, `aits task cancel ID --json` stops it
+  (`stopped`), then `task create --session` its `run.session_id` with the
+  correction.
 - **After a failure.** `--after` follows only a `done` task with a session. If
   a round fails with `timeout` or `agent_failed`, read `run.message`, then
   continue its `run.session_id`, when it has one, with

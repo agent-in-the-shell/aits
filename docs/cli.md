@@ -267,7 +267,7 @@ Commands:
   show    Show one task and its run.
   wait    Wait until a task, or all or any of several, is done or failed.
   work    Claim the oldest claimable task, run it, record the result, exit.
-  cancel  Withdraw a queued task before a worker claims it.
+  cancel  Withdraw a queued task, or stop a running one through its worker.
 
 Run 'aits task COMMAND --help' for details.
 
@@ -699,10 +699,11 @@ Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 ```text
 Usage: aits task cancel [flags] ID
 
-Withdraw a queued task before a worker claims it.
+Withdraw a queued task, or stop a running one through its worker.
 
 Flags:
-  --json  Print the result, or the error, as JSON on stdout.
+  --json              Print the result, or the error, as JSON on stdout.
+  --timeout DURATION  Wait at most DURATION for a running task's worker to stop it. (default 30s)
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
 neither AITS_HOME nor HOME set, every task command fails (invalid_input).
@@ -714,8 +715,19 @@ is failed at once (run status not_started), and the session it would have
 continued is free for a new task. Tasks of dead workers are reclaimed
 first, as list does.
 
-A running, done or failed task cannot be cancelled: invalid_input, naming
-its status, and the task is unchanged. A running task is not stopped.
+A running task is stopped by its own worker, which started its agent:
+cancel leaves a stop request (ID.stop in the queue), the worker notices it
+within 250ms and stops the agent as a signal stops it (TERM to its group,
+KILL 5s later), and records the task failed with run status stopped and
+the message "stopped by task cancel"; run.session_id stays, so the session
+can be continued with create --session. cancel waits for that, up to
+--timeout, then prints the task. On a timeout (exit 1) the request stays
+and the worker still acts on it. A running task whose worker is gone is
+reclaimed instead and printed failed (worker_died). A running task whose
+lock file is missing gets the request, and is reported as list reports it.
+
+A done or failed task cannot be cancelled: invalid_input, naming its
+status, and the task is unchanged.
 
 Output: the task, as show prints it.
 
@@ -753,12 +765,13 @@ stdout; the session id, the denied calls and why a task failed on stderr,
 with control characters shown as Go escapes (\x1b, \r).
 
 Exit codes:
-  0  Cancelled.
-  1  The queue could not be read or written.
-  2  Unknown id, a task that is not queued, usage error or invalid input;
+  0  Cancelled, or stopped: read its status.
+  1  The timeout elapsed, cancel was stopped, or the queue could not be read
+     or written.
+  2  Unknown id, a done or failed task, usage error or invalid input;
      nothing was changed.
 
-Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).
 ```
 
 ## aits job

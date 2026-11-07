@@ -128,6 +128,14 @@ type Notes struct{ Skipped, Unknown []string }
 // one at the same path be locked by someone else.
 func lockPath(dir, id string) string { return filepath.Join(dir, id+".lock") }
 
+// stopPath is the stop request Cancel leaves for the worker of a running
+// task (#149): a file of its own, since the worker rewrites its record
+// without the directory lock. The worker removes it once it records the run.
+func stopPath(dir, id string) string { return filepath.Join(dir, id+".stop") }
+
+// stopMessage is the run message of a task Cancel stopped.
+const stopMessage = "stopped by task cancel"
+
 // Create validates s as the request it will be run as, and queues it. A
 // follow-up (s.After) is checked against its parent under the lock.
 func Create(environ []string, s Spec) (Task, error) {
@@ -346,47 +354,76 @@ func List(environ []string) ([]Task, Notes, error) {
 	return s.tasks, s.Notes, err
 }
 
-// Cancel withdraws queued task id: it becomes failed with run status
-// cancelled. It takes the lock that claim takes, so a cancel and a claim
-// never both succeed, and reclaims as List does; a queued follow-up of the
-// task then fails at once (parentFault). A task that is not queued is
+// Cancel withdraws task id (#126, #149). A queued task becomes failed with
+// run status cancelled, under the lock that claim takes, so a cancel and a
+// claim never both succeed; a queued follow-up of it then fails at once
+// (parentFault). A running task gets a stop request (stopPath), which its
+// worker acts on by stopping the agent as a signal does; Cancel then waits
+// for the worker to record the run, as Wait does, with Wait's timeout and
+// unknown. It reclaims as List does first, so the task of a dead worker is
+// returned failed (worker_died) with no request. A done or failed task is
 // refused unchanged.
-func Cancel(environ []string, id string) (Task, error) {
+func Cancel(ctx context.Context, environ []string, id string, timeout time.Duration, unknown func()) (Task, error) {
+	if timeout < 0 {
+		return Task{}, invalid("timeout must not be negative, got %s", timeout)
+	}
 	dir, err := taskDir(environ)
 	if err != nil {
 		return Task{}, err
 	}
+	t, stopping, err := withdraw(dir, id)
+	if err != nil || !stopping {
+		return t, err
+	}
+	t, err = Wait(ctx, environ, id, timeout, unknown)
+	if err == nil {
+		_ = store.Remove(stopPath(dir, id)) // a request that came after the worker had recorded its run
+	}
+	return t, err
+}
+
+// withdraw is Cancel under the lock: it cancels a queued task, or leaves a
+// stop request for a running one and reports that it did.
+func withdraw(dir, id string) (Task, bool, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
-		return Task{}, err
+		return Task{}, false, err
 	}
 	s, stop, err := reclaim(dir)
 	defer stop()
 	defer unlock() // runs before stop: stop waits for dead workers' agents
 	if err != nil {
-		return Task{}, err
+		return Task{}, false, err
 	}
 	i := slices.IndexFunc(s.tasks, func(t Task) bool { return t.ID == id })
 	if i < 0 {
 		if _, err := find(dir, id); err != nil {
-			return Task{}, err // no such task, or one that cannot be read
+			return Task{}, false, err // no such task, or one that cannot be read
 		}
-		return Task{}, fmt.Errorf("task %s could not be read", id)
+		return Task{}, false, fmt.Errorf("task %s could not be read", id)
 	}
 	t := &s.tasks[i]
-	if t.Status != Queued {
-		return Task{}, invalid("task %s is %s; only a queued task can be cancelled", id, t.Status)
+	switch {
+	case t.Status == Running:
+		if err := store.WriteFile(stopPath(dir, id), nil); err != nil {
+			return Task{}, false, fmt.Errorf("task %s: the stop request could not be written: %w", id, err)
+		}
+		return *t, true, nil
+	case slices.Contains(s.reclaimed, id):
+		return *t, false, nil // its worker is gone: nothing to stop
+	case t.Status != Queued:
+		return Task{}, false, invalid("task %s is %s; only a queued or running task can be cancelled", id, t.Status)
 	}
 	t.Status = Failed
 	t.Run = &Run{Result: shell.Result{
 		Status: Cancelled, Agent: t.Agent, Message: "withdrawn by task cancel before a worker claimed it",
 	}, FinishedAt: time.Now().UTC()}
 	if err := write(dir, *t); err != nil {
-		return Task{}, err
+		return Task{}, false, err
 	}
 	emit(dir, EventCancelled, *t)
 	done := *t
-	return done, failOrphans(dir, s)
+	return done, false, failOrphans(dir, s)
 }
 
 // Show returns one task (see find).
@@ -623,9 +660,37 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 		emit(dir, EventStarted, cur)
 		return nil
 	}
-	res, err := shell.Submit(ctx, req)
+	// A stop request ends the agent as a signal does: cancelling runCtx makes
+	// Submit stop its group (TERM, grace, KILL).
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	requested := make(chan struct{})
+	go func() {
+		tick := time.NewTicker(pollEvery)
+		defer tick.Stop()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-tick.C:
+				if _, err := os.Lstat(stopPath(dir, t.ID)); err == nil {
+					close(requested)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	res, err := shell.Submit(runCtx, req)
 	if err != nil {
 		res = shell.Result{Status: NotStarted, Agent: t.Agent, Message: err.Error()}
+	}
+	select {
+	case <-requested:
+		if res.Status == shell.StatusStopped && ctx.Err() == nil {
+			res.Message = stopMessage
+		}
+	default:
 	}
 	status := Failed
 	if res.Status == shell.StatusOK {
@@ -636,6 +701,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 	if err != nil {
 		return nil, notes, err
 	}
+	_ = store.Remove(stopPath(dir, t.ID)) // most runs have none
 	emit(dir, EventEnded, done)
 	return &done, notes, nil
 }
@@ -744,6 +810,7 @@ func reclaim(dir string) (snapshot, func(), error) {
 			return s, stop, err
 		}
 		emit(dir, EventEnded, *t)
+		s.reclaimed = append(s.reclaimed, t.ID)
 		groups, locks = append(groups, pgid), append(locks, release)
 	}
 	if err := failOrphans(dir, s); err != nil {
@@ -845,7 +912,8 @@ func modify(dir, id, token string, fn func(*Task)) (Task, error) {
 
 // snapshot is the task directory as load found it.
 type snapshot struct {
-	tasks []Task // every readable task, oldest first by created_at, then by id
+	tasks     []Task   // every readable task, oldest first by created_at, then by id
+	reclaimed []string // the running tasks reclaim failed, their workers gone
 	Notes
 }
 

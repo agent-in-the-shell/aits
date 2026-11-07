@@ -1286,20 +1286,13 @@ func TestTaskCancel(t *testing.T) {
 // cancel refuses a task that is not queued, and an unknown id, and changes
 // nothing (#126).
 func TestTaskCancelRefuses(t *testing.T) {
-	q := newQueue(t, "sleep")
-	running := q.create("running")
-	s := call{path: q.path, env: []string{"AITS_HOME=" + q.home}, args: []string{"task", "work", "--json"}}.start(t)
-	waitFile(t, filepath.Join(q.path, "child.pid"))
-	q.waitLease(running, readPID(t, filepath.Join(q.path, "child.pid"))) // a live worker: reclaim leaves it running
-	defer s.waitOrKill(t, 10*time.Second)
-	defer s.signal(t, syscall.SIGTERM)
+	q := newQueue(t, "ok")
 	done, failed := q.create("done"), q.create("failed")
 	q.patch(done, map[string]any{"status": "done", "run": map[string]any{"status": "ok", "agent": "claude", "answer": "a", "finished_at": time.Now().UTC()}})
 	q.patch(failed, map[string]any{"status": "failed", "run": map[string]any{"status": "timeout", "agent": "claude", "finished_at": time.Now().UTC()}})
 	for _, tt := range []struct{ name, id, msg string }{
-		{"running", running, "task " + running + " is running; only a queued task can be cancelled"},
-		{"done", done, "task " + done + " is done; only a queued task can be cancelled"},
-		{"failed", failed, "task " + failed + " is failed; only a queued task can be cancelled"},
+		{"done", done, "task " + done + " is done; only a queued or running task can be cancelled"},
+		{"failed", failed, "task " + failed + " is failed; only a queued or running task can be cancelled"},
 		{"unknown", "20000101T000000-000000", "no task 20000101T000000-000000"},
 		{"empty", "", "no task "},
 	} {
@@ -1316,8 +1309,9 @@ func TestTaskCancelRefuses(t *testing.T) {
 }
 
 // A cancel racing a worker's claim of the same task: exactly one wins. Either
-// the cancel succeeds and the worker finds nothing, or the worker runs the
-// task and the cancel is refused (#126).
+// the cancel withdraws it and the worker finds nothing, or the worker claims
+// it and the cancel's stop request finds it running: the agent is stopped,
+// or has already finished (#126, #149).
 func TestTaskCancelRacesClaim(t *testing.T) {
 	q := newQueue(t, "ok")
 	for i := range 10 {
@@ -1339,7 +1333,8 @@ func TestTaskCancelRacesClaim(t *testing.T) {
 		worked := !strings.Contains(work.stdout, `"status":"empty"`)
 		switch {
 		case cancel.code == 0 && !worked && r.Run != nil && r.Run.Status == "cancelled":
-		case cancel.code == 2 && worked && r.Status == "done":
+		case cancel.code == 0 && worked && r.Status == "done": // the stop request came after the agent had finished
+		case cancel.code == 0 && worked && r.Run != nil && r.Run.Status == "stopped":
 		default:
 			t.Fatalf("cancel code=%d stdout=%q; work stdout=%q; task %+v", cancel.code, cancel.stdout, work.stdout, r)
 		}
