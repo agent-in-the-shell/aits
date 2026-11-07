@@ -48,7 +48,7 @@ var dialects = map[string]dialect{
 		progress: func() {
 			emit(map[string]any{"type": "assistant", "session_id": sessionID, "message": map[string]any{"content": []any{}}})
 		},
-		answer:    func(text string) { emit(claudeResult(false, text, sessionID)) },
+		answer:    func(text string) { emit(withUsage(claudeResult(false, text, sessionID))) },
 		fail:      func(text string) { emit(claudeResult(true, text, sessionID)) },
 		noSession: func(text string) { emit(claudeResult(false, text, "")) },
 		missing: func(id string) {
@@ -262,6 +262,13 @@ func claudeResult(isError bool, text, session string) map[string]any {
 	if session != "" {
 		ev["session_id"] = session
 	}
+	return ev
+}
+
+// withUsage sets the cumulative usage Claude Code reports on a result (#153).
+func withUsage(ev map[string]any) map[string]any {
+	ev["total_cost_usd"] = 0.0125
+	ev["modelUsage"] = map[string]any{"fake-model": map[string]any{"inputTokens": 2, "outputTokens": 3, "cacheReadInputTokens": 10, "cacheCreationInputTokens": 5}}
 	return ev
 }
 

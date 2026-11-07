@@ -59,6 +59,12 @@ Result fields:
   stopped_tasks
                Only for incomplete, Claude Code only: the description of
                each background agent or workflow that was stopped.
+  usage        What the run spent, when the agent reported it, on any
+               status: input_tokens (every prompt token, cached ones
+               included), cached_input_tokens, output_tokens and, Claude
+               Code only, cost_usd as Claude Code prices it. Claude
+               Code's figures cover the whole run, subagents included;
+               Codex's add up its turns. aits enforces no budget.
 
 Statuses:
   ok                The agent answered.
