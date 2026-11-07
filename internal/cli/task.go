@@ -598,7 +598,7 @@ func taskCancel() *Command {
 	return &Command{
 		Name:    "cancel",
 		Args:    "ID",
-		Summary: "Withdraw a queued task before a worker claims it.",
+		Summary: "Withdraw a queued task, or stop a running one through its worker.",
 		Details: taskQueue + `A queued task becomes failed with run status cancelled and finished_at,
 under the lock a worker's claim takes, so a cancel and a claim never both
 succeed. Its file is kept, as for any failed task. A queued follow-up of it
@@ -606,27 +606,47 @@ is failed at once (run status not_started), and the session it would have
 continued is free for a new task. Tasks of dead workers are reclaimed
 first, as list does.
 
-A running, done or failed task cannot be cancelled: invalid_input, naming
-its status, and the task is unchanged. A running task is not stopped.
+A running task is stopped by its own worker, which started its agent:
+cancel leaves a stop request (ID.stop in the queue), the worker notices it
+within 250ms and stops the agent as a signal stops it (TERM to its group,
+KILL 5s later), and records the task failed with run status stopped and
+the message "stopped by task cancel"; run.session_id stays, so the session
+can be continued with create --session. cancel waits for that, up to
+--timeout, then prints the task. On a timeout (exit 1) the request stays
+and the worker still acts on it. A running task whose worker is gone is
+reclaimed instead and printed failed (worker_died). A running task whose
+lock file is missing gets the request, and is reported as list reports it.
+
+A done or failed task cannot be cancelled: invalid_input, naming its
+status, and the task is unchanged.
 
 Output: the task, as show prints it.
 
 ` + taskFields + `
 Exit codes:
-  0  Cancelled.
-  1  The queue could not be read or written.
-  2  Unknown id, a task that is not queued, usage error or invalid input;
+  0  Cancelled, or stopped: read its status.
+  1  The timeout elapsed, cancel was stopped, or the queue could not be read
+     or written.
+  2  Unknown id, a done or failed task, usage error or invalid input;
      nothing was changed.
 
-Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).
 `,
-		Setup: func(*flag.FlagSet) Runner {
-			return func(_ context.Context, env *Env, args []string) (int, error) {
+		Setup: func(fs *flag.FlagSet) Runner {
+			timeout := fs.Duration("timeout", 30*time.Second, "Wait at most `DURATION` for a running task's worker to stop it.")
+			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
 					return 0, usageError("invalid_input", "expected one task id; got %d", len(args))
 				}
-				t, err := task.Cancel(env.Environ, args[0])
-				if err != nil {
+				id := args[0]
+				t, err := task.Cancel(ctx, env.Environ, id, *timeout, func() { reportNotes(env, task.Notes{Unknown: []string{id}}) })
+				var late *task.TimeoutError
+				switch {
+				case errors.As(err, &late):
+					return 0, failure("timeout", "task %s is still running after %s; its worker has the stop request", printable(id), *timeout)
+				case errors.Is(err, context.Canceled):
+					return 0, failure("stopped", "stopped while waiting for task %s to stop", printable(id))
+				case err != nil:
 					return 0, taskError(err)
 				}
 				if err := writeTask(env, t); err != nil {
