@@ -347,8 +347,8 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 func taskWait() *Command {
 	return &Command{
 		Name:    "wait",
-		Args:    "ID",
-		Summary: "Wait until a task is done or failed, then show it.",
+		Args:    "ID [ID...]",
+		Summary: "Wait until a task, or all or any of several, is done or failed.",
 		Details: taskQueue + taskFields + `
 wait looks at the queue every 250ms and reclaims as list does, so a task
 whose worker died ends failed (worker_died), and a follow-up whose parent
@@ -361,18 +361,44 @@ as list reports it, and waited for.
 Pass a --timeout below the limit of whatever runs wait, such as an agent's
 shell tool, and call wait again while the task is still running.
 
+Several tasks (up to 256 ids, each once): wait returns once all of them are
+done or failed, or with --any once one is, so a caller running several
+workers reacts to the first that ends without polling. With --json it
+prints {"ended":[TASK...], "pending":[ID...]}: ended holds every task that
+had ended by then, in the order they ended, pending the ids still queued or
+running. Without --json, each ended task as wait shows one, then
+"ID  STATUS" for each pending task. On a timeout or a stop it prints the
+same, with "error":{code, message} added, and exits 1. Wait on the pending
+ids again for the rest. One id prints the task alone, as before, with or
+without --any.
+
+Event log: to follow the queue rather than wait on ids, read
+$AITS_HOME/task/events.jsonl (tail -F). Each transition appends one line,
+{at, id, event, status, run_status, label}, where event is created,
+claimed, started (the agent began), ended (done or failed, including a
+worker_died or not_started reclaim) or cancelled; run_status and label are
+there when the task has them. create rotates it at 4 MiB, keeping
+events.jsonl.1 to .3. It is a hint: the task files stay the record, a line
+that could not be written is dropped without failing the command, and
+removing the log breaks nothing.
+
 Exit codes:
-  0  The task is done or failed: read its status.
+  0  The task, or all or any of the tasks, is done or failed: read each
+     status.
   1  The timeout elapsed, wait was stopped, or the queue could not be read.
-  2  Unknown id, usage error or invalid input.
+  2  Unknown or repeated id, usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).
 `,
 		Setup: func(fs *flag.FlagSet) Runner {
 			timeout := fs.Duration("timeout", 0, "Give up after `DURATION`, e.g. 90s or 9m, leaving the task as it is (default: wait until it ends).")
+			anyOne := fs.Bool("any", false, "With several ids, return once any of them is done or failed, not all.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
-				if len(args) != 1 {
-					return 0, usageError("invalid_input", "expected one task id; got %d", len(args))
+				if len(args) == 0 {
+					return 0, usageError("invalid_input", "expected one or more task ids")
+				}
+				if len(args) > 1 {
+					return waitMany(ctx, env, args, *anyOne, *timeout)
 				}
 				id := args[0]
 				t, err := task.Wait(ctx, env.Environ, id, *timeout, func() { reportNotes(env, task.Notes{Unknown: []string{id}}) })
@@ -392,6 +418,55 @@ Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1
 			}
 		},
 	}
+}
+
+// waitMany is task wait with several ids (#147).
+func waitMany(ctx context.Context, env *Env, ids []string, anyOne bool, timeout time.Duration) (int, error) {
+	w, err := task.WaitMany(ctx, env.Environ, ids, anyOne, timeout, func(id string) { reportNotes(env, task.Notes{Unknown: []string{id}}) })
+	var e *Error
+	switch {
+	case errors.Is(err, task.ErrWaitTimeout):
+		e = failure("timeout", "%d of %d tasks still queued or running after %s", len(w.Pending), len(ids), timeout)
+	case errors.Is(err, context.Canceled):
+		e = failure("stopped", "stopped while waiting for %d tasks", len(w.Pending))
+	case err != nil:
+		return 0, taskError(err)
+	}
+	for _, t := range w.Ended {
+		if t.Run == nil || t.Run.Status == "" {
+			return 0, failure("internal", "task %s has a run without a status", t.ID)
+		}
+	}
+	if env.JSON {
+		out := struct {
+			Ended   []task.Task       `json:"ended"`
+			Pending []string          `json:"pending"`
+			Error   map[string]string `json:"error,omitempty"`
+		}{Ended: append([]task.Task{}, w.Ended...), Pending: []string{}}
+		for _, t := range w.Pending {
+			out.Pending = append(out.Pending, t.ID)
+		}
+		if e != nil {
+			out.Error = map[string]string{"code": e.Code, "message": e.Message} // as report writes an error
+		}
+		writeJSON(env.Stdout, out)
+	} else {
+		for _, t := range w.Ended {
+			if err := writeTask(env, t); err != nil {
+				return 0, err
+			}
+		}
+		for _, t := range w.Pending {
+			fmt.Fprintf(env.Stdout, "%s  %s\n", t.ID, t.Status)
+		}
+		if e != nil {
+			fmt.Fprintf(env.Stderr, "aits: %s\n", e.Message)
+		}
+	}
+	if e != nil {
+		return exitFailure, nil
+	}
+	return exitOK, nil
 }
 
 func taskWork() *Command {

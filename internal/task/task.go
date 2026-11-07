@@ -173,7 +173,12 @@ func Create(environ []string, s Spec) (Task, error) {
 			return Task{}, fmt.Errorf("a new task could not be named: %w", err)
 		}
 	}
-	return t, write(dir, t)
+	if err := write(dir, t); err != nil {
+		return Task{}, err
+	}
+	_ = store.Rotate(eventsPath(dir), eventsMax, eventsKeep) // under the lock, so no other writer rotates
+	emit(dir, EventCreated, t)
+	return t, nil
 }
 
 // validate checks t as the request it will be run as, with timeout as given
@@ -379,6 +384,7 @@ func Cancel(environ []string, id string) (Task, error) {
 	if err := write(dir, *t); err != nil {
 		return Task{}, err
 	}
+	emit(dir, EventCancelled, *t)
 	done := *t
 	return done, failOrphans(dir, s)
 }
@@ -452,6 +458,105 @@ func Wait(ctx context.Context, environ []string, id string, timeout time.Duratio
 	}
 }
 
+// maxWait bounds the ids one WaitMany takes.
+const maxWait = 256
+
+// Waited is where the tasks of a WaitMany stand: those that ended, in the
+// order they ended, and those still queued or running, in the order given.
+type Waited struct {
+	Ended   []Task
+	Pending []Task
+}
+
+// ErrWaitTimeout means WaitMany's timeout elapsed before its condition held.
+var ErrWaitTimeout = errors.New("the timeout elapsed")
+
+// WaitMany waits for tasks ids as Wait waits for one: until all of them are
+// done or failed, or with anyOne until one is (#147). It returns where they
+// stand even with an error: ErrWaitTimeout after timeout, or ctx's error.
+// unknown is called once for each running task whose lock file is missing.
+func WaitMany(ctx context.Context, environ []string, ids []string, anyOne bool, timeout time.Duration, unknown func(id string)) (Waited, error) {
+	switch {
+	case timeout < 0:
+		return Waited{}, invalid("timeout must not be negative, got %s", timeout)
+	case len(ids) == 0:
+		return Waited{}, invalid("no task id to wait for")
+	case len(ids) > maxWait:
+		return Waited{}, invalid("at most %d task ids, got %d", maxWait, len(ids))
+	}
+	for i, id := range ids {
+		if slices.Contains(ids[:i], id) {
+			return Waited{}, invalid("task %s is given more than once", id)
+		}
+	}
+	dir, err := taskDir(environ)
+	if err != nil {
+		return Waited{}, err
+	}
+	var deadline <-chan time.Time
+	if timeout > 0 {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		deadline = timer.C
+	}
+	tick := time.NewTicker(pollEvery)
+	defer tick.Stop()
+	var w Waited
+	ended := map[string]bool{}
+	noted := map[string]bool{}
+	for {
+		unlock, err := store.Lock(dir)
+		if err != nil {
+			return w, err
+		}
+		s, stop, err := reclaim(dir)
+		unlock()
+		stop()
+		if err != nil {
+			return w, err
+		}
+		var fresh []Task
+		w.Pending = nil
+		for _, id := range ids {
+			if ended[id] {
+				continue
+			}
+			t, err := find(dir, id)
+			if err != nil {
+				return w, err
+			}
+			if t.Status == Done || t.Status == Failed {
+				fresh = append(fresh, t)
+				ended[id] = true
+				continue
+			}
+			w.Pending = append(w.Pending, t)
+			if slices.Contains(s.Unknown, id) && !noted[id] {
+				unknown(id)
+				noted[id] = true
+			}
+		}
+		finished := func(t Task) time.Time {
+			if t.Run == nil {
+				return time.Time{}
+			}
+			return t.Run.FinishedAt
+		}
+		slices.SortStableFunc(fresh, func(a, b Task) int { return finished(a).Compare(finished(b)) })
+		w.Ended = append(w.Ended, fresh...)
+		if len(w.Pending) == 0 || anyOne && len(w.Ended) > 0 {
+			return w, nil
+		}
+		select {
+		case <-ctx.Done():
+			return w, ctx.Err()
+		case <-deadline:
+			return w, ErrWaitTimeout
+		case <-tick.C:
+		}
+	}
+}
+
 // look reclaims under the lock, then reads task id, and reports whether it is
 // a running task whose lock file is missing.
 func look(dir, id string) (Task, bool, error) {
@@ -511,9 +616,11 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 		// long as another command holds it, in which a killed worker's agent
 		// is unrecorded and never stopped (P10). As holder of the task's lock
 		// the worker is the only writer of its running record.
-		if _, err := modify(dir, t.ID, token, func(t *Task) { t.Lease.PGID, t.Lease.StartedAt = pgid, started }); err != nil {
+		cur, err := modify(dir, t.ID, token, func(t *Task) { t.Lease.PGID, t.Lease.StartedAt = pgid, started })
+		if err != nil {
 			return fmt.Errorf("the agent's process group could not be recorded: %w", err)
 		}
+		emit(dir, EventStarted, cur)
 		return nil
 	}
 	res, err := shell.Submit(ctx, req)
@@ -529,6 +636,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 	if err != nil {
 		return nil, notes, err
 	}
+	emit(dir, EventEnded, done)
 	return &done, notes, nil
 }
 
@@ -569,6 +677,7 @@ func claim(ctx context.Context, dir, agent, label string) (*Task, string, func()
 				release()
 			} else {
 				claimed = t
+				emit(dir, EventClaimed, *t)
 			}
 		}
 	}
@@ -634,6 +743,7 @@ func reclaim(dir string) (snapshot, func(), error) {
 			release()
 			return s, stop, err
 		}
+		emit(dir, EventEnded, *t)
 		groups, locks = append(groups, pgid), append(locks, release)
 	}
 	if err := failOrphans(dir, s); err != nil {
@@ -666,6 +776,7 @@ func failOrphans(dir string, s snapshot) error {
 			if err := write(dir, *t); err != nil {
 				return err
 			}
+			emit(dir, EventEnded, *t)
 			changed = true
 		}
 	}
