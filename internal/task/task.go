@@ -678,7 +678,6 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 	req.Activity = beat
 	req.Started = func(pgid int) error {
 		started = time.Now().UTC()
-		beat()
 		// Not update: waiting for the directory lock would leave a window, as
 		// long as another command holds it, in which a killed worker's agent
 		// is unrecorded and never stopped (P10). As holder of the task's lock
@@ -688,6 +687,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 			return fmt.Errorf("the agent's process group could not be recorded: %w", err)
 		}
 		emit(dir, EventStarted, cur)
+		beat() // after started_at is recorded, so active_at never shows without it
 		return nil
 	}
 	// A stop request ends the agent as a signal does: cancelling runCtx makes
