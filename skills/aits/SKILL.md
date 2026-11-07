@@ -483,6 +483,39 @@ done
 - **Commit yourself** once the loop ends, after reading the diff: Codex keeps
   `.git` read-only, and the loop's result is the user's to accept.
 
+## Direct several agents: goals, sessions, tasks
+
+When you split one goal among several agents, cut it in three levels:
+
+- **Goal: a `--label`.** Every task for it carries the label, so
+  `task list --label`, `task work --label` and `events.jsonl` show only it.
+- **Sub-goal: a session.** One agent's piece, done and checked on its own,
+  touching files no other running piece touches. Its first task takes
+  `--worktree --cwd REPO`; its follow-ups run in the same `run.dir`, so one
+  session is one worktree is one branch.
+- **Round: a task.** One run that ends with a result; with `--report`, its
+  `run.report.state` (`done`, `blocked`, `failed`) says what to do next.
+
+Continue the session (`--after ID`) when the next round needs what the
+agent already knows: an answer to its `blocked` question, review findings to
+fix, a failing test. Start a new session instead:
+
+- to review: a new task with `--cwd` the reviewed `run.dir`, without the
+  author's context, ideally by the other agent;
+- to switch agents: a Claude session cannot be continued by Codex;
+- after a change of direction or repeated failures: give the new session the
+  conclusions and the current diff, not the failed attempts;
+- when each round's `usage` keeps growing: the agent re-reads a long
+  conversation every round.
+
+A session moves one step at a time (one follow-up that has not failed);
+run pieces in parallel as separate sessions, not as branches of one. Pieces
+that edit the same files conflict when merged, however separate their trees.
+
+A director that runs for days or on a schedule does not keep one growing
+session either: each tick starts fresh and rebuilds its view from
+`task list --label LABEL --json` and `events.jsonl`. The queue is its memory.
+
 ## Version: aits version
 
 `aits version --json` prints `{"version":"…"}`, a release tag or a
