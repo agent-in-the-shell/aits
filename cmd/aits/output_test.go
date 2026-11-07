@@ -111,7 +111,7 @@ func TestOutputChannels(t *testing.T) {
 		{name: "task wait unknown", scenario: "ok", args: []string{"task", "wait", "20000101T000000-000000"}, code: 2,
 			errCode: "invalid_input", errMsg: "no task 20000101T000000-000000"},
 		{name: "task wait without an id", scenario: "ok", args: []string{"task", "wait"}, code: 2,
-			errCode: "invalid_input", errMsg: "expected one task id; got 0"},
+			errCode: "invalid_input", errMsg: "expected one or more task ids"},
 		{name: "task wait internal", scenario: "ok", args: []string{"task", "wait", "20000101T000000-000000"}, code: 1,
 			setup: homeIsFile, errCode: "internal"},
 

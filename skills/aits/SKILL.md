@@ -22,6 +22,7 @@ installed with `aits version`.
 | Find an earlier conversation to continue | `aits session search` |
 | Queue work and collect it later | `aits task create`, then `aits task work` |
 | Wait for a queued task to finish | `aits task wait ID --timeout 9m` |
+| Wait for the first of several tasks | `aits task wait A B C --any --timeout 9m --json` |
 | Queue a follow-up in the same conversation | `aits task create --after ID` |
 | Queue a continuation of any session, e.g. a failed round's | `aits task create --session ID` |
 | See queued and finished work | `aits task list`, `aits task show ID` |
@@ -217,6 +218,15 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   below your shell tool's own limit (Claude Code's Bash tool stops a command
   after 2 minutes by default, 10 at most); on `timeout` (exit 1) the task is
   untouched: call `wait` again. A signal ends it with `stopped`.
+- Running several tasks at once: `aits task wait A B C --any --json` returns
+  as soon as one of them ends (without `--any`, once all have), printing
+  `{"ended":[TASK...], "pending":[ID...]}`. Handle what ended, then wait
+  again on `pending`. On a timeout or a stop it still prints both, with
+  `error` added, and exits 1. Up to 256 ids, each once.
+- To follow the whole queue instead, read `$AITS_HOME/task/events.jsonl`
+  (`tail -F`): one JSON line per transition, `{at, id, event, status,
+  run_status, label}`, with `event` one of `created`, `claimed`, `started`,
+  `ended` or `cancelled`. It is a hint: confirm with `task show`.
 - `aits task cancel ID --json` withdraws a `queued` task that has the wrong
   prompt, `--cwd` or `--write`: it becomes `failed` with run status
   `cancelled`, its queued follow-up fails, and its session is free for the

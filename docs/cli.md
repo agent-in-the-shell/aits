@@ -265,7 +265,7 @@ Commands:
   create  Queue a prompt for an agent; prints the task id.
   list    List tasks, oldest first.
   show    Show one task and its run.
-  wait    Wait until a task is done or failed, then show it.
+  wait    Wait until a task, or all or any of several, is done or failed.
   work    Claim the oldest claimable task, run it, record the result, exit.
   cancel  Withdraw a queued task before a worker claims it.
 
@@ -538,11 +538,12 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 ## aits task wait
 
 ```text
-Usage: aits task wait [flags] ID
+Usage: aits task wait [flags] ID [ID...]
 
-Wait until a task is done or failed, then show it.
+Wait until a task, or all or any of several, is done or failed.
 
 Flags:
+  --any               With several ids, return once any of them is done or failed, not all.
   --json              Print the result, or the error, as JSON on stdout.
   --timeout DURATION  Give up after DURATION, e.g. 90s or 9m, leaving the task as it is (default: wait until it ends). (default 0s)
 
@@ -593,10 +594,32 @@ as list reports it, and waited for.
 Pass a --timeout below the limit of whatever runs wait, such as an agent's
 shell tool, and call wait again while the task is still running.
 
+Several tasks (up to 256 ids, each once): wait returns once all of them are
+done or failed, or with --any once one is, so a caller running several
+workers reacts to the first that ends without polling. With --json it
+prints {"ended":[TASK...], "pending":[ID...]}: ended holds every task that
+had ended by then, in the order they ended, pending the ids still queued or
+running. Without --json, each ended task as wait shows one, then
+"ID  STATUS" for each pending task. On a timeout or a stop it prints the
+same, with "error":{code, message} added, and exits 1. Wait on the pending
+ids again for the rest. One id prints the task alone, as before, with or
+without --any.
+
+Event log: to follow the queue rather than wait on ids, read
+$AITS_HOME/task/events.jsonl (tail -F). Each transition appends one line,
+{at, id, event, status, run_status, label}, where event is created,
+claimed, started (the agent began), ended (done or failed, including a
+worker_died or not_started reclaim) or cancelled; run_status and label are
+there when the task has them. create rotates it at 4 MiB, keeping
+events.jsonl.1 to .3. It is a hint: the task files stay the record, a line
+that could not be written is dropped without failing the command, and
+removing the log breaks nothing.
+
 Exit codes:
-  0  The task is done or failed: read its status.
+  0  The task, or all or any of the tasks, is done or failed: read each
+     status.
   1  The timeout elapsed, wait was stopped, or the queue could not be read.
-  2  Unknown id, usage error or invalid input.
+  2  Unknown or repeated id, usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).
 ```
