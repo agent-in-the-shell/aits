@@ -45,7 +45,7 @@ type parser func(ev *events, line []byte) bool
 // readEvents reads r until EOF, a read error, or the first line longer than
 // maxEventSize. It holds at most one line in memory. A line that is not JSON
 // is recorded but does not stop parsing, so a later session id is still kept.
-func readEvents(r io.Reader, parse parser) events {
+func readEvents(r io.Reader, parse parser, activity func()) events {
 	var ev events
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), maxEventSize+1)
@@ -53,6 +53,9 @@ func readEvents(r io.Reader, parse parser) events {
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 {
 			continue
+		}
+		if activity != nil {
+			activity()
 		}
 		if !parse(&ev, line) {
 			ev.badLine = true

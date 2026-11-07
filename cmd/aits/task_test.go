@@ -37,6 +37,7 @@ type taskRecord struct {
 		Token     string `json:"token"`
 		PGID      int    `json:"pgid"`
 		StartedAt string `json:"started_at"`
+		ActiveAt  string `json:"active_at"`
 	} `json:"lease"`
 	Run *struct {
 		Status      string       `json:"status"`
@@ -70,6 +71,7 @@ type taskListItem struct {
 	After     string `json:"after"`
 	Session   string `json:"session"`
 	Label     string `json:"label"`
+	ActiveAt  string `json:"active_at"`
 	Run       *struct {
 		Status     string `json:"status"`
 		SessionID  string `json:"session_id"`
@@ -453,7 +455,7 @@ func TestTaskWorkStopped(t *testing.T) {
 	if r := decodeOne[taskRecord](t, q.run("show", id, "--json").stdout); r.Lease == nil || r.Lease.PGID != readPID(t, filepath.Join(q.path, "child.pid")) {
 		t.Errorf("running task lease = %+v, want the agent's process group", r.Lease)
 	}
-	if got := recordKeys(t, q.run("show", id, "--json").stdout, "lease"); !slices.Equal(got, []string{"pgid", "started_at", "token"}) {
+	if got := recordKeys(t, q.run("show", id, "--json").stdout, "lease"); !slices.Equal(got, []string{"active_at", "pgid", "started_at", "token"}) {
 		t.Errorf("lease keys = %v", got)
 	}
 	if out := q.run("list", "--json"); out.code != 0 || decodeOne[taskList](t, out.stdout).Tasks[0].Status != "running" {

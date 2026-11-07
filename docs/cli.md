@@ -445,9 +445,10 @@ neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 
 Output: one line per task, "ID  STATUS  RUN_STATUS  AGENT  CREATED_AT"
 (RUN_STATUS empty for a task with no run); with --json
-{"tasks":[{"id","status","agent","cwd","created_at","after","session","label","run"}],"skipped":["ID"]},
+{"tasks":[{"id","status","agent","cwd","created_at","after","session","label","active_at","run"}],"skipped":["ID"]},
 with after only for a follow-up, session only for a --session task, label
-only for a labelled task, and run
+only for a labelled task, active_at only for a running task whose agent has
+printed output (lease.active_at in show), and run
 only once a task has one: its status, session_id, started_at, finished_at
 and message as in show, without the answer (read it with show).
 
@@ -510,7 +511,10 @@ Task fields (--json):
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
-               started_at.
+               started_at and active_at: when the agent last printed
+               output (a stream event), marked at most every 5s. A time
+               that stops moving while the task runs is a stuck agent:
+               aits judges nothing, see task cancel.
   run          Once worked: the result fields of "shell submit --help"
                plus started_at and finished_at. run.status is a shell
                status, not_started (the agent was never started: it could
@@ -566,7 +570,10 @@ Task fields (--json):
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
-               started_at.
+               started_at and active_at: when the agent last printed
+               output (a stream event), marked at most every 5s. A time
+               that stops moving while the task runs is a stuck agent:
+               aits judges nothing, see task cancel.
   run          Once worked: the result fields of "shell submit --help"
                plus started_at and finished_at. run.status is a shell
                status, not_started (the agent was never started: it could
@@ -655,7 +662,10 @@ Task fields (--json):
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
-               started_at.
+               started_at and active_at: when the agent last printed
+               output (a stream event), marked at most every 5s. A time
+               that stops moving while the task runs is a stuck agent:
+               aits judges nothing, see task cancel.
   run          Once worked: the result fields of "shell submit --help"
                plus started_at and finished_at. run.status is a shell
                status, not_started (the agent was never started: it could
@@ -747,7 +757,10 @@ Task fields (--json):
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
-               started_at.
+               started_at and active_at: when the agent last printed
+               output (a stream event), marked at most every 5s. A time
+               that stops moving while the task runs is a stuck agent:
+               aits judges nothing, see task cancel.
   run          Once worked: the result fields of "shell submit --help"
                plus started_at and finished_at. run.status is a shell
                status, not_started (the agent was never started: it could

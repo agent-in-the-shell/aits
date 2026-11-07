@@ -161,6 +161,12 @@ func play(d dialect, scenario, dir, exe string) {
 		d.start()
 		os.Stdout.Write(bytes.Repeat([]byte("x"), 16<<20+1))
 		time.Sleep(10 * time.Minute)
+	case "slow_events": // an event, then another 6s later, then the answer 6s after that (#151)
+		d.start()
+		time.Sleep(6 * time.Second)
+		d.progress()
+		time.Sleep(6 * time.Second)
+		d.answer("fake answer")
 	case "sleep":
 		d.start()
 		spawnGrandchild(dir, exe)

@@ -95,7 +95,10 @@ const taskFields = `Task fields (--json):
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
-               started_at.
+               started_at and active_at: when the agent last printed
+               output (a stream event), marked at most every 5s. A time
+               that stops moving while the task runs is a stuck agent:
+               aits judges nothing, see task cancel.
   run          Once worked: the result fields of "shell submit --help"
                plus started_at and finished_at. run.status is a shell
                status, not_started (the agent was never started: it could
@@ -207,9 +210,10 @@ func taskList() *Command {
 		Summary: "List tasks, oldest first.",
 		Details: taskQueue + `Output: one line per task, "ID  STATUS  RUN_STATUS  AGENT  CREATED_AT"
 (RUN_STATUS empty for a task with no run); with --json
-{"tasks":[{"id","status","agent","cwd","created_at","after","session","label","run"}],"skipped":["ID"]},
+{"tasks":[{"id","status","agent","cwd","created_at","after","session","label","active_at","run"}],"skipped":["ID"]},
 with after only for a follow-up, session only for a --session task, label
-only for a labelled task, and run
+only for a labelled task, active_at only for a running task whose agent has
+printed output (lease.active_at in show), and run
 only once a task has one: its status, session_id, started_at, finished_at
 and message as in show, without the answer (read it with show).
 
@@ -278,6 +282,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					After     string      `json:"after,omitempty"`
 					Session   string      `json:"session,omitempty"`
 					Label     string      `json:"label,omitempty"`
+					ActiveAt  time.Time   `json:"active_at,omitzero"`
 					Run       *run        `json:"run,omitempty"`
 				}
 				items := []item{}
@@ -285,7 +290,10 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					if status != "" && t.Status != status || *label != "" && t.Label != *label {
 						continue
 					}
-					i := item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After, t.Session, t.Label, nil}
+					i := item{t.ID, t.Status, t.Agent, t.Cwd, t.CreatedAt, t.After, t.Session, t.Label, time.Time{}, nil}
+					if t.Lease != nil {
+						i.ActiveAt = t.Lease.ActiveAt
+					}
 					if r := t.Run; r != nil {
 						i.Run = &run{r.Status, r.SessionID, r.StartedAt, r.FinishedAt, r.Message}
 					}
