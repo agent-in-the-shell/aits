@@ -59,6 +59,9 @@ type Request struct {
 	// Kill, once closed, makes a run being stopped or timed out kill the
 	// agent's group at once instead of after the grace period (P10).
 	Kill <-chan struct{}
+	// Activity, if set, is called for each line the agent prints on stdout,
+	// from the goroutine that reads them (#151).
+	Activity func()
 }
 
 // Result describes a run that started.

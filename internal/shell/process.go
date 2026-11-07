@@ -62,7 +62,7 @@ func run(ctx context.Context, ag agent, path string, env []string, req Request) 
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
 	}
-	o := supervise(ctx, cmd, outR, errR, req.Timeout, req.Kill, ag.parse)
+	o := supervise(ctx, cmd, outR, errR, req.Timeout, req.Kill, ag.parse, req.Activity)
 	o.aborted = aborted
 	return o, nil
 }
@@ -75,12 +75,12 @@ func run(ctx context.Context, ag agent, path string, env []string, req Request) 
 // agent exited only ends what it left behind, and does not change its outcome.
 // Once the run is stopped or timed out, a closed kill sends SIGKILL to the
 // group without waiting for the grace period.
-func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, kill <-chan struct{}, parse parser) observation {
+func supervise(ctx context.Context, cmd *exec.Cmd, out, errOut *os.File, timeout time.Duration, kill <-chan struct{}, parse parser, activity func()) observation {
 	deadline := time.After(timeout)
 	g := &group{pgid: cmd.Process.Pid, pipes: []*os.File{out, errOut}}
 
 	evCh := make(chan events, 1)
-	go func() { evCh <- readEvents(out, parse) }()
+	go func() { evCh <- readEvents(out, parse, activity) }()
 	tail := &tailBuffer{max: stderrTailSize}
 	tailCh := make(chan struct{}, 1)
 	go func() { _, _ = io.Copy(tail, errOut); tailCh <- struct{}{} }()

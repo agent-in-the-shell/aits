@@ -210,6 +210,10 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   `answer`) once it has one; ids it could not read are in `"skipped"`.
   `--status STATUS` (`queued`, `running`, `done`, `failed`) keeps only those,
   and `--label LABEL` only that label's.
+  A running task has `active_at`: when its agent last printed output
+  (marked at most every 5s; `lease.active_at` in `show`). One that stops
+  moving while the task runs is stuck: aits judges nothing, so pick your
+  own threshold and `task cancel` it.
   `aits task show ID --json` prints the whole task, with the answer.
 - `aits task wait ID --json` blocks until the task is `done` or `failed`,
   then prints it as `show` does, with exit 0 either way: read `status`. Use

@@ -64,7 +64,7 @@ func TestParseClaude(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := readEvents(strings.NewReader(tt.in), parseClaude); !reflect.DeepEqual(got, tt.want) {
+			if got := readEvents(strings.NewReader(tt.in), parseClaude, nil); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("readEvents = %+v, want %+v", got, tt.want)
 			}
 		})
@@ -77,10 +77,10 @@ func TestReadEventsSizeLimit(t *testing.T) {
 		const head, tail = `{"type":"assistant","pad":"`, `"}`
 		return head + strings.Repeat("x", n-len(head)-len(tail)) + tail
 	}
-	if ev := readEvents(strings.NewReader(line(maxEventSize)+"\n"), parseClaude); ev.tooLarge || ev.badLine {
+	if ev := readEvents(strings.NewReader(line(maxEventSize)+"\n"), parseClaude, nil); ev.tooLarge || ev.badLine {
 		t.Errorf("a %d-byte event was rejected: tooLarge=%v badLine=%v", maxEventSize, ev.tooLarge, ev.badLine)
 	}
-	if ev := readEvents(strings.NewReader(line(maxEventSize+1)+"\n"), parseClaude); !ev.tooLarge {
+	if ev := readEvents(strings.NewReader(line(maxEventSize+1)+"\n"), parseClaude, nil); !ev.tooLarge {
 		t.Errorf("a %d-byte event was accepted", maxEventSize+1)
 	}
 }
@@ -121,14 +121,14 @@ func TestParseClaudeBackground(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ev := readEvents(strings.NewReader(strings.Join(tt.lines, "\n")), parseClaude)
+			ev := readEvents(strings.NewReader(strings.Join(tt.lines, "\n")), parseClaude, nil)
 			if ev.badLine || !reflect.DeepEqual(ev.stopped, tt.stopped) || ev.killed != tt.killed {
 				t.Errorf("stopped %q, killed %v, badLine %v; want %q, %v", ev.stopped, ev.killed, ev.badLine, tt.stopped, tt.killed)
 			}
 		})
 	}
 	long := strings.Replace(agentStarted, "Run slow.sh", strings.Repeat("é", 200), 1)
-	ev := readEvents(strings.NewReader(long+"\n"+stopped("a1")+"\n"+result), parseClaude)
+	ev := readEvents(strings.NewReader(long+"\n"+stopped("a1")+"\n"+result), parseClaude, nil)
 	if len(ev.stopped) != 1 || len(ev.stopped[0]) > stoppedMax || !strings.HasSuffix(ev.stopped[0], "…") {
 		t.Errorf("a long description was kept as %q", ev.stopped)
 	}

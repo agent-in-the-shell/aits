@@ -76,6 +76,9 @@ type Lease struct {
 	Token     string    `json:"token"`
 	PGID      int       `json:"pgid"`                // the agent's process group; 0 until it starts
 	StartedAt time.Time `json:"started_at,omitzero"` // when the agent started, recorded with PGID
+	// ActiveAt is when the agent last printed output, read from the task's
+	// beat file (beatPath) as the task is read; never stored (#151).
+	ActiveAt time.Time `json:"active_at,omitzero"`
 }
 
 // Run is the outcome of working a task.
@@ -132,6 +135,14 @@ func lockPath(dir, id string) string { return filepath.Join(dir, id+".lock") }
 // task (#149): a file of its own, since the worker rewrites its record
 // without the directory lock. The worker removes it once it records the run.
 func stopPath(dir, id string) string { return filepath.Join(dir, id+".stop") }
+
+// beatPath is the file whose modification time says when a running task's
+// agent last printed output (#151). Its own file, as stopPath, so the record
+// is not rewritten for it.
+func beatPath(dir, id string) string { return filepath.Join(dir, id+".beat") }
+
+// beatEvery bounds how often a worker marks its task active.
+const beatEvery = 5 * time.Second
 
 // stopMessage is the run message of a task Cancel stopped.
 const stopMessage = "stopped by task cancel"
@@ -647,8 +658,17 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 	req := t.request(environ)
 	req.Session = session
 	req.Kill = kill
+	var lastBeat time.Time
+	beat := func() {
+		if now := time.Now(); now.Sub(lastBeat) >= beatEvery {
+			lastBeat = now
+			_ = store.WriteFile(beatPath(dir, t.ID), nil) // a hint: a failed write leaves the last one
+		}
+	}
+	req.Activity = beat
 	req.Started = func(pgid int) error {
 		started = time.Now().UTC()
+		beat()
 		// Not update: waiting for the directory lock would leave a window, as
 		// long as another command holds it, in which a killed worker's agent
 		// is unrecorded and never stopped (P10). As holder of the task's lock
@@ -702,6 +722,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 		return nil, notes, err
 	}
 	_ = store.Remove(stopPath(dir, t.ID)) // most runs have none
+	_ = store.Remove(beatPath(dir, t.ID))
 	emit(dir, EventEnded, done)
 	return &done, notes, nil
 }
@@ -810,6 +831,7 @@ func reclaim(dir string) (snapshot, func(), error) {
 			return s, stop, err
 		}
 		emit(dir, EventEnded, *t)
+		_ = store.Remove(beatPath(dir, t.ID))
 		s.reclaimed = append(s.reclaimed, t.ID)
 		groups, locks = append(groups, pgid), append(locks, release)
 	}
@@ -1036,10 +1058,21 @@ func readFile(dir, id string) (Task, error) {
 	case t.Status == Running && t.Lease == nil:
 		return Task{}, errors.New("running without a lease")
 	}
+	if t.Lease != nil {
+		t.Lease.ActiveAt = time.Time{}
+		if fi, err := os.Lstat(beatPath(dir, id)); err == nil {
+			t.Lease.ActiveAt = fi.ModTime().UTC()
+		}
+	}
 	return t, nil
 }
 
 func write(dir string, t Task) error {
+	if t.Lease != nil && !t.Lease.ActiveAt.IsZero() { // read from the beat file, not stored
+		l := *t.Lease
+		l.ActiveAt = time.Time{}
+		t.Lease = &l
+	}
 	b, err := json.Marshal(t)
 	if err != nil {
 		return err
