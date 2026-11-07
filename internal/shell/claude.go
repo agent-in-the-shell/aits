@@ -40,6 +40,15 @@ type claudeResult struct {
 			System int `json:"system"`
 		} `json:"killed"`
 	} `json:"subagent_stats"`
+	// TotalCostUSD and ModelUsage are for the whole process so far,
+	// subagents included; usage would be this turn's alone (#153).
+	TotalCostUSD *float64 `json:"total_cost_usd"`
+	ModelUsage   map[string]struct {
+		InputTokens              int64 `json:"inputTokens"`
+		OutputTokens             int64 `json:"outputTokens"`
+		CacheReadInputTokens     int64 `json:"cacheReadInputTokens"`
+		CacheCreationInputTokens int64 `json:"cacheCreationInputTokens"`
+	} `json:"modelUsage"`
 }
 
 // maxBackground bounds the background tasks aits remembers in one run, and
@@ -100,6 +109,15 @@ func parseClaude(ev *events, line []byte) bool {
 	}
 	ev.denied, ev.calls = append(ev.denied, denied...), append(ev.calls, calls...)
 	ev.killed = ev.killed || res.SubagentStats.Killed.System > 0
+	if len(res.ModelUsage) > 0 { // cumulative: the last result's replaces the one before
+		u := &Usage{CostUSD: res.TotalCostUSD}
+		for _, m := range res.ModelUsage {
+			u.InputTokens += m.InputTokens + m.CacheReadInputTokens + m.CacheCreationInputTokens
+			u.CachedInputTokens += m.CacheReadInputTokens
+			u.OutputTokens += m.OutputTokens
+		}
+		ev.usage = u
+	}
 	ev.done = true
 	if res.IsError {
 		ev.failed, ev.failure = true, res.Result
