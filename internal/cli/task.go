@@ -94,6 +94,9 @@ const taskFields = `Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  report       Set by create --report, or taken from the parent of a
+               follow-up: the run asks the agent for an AITS-REPORT line
+               (run.report, run.report_error; see shell submit --help).
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
@@ -182,6 +185,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 			write := fs.Bool("write", false, writeUsage)
 			allow := repeated(fs, "allow-tool", allowToolUsage)
 			label := nonEmpty(fs, "label", "Label the task `LABEL`, e.g. the runbook it runs, for list --label and work --label.", "a label")
+			report := fs.Bool("report", false, reportUsage+" A follow-up has it when its parent has.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
@@ -190,7 +194,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				if *after != "" && *cwd == "" {
 					dir = "" // the parent's
 				}
-				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Session: *session, Model: *model, Label: *label, Timeout: *timeout, Env: *pass, Write: *write, AllowTools: *allow})
+				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Session: *session, Model: *model, Label: *label, Timeout: *timeout, Env: *pass, Write: *write, Report: *report, AllowTools: *allow})
 				if err != nil {
 					return 0, taskError(err)
 				}

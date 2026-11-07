@@ -93,6 +93,14 @@ Claude Code refuses a loop or a command substitution (`for`, `$(...)`)
 even when every command in it is allowed, while a pipe of allowed commands
 runs; ask the agent to put such a step in a script file.
 
+`--report` (submit and `task create`; a follow-up inherits it) appends a
+fixed instruction to the prompt (printed in `shell submit --help`) and
+reads the answer's last line `AITS-REPORT {...}` into `report`:
+`{state, summary, question}`, with `state` `done`, `blocked` (it needs a
+decision or information: answer `question` with `--session`) or `failed`.
+Without a usable line, `report_error` says why. Branch on `report.state`
+instead of parsing prose, but still check the work yourself.
+
 `usage` says what a run spent, on any status the agent reported it:
 `input_tokens` (cached included), `cached_input_tokens`, `output_tokens`
 and, Claude Code only, `cost_usd`. Claude Code's figures cover the whole

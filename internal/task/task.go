@@ -62,6 +62,9 @@ type Task struct {
 	// list and work (#131); a follow-up's is its parent's unless given.
 	Label string `json:"label,omitempty"`
 	Write bool   `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
+	// Report asks the agent for a typed final report (#157); a follow-up's
+	// is its parent's unless given.
+	Report bool `json:"report,omitempty"`
 	// AllowTools is set by create --allow-tool only, for this task alone
 	// (P9, #121).
 	AllowTools []string  `json:"allow_tools,omitempty"`
@@ -98,6 +101,7 @@ type Spec struct {
 	Timeout                   time.Duration
 	Env                       []string
 	Write                     bool     // never taken from After (#104)
+	Report                    bool     // with After, also on when that task has it (#157)
 	AllowTools                []string // never taken from After (#121)
 }
 
@@ -153,7 +157,7 @@ func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Session: s.Session, Model: s.Model, Label: s.Label, Write: s.Write, AllowTools: s.AllowTools, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Session: s.Session, Model: s.Model, Label: s.Label, Write: s.Write, Report: s.Report, AllowTools: s.AllowTools, CreatedAt: now,
 	}
 	if s.Session != "" && s.After != "" {
 		return Task{}, invalid("a task continues either a session or a task, not both: a follow-up continues its parent's session")
@@ -257,6 +261,7 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 	if t.Label == "" {
 		t.Label = p.Label
 	}
+	t.Report = t.Report || p.Report
 	if err := t.validate(timeout); err != nil {
 		return err
 	}
@@ -1007,7 +1012,7 @@ func collect(dir string, names []string) snapshot {
 func (t Task) request(environ []string) shell.Request {
 	return shell.Request{
 		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
-		Environ: environ, Pass: t.Env, Session: t.Session, Model: t.Model, Write: t.Write, AllowTools: t.AllowTools,
+		Environ: environ, Pass: t.Env, Session: t.Session, Model: t.Model, Write: t.Write, Report: t.Report, AllowTools: t.AllowTools,
 	}
 }
 
