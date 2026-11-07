@@ -62,6 +62,11 @@ type Task struct {
 	// list and work (#131); a follow-up's is its parent's unless given.
 	Label string `json:"label,omitempty"`
 	Write bool   `json:"write,omitempty"` // set by create --write only, for this task alone (P9, #104)
+	// RunDir and Worktree give each run a directory of its own (#137): the
+	// run's dir is RunDir/ID, a new directory or with Worktree a git worktree
+	// of Cwd. A follow-up runs in its parent's run.dir instead.
+	RunDir   string `json:"run_dir,omitempty"`
+	Worktree bool   `json:"worktree,omitempty"`
 	// Report asks the agent for a typed final report (#157); a follow-up's
 	// is its parent's unless given.
 	Report bool `json:"report,omitempty"`
@@ -100,8 +105,10 @@ type Spec struct {
 	Label                     string // with After, empty is that task's label (#131)
 	Timeout                   time.Duration
 	Env                       []string
-	Write                     bool     // never taken from After (#104)
-	Report                    bool     // with After, also on when that task has it (#157)
+	Write                     bool   // never taken from After (#104)
+	Report                    bool   // with After, also on when that task has it (#157)
+	RunDir                    string // never with After (#137)
+	Worktree                  bool
 	AllowTools                []string // never taken from After (#121)
 }
 
@@ -157,7 +164,10 @@ func Create(environ []string, s Spec) (Task, error) {
 	now := time.Now().UTC()
 	t := Task{
 		Status: Queued, Agent: s.Agent, Cwd: s.Cwd, Prompt: s.Prompt,
-		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Session: s.Session, Model: s.Model, Label: s.Label, Write: s.Write, Report: s.Report, AllowTools: s.AllowTools, CreatedAt: now,
+		TimeoutMS: s.Timeout.Milliseconds(), Env: s.Env, After: s.After, Session: s.Session, Model: s.Model, Label: s.Label, Write: s.Write, Report: s.Report, RunDir: s.RunDir, Worktree: s.Worktree, AllowTools: s.AllowTools, CreatedAt: now,
+	}
+	if s.After != "" && (s.RunDir != "" || s.Worktree) {
+		return Task{}, invalid("a follow-up runs in its parent's directory: it takes no --run-dir or --worktree")
 	}
 	if s.Session != "" && s.After != "" {
 		return Task{}, invalid("a task continues either a session or a task, not both: a follow-up continues its parent's session")
@@ -248,13 +258,17 @@ func (t *Task) follow(dir string, timeout time.Duration) error {
 	if why := parentFault(&p, false); why != "" {
 		return invalid("task %s %s; only a done task with a session can be followed up", p.ID, why)
 	}
+	cwd := p.Cwd
+	if p.Run != nil && p.Run.Dir != "" {
+		cwd = p.Run.Dir // the session belongs to the directory it ran in (#137)
+	}
 	switch {
 	case t.Agent != "" && t.Agent != p.Agent:
 		return invalid("agent %s is not task %s's agent %s", t.Agent, p.ID, p.Agent)
-	case t.Cwd != "" && t.Cwd != p.Cwd:
-		return invalid("working directory %q is not task %s's %q", t.Cwd, p.ID, p.Cwd)
+	case t.Cwd != "" && t.Cwd != cwd:
+		return invalid("working directory %q is not task %s's %q", t.Cwd, p.ID, cwd)
 	}
-	t.Agent, t.Cwd = p.Agent, p.Cwd
+	t.Agent, t.Cwd = p.Agent, cwd
 	if t.Model == "" {
 		t.Model = p.Model
 	}
@@ -1013,6 +1027,7 @@ func (t Task) request(environ []string) shell.Request {
 	return shell.Request{
 		Agent: t.Agent, Prompt: t.Prompt, Dir: t.Cwd, Timeout: time.Duration(t.TimeoutMS) * time.Millisecond,
 		Environ: environ, Pass: t.Env, Session: t.Session, Model: t.Model, Write: t.Write, Report: t.Report, AllowTools: t.AllowTools,
+		RunDir: t.RunDir, RunID: t.ID, Worktree: t.Worktree,
 	}
 }
 

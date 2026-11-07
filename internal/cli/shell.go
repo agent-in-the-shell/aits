@@ -23,7 +23,22 @@ func shellGroup() *Command {
 // submitDetails documents the output of "aits shell submit" (P5).
 // promptDetails documents the prompt argument of shell submit and task create.
 const promptDetails = `Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
-invalid_input.
+invalid_input. It may use {{aits.date}} (the run's local date,
+YYYY-MM-DD), {{aits.task_id}} (the task id; for submit, the run id) and
+{{aits.run_dir}} (the directory the agent runs in), filled when the run
+starts, so a queued task gets the day it runs. Another {{aits.NAME}} is
+invalid_input; any other text, {{ included, is left alone.
+
+A directory per run (--run-dir BASE): when the run starts, aits creates
+BASE/ID, mode 700, and the agent works there instead of --cwd (the two
+exclude each other); BASE is created if missing. ID is the task id, or for
+submit a new id of the same form. The result's dir (a task's run.dir) says
+where it ran. --worktree makes that directory a detached git worktree of
+--cwd's repository at its HEAD, under --run-dir BASE or else
+$AITS_HOME/worktree: one tree per agent, so parallel writers never share
+one. git must be on PATH; if it fails, nothing runs (a task ends
+not_started with git's message). aits never removes a worktree: review
+it, merge it, then git worktree remove it.
 
 `
 
@@ -65,6 +80,7 @@ Result fields:
                question) or failed. summary and question are cut at 2000
                bytes. The status and the answer are as without it.
   report_error With --report, when there is no usable report line: why.
+  dir          With --run-dir or --worktree: the directory the agent ran in.
   usage        What the run spent, when the agent reported it, on any
                status: input_tokens (every prompt token, cached ones
                included), cached_input_tokens, output_tokens and, Claude
@@ -137,12 +153,18 @@ func submitCommand() *Command {
 			write := fs.Bool("write", false, writeUsage)
 			allow := repeated(fs, "allow-tool", allowToolUsage)
 			report := fs.Bool("report", false, reportUsage)
+			runDir := nonEmpty(fs, "run-dir", runDirUsage, "a directory")
+			worktree := fs.Bool("worktree", false, worktreeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
 					return 0, err
 				}
-				req := shell.Request{Report: *report,
+				dir, base, err := workspaceArgs(env, *cwd, dir, *runDir, *worktree)
+				if err != nil {
+					return 0, err
+				}
+				req := shell.Request{Report: *report, RunDir: base, Worktree: *worktree,
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
 					Environ: env.Environ, Pass: *pass, Session: *session, Model: *model, Write: *write,
 					AllowTools: *allow, Kill: env.Kill,
@@ -255,6 +277,29 @@ Claude Code leaves .claude/.cc-writes in the working directory.
 
 // writeUsage is the help of --write, for shell submit and task create.
 const writeUsage = "Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox."
+
+// runDirUsage and worktreeUsage are the --run-dir and --worktree flags of
+// submit and task create (#137).
+const (
+	runDirUsage   = "Run the agent in a new directory BASE/ID of its own (ID: the task id), instead of --cwd; see --help."
+	worktreeUsage = "Run the agent in a new detached git worktree of --cwd's repository, under --run-dir or $AITS_HOME/worktree."
+)
+
+// workspaceArgs checks --cwd, --run-dir and --worktree together and returns
+// the request's Dir and RunDir (#137).
+func workspaceArgs(env *Env, cwd, dir, runDir string, worktree bool) (string, string, error) {
+	if runDir != "" && cwd != "" && !worktree {
+		return "", "", usageError("invalid_input", "--run-dir replaces --cwd; give one of them, or add --worktree to put a worktree of --cwd under --run-dir")
+	}
+	base, err := shell.RunBase(env.Environ, runDir, worktree)
+	if err != nil {
+		return "", "", taskError(err)
+	}
+	if base != "" && !worktree {
+		dir = base
+	}
+	return dir, base, nil
+}
 
 // reportUsage is the --report flag of submit and task create (#157).
 const reportUsage = "Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question."

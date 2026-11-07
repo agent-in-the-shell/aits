@@ -94,6 +94,10 @@ const taskFields = `Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  run_dir, worktree
+               Set by create --run-dir and --worktree: each run works in
+               a directory of its own, run.dir. A follow-up runs in its
+               parent's run.dir and takes neither.
   report       Set by create --report, or taken from the parent of a
                follow-up: the run asks the agent for an AITS-REPORT line
                (run.report, run.report_error; see shell submit --help).
@@ -186,6 +190,8 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 			allow := repeated(fs, "allow-tool", allowToolUsage)
 			label := nonEmpty(fs, "label", "Label the task `LABEL`, e.g. the runbook it runs, for list --label and work --label.", "a label")
 			report := fs.Bool("report", false, reportUsage+" A follow-up has it when its parent has.")
+			runDir := nonEmpty(fs, "run-dir", runDirUsage, "a directory")
+			worktree := fs.Bool("worktree", false, worktreeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
@@ -194,7 +200,16 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				if *after != "" && *cwd == "" {
 					dir = "" // the parent's
 				}
-				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Session: *session, Model: *model, Label: *label, Timeout: *timeout, Env: *pass, Write: *write, Report: *report, AllowTools: *allow})
+				base := ""
+				if *after != "" && *runDir != "" {
+					return 0, usageError("invalid_input", "a follow-up runs in its parent's directory: it takes no --run-dir or --worktree")
+				}
+				if *after == "" {
+					if dir, base, err = workspaceArgs(env, *cwd, dir, *runDir, *worktree); err != nil {
+						return 0, err
+					}
+				}
+				t, err := task.Create(env.Environ, task.Spec{Agent: *agent, Cwd: dir, Prompt: prompt, After: *after, Session: *session, Model: *model, Label: *label, Timeout: *timeout, Env: *pass, Write: *write, Report: *report, RunDir: base, Worktree: *worktree, AllowTools: *allow})
 				if err != nil {
 					return 0, taskError(err)
 				}

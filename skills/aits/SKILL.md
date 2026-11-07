@@ -93,6 +93,15 @@ Claude Code refuses a loop or a command substitution (`for`, `$(...)`)
 even when every command in it is allowed, while a pipe of allowed commands
 runs; ask the agent to put such a step in a script file.
 
+`--run-dir BASE` (submit and `task create`) gives each run a new directory
+`BASE/ID` (mode 700) instead of `--cwd`; `--worktree` makes it a detached
+git worktree of `--cwd`'s repository at `HEAD`, under `--run-dir` or
+`$AITS_HOME/worktree`, so parallel writers never share a tree. The result's
+`dir` (a task's `run.dir`) says where it ran; a follow-up runs there too.
+aits never removes a worktree: review, merge, then `git worktree remove`.
+The prompt may use `{{aits.date}}`, `{{aits.task_id}}` and
+`{{aits.run_dir}}`, filled when the run starts.
+
 `--report` (submit and `task create`; a follow-up inherits it) appends a
 fixed instruction to the prompt (printed in `shell submit --help`) and
 reads the answer's last line `AITS-REPORT {...}` into `report`:
@@ -464,8 +473,10 @@ done
   that says what happened. A `worker_died` round's agent may still be
   running: continue its session only once you have checked that no agent of
   it runs, or queue a new task instead.
-- **One tree per loop.** Parallel loops each get their own `git worktree`
-  and `--cwd`; never two writing agents in one tree.
+- **One tree per loop.** Parallel loops each get their own `git worktree`:
+  `task create --worktree --cwd REPO --write …` makes one per task (its
+  `run.dir`), and its follow-ups stay in it. Never two writing agents in
+  one tree.
 - **Blocking is fine in a script.** A script with no time limit can use
   `aits shell submit --session` for each round and skip the queue. An agent
   whose shell tool times out uses `task create` and `task wait` as above.
