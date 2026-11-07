@@ -206,7 +206,11 @@ aits task wait "$id" --timeout 9m --json   # blocks until it is done or failed
   queued or running task continues `ID`, create refuses it
   (`invalid_input`, naming that task): one session, one writer.
 - `aits task work` claims one task, runs it, records the result and exits.
-  Run it in a loop, or in several terminals for parallel workers;
+  `--jobs N` runs up to N at once instead, claiming more as they end until
+  nothing is claimable, printing one task per line as each ends (exit 1 if
+  any did not end `done`). `--max-running N` claims only while fewer than N
+  tasks (of `--label`, if given) run across every worker. Without `--jobs`,
+  run it in a loop, or in several terminals for parallel workers;
   `--agent AGENT` claims only that agent's tasks, `--label LABEL` only
   that label's. With nothing claimable it
   prints `{"status":"empty"}` and exits 0: stop looping then. Its exit code
@@ -308,8 +312,8 @@ is running:
   claude.ai connectors: to keep the keychain login and its connectors, run
   the commands as jobs from `aits job apply FILE --sched` (below).
 - An idle run prints `{"status":"empty"}` and exits 0. Overlapping cron runs
-  claim different tasks, so slow tasks can pile up workers; use launchd, or
-  `flock -n` on Linux, to keep one.
+  claim different tasks, so slow tasks can pile up workers: cap them with
+  `--max-running N`, or use launchd, which never overlaps a job.
 - Check what failed, and why, in one call:
   `aits task list --status failed --json | jq -r '.tasks[] | "\(.id) \(.run.status) \(.run.finished_at)"'`.
   `not_started` lines point at the job's `PATH`; continue `timeout` ones with

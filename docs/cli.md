@@ -290,8 +290,9 @@ every 5 minutes:
 work exits 0 with {"status":"empty"} when nothing is claimable, so a run
 with nothing to do is harmless. Runs that overlap claim different tasks,
 never the same one, so a slow task can leave several workers running at
-once; to keep one, start work from a scheduler that does not overlap a job
-(launchd does not), or wrap it, e.g. flock -n on Linux.
+once; cap them with work --max-running N, which counts running tasks
+across every worker, or start work from a scheduler that does not overlap
+a job (launchd does not).
 
 On macOS use a launchd agent in ~/Library/LaunchAgents: ProgramArguments
 for the command, StartInterval 300 for work or StartCalendarInterval for
@@ -645,9 +646,11 @@ Usage: aits task work [flags]
 Claim the oldest claimable task, run it, record the result, exit.
 
 Flags:
-  --agent AGENT  Only claim tasks for AGENT.
-  --json         Print the result, or the error, as JSON on stdout.
-  --label LABEL  Only claim tasks labelled LABEL (create --label).
+  --agent AGENT    Only claim tasks for AGENT.
+  --jobs N         Run up to N tasks at once, claiming more as they end, until nothing is claimable.
+  --json           Print the result, or the error, as JSON on stdout.
+  --label LABEL    Only claim tasks labelled LABEL (create --label).
+  --max-running N  Claim only while fewer than N tasks (of --label, if given) are running in the queue.
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
 neither AITS_HOME nor HOME set, every task command fails (invalid_input).
@@ -702,9 +705,23 @@ unrecorded: the run is stopped, with the reason as its message, or work
 fails (internal) if the run cannot be recorded either; the next list or work
 then reclaims the task.
 
+Parallel work (--jobs N): up to N tasks run at once in this process, each
+claimed, run and recorded as above; as one ends the next is claimed, until
+nothing is claimable, and work exits once its runs have ended. With --json
+it prints one task per line as each ends ({"status":"empty"} if it claimed
+none). A signal stops every running agent (status stopped) and claims
+nothing more. Without --jobs, work runs one task and exits.
+
+--max-running N caps agents across every worker of the queue: a claim is
+made only while fewer than N tasks are running (of --label, if given),
+counted under the queue's lock; at the cap, work claims nothing, as if the
+queue were empty. Use it when overlapping cron runs start work:
+
+  */5 * * * *  aits task work --jobs 2 --max-running 4 --json >> ~/aits-work.log
+
 Exit codes:
-  0  The task is done, or nothing was claimable.
-  1  The task failed, or work could not finish.
+  0  The task, or with --jobs every task, is done, or nothing was claimable.
+  1  A task failed, or work could not finish.
   2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).

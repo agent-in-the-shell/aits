@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agent-in-the-shell/aits/internal/shell"
@@ -35,8 +36,9 @@ every 5 minutes:
 work exits 0 with {"status":"empty"} when nothing is claimable, so a run
 with nothing to do is harmless. Runs that overlap claim different tasks,
 never the same one, so a slow task can leave several workers running at
-once; to keep one, start work from a scheduler that does not overlap a job
-(launchd does not), or wrap it, e.g. flock -n on Linux.
+once; cap them with work --max-running N, which counts running tasks
+across every worker, or start work from a scheduler that does not overlap
+a job (launchd does not).
 
 On macOS use a launchd agent in ~/Library/LaunchAgents: ProgramArguments
 for the command, StartInterval 300 for work or StartCalendarInterval for
@@ -496,9 +498,23 @@ unrecorded: the run is stopped, with the reason as its message, or work
 fails (internal) if the run cannot be recorded either; the next list or work
 then reclaims the task.
 
+Parallel work (--jobs N): up to N tasks run at once in this process, each
+claimed, run and recorded as above; as one ends the next is claimed, until
+nothing is claimable, and work exits once its runs have ended. With --json
+it prints one task per line as each ends ({"status":"empty"} if it claimed
+none). A signal stops every running agent (status stopped) and claims
+nothing more. Without --jobs, work runs one task and exits.
+
+--max-running N caps agents across every worker of the queue: a claim is
+made only while fewer than N tasks are running (of --label, if given),
+counted under the queue's lock; at the cap, work claims nothing, as if the
+queue were empty. Use it when overlapping cron runs start work:
+
+  */5 * * * *  aits task work --jobs 2 --max-running 4 --json >> ~/aits-work.log
+
 Exit codes:
-  0  The task is done, or nothing was claimable.
-  1  The task failed, or work could not finish.
+  0  The task, or with --jobs every task, is done, or nothing was claimable.
+  1  A task failed, or work could not finish.
   2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
@@ -506,11 +522,19 @@ Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := nonEmpty(fs, "agent", "Only claim tasks for `AGENT`.", "an agent (one of: "+strings.Join(shell.Agents(), ", ")+")")
 			label := labelFlag(fs, "Only claim tasks labelled `LABEL` (create --label).")
+			jobs := fs.Int("jobs", 0, "Run up to `N` tasks at once, claiming more as they end, until nothing is claimable.")
+			maxRunning := fs.Int("max-running", 0, "Claim only while fewer than `N` tasks (of --label, if given) are running in the queue.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
 					return 0, usageError("invalid_input", "work takes no arguments")
 				}
-				t, notes, err := task.Work(ctx, env.Kill, env.Environ, *agent, *label)
+				if *jobs < 0 || *maxRunning < 0 {
+					return 0, usageError("invalid_input", "--jobs and --max-running must not be negative")
+				}
+				if *jobs > 0 {
+					return workJobs(ctx, env, *agent, *label, *jobs, *maxRunning)
+				}
+				t, notes, err := task.Work(ctx, env.Kill, env.Environ, *agent, *label, *maxRunning)
 				reportNotes(env, notes)
 				if err != nil {
 					return 0, taskError(err)
@@ -531,6 +555,73 @@ Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 			}
 		},
 	}
+}
+
+// workJobs is work --jobs N (#155): N workers in one process, each claiming
+// and running tasks one at a time until nothing is claimable. Each task is
+// printed as it ends; the exit code is 1 if any did not end done.
+func workJobs(ctx context.Context, env *Env, agent, label string, jobs, maxRunning int) (int, error) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	worked, failed := 0, false
+	var firstErr error
+	noted := map[string]bool{}
+	for range jobs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ctx.Err() == nil {
+				t, notes, err := task.Work(ctx, env.Kill, env.Environ, agent, label, maxRunning)
+				mu.Lock()
+				var fresh task.Notes
+				for _, id := range notes.Skipped {
+					if !noted["s"+id] {
+						noted["s"+id], fresh.Skipped = true, append(fresh.Skipped, id)
+					}
+				}
+				for _, id := range notes.Unknown {
+					if !noted["u"+id] {
+						noted["u"+id], fresh.Unknown = true, append(fresh.Unknown, id)
+					}
+				}
+				reportNotes(env, fresh)
+				stop := t == nil || err != nil
+				if err != nil {
+					failed = true
+					if firstErr == nil && !errors.Is(err, shell.ErrStopped) {
+						firstErr = err
+					}
+				}
+				if t != nil {
+					worked++
+					if werr := writeTask(env, *t); werr != nil && firstErr == nil {
+						firstErr = werr
+					}
+					if t.Status != task.Done {
+						failed = true
+					}
+				}
+				mu.Unlock()
+				if stop {
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return 0, taskError(firstErr)
+	}
+	if worked == 0 && !failed {
+		if env.JSON {
+			writeJSON(env.Stdout, map[string]string{"status": "empty"})
+		}
+		return exitOK, nil
+	}
+	if failed {
+		return exitFailure, nil
+	}
+	return exitOK, nil
 }
 
 // writeTask prints a task: the record with --json; otherwise a summary line,

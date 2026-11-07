@@ -634,21 +634,26 @@ func find(dir, id string) (Task, error) {
 // Work reclaims tasks of dead workers, claims the oldest claimable task (of
 // agent, if not empty), runs it through shell and records the run. It also
 // returns the notes of the reclaim. With label, only tasks with that label
-// are claimed (#131). The task is nil when nothing is claimable;
+// are claimed (#131). With maxRunning above 0, nothing is claimed while that
+// many tasks (of label, if set) are running (#155). The task is nil when
+// nothing is claimable;
 // the error is shell.ErrStopped when ctx is done before the claim, and
 // errReclaimed, wrapped with the task id, when the task was reclaimed.
-func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, label string) (*Task, Notes, error) {
+func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, label string, maxRunning int) (*Task, Notes, error) {
 	if agent != "" && !slices.Contains(shell.Agents(), agent) {
 		return nil, Notes{}, invalid("unknown agent %q (one of: %s)", agent, strings.Join(shell.Agents(), ", "))
 	}
 	if label != "" && !ValidLabel(label) {
 		return nil, Notes{}, invalid("label %q %s", label, labelRule)
 	}
+	if maxRunning < 0 {
+		return nil, Notes{}, invalid("max running must not be negative, got %d", maxRunning)
+	}
 	dir, err := taskDir(environ)
 	if err != nil {
 		return nil, Notes{}, err
 	}
-	t, session, release, notes, err := claim(ctx, dir, agent, label)
+	t, session, release, notes, err := claim(ctx, dir, agent, label, maxRunning)
 	if t == nil || err != nil {
 		return nil, notes, err
 	}
@@ -733,7 +738,7 @@ func Work(ctx context.Context, kill <-chan struct{}, environ []string, agent, la
 // its worker lives, and returns the session the task continues ("" for a new
 // one), the function that releases the lock, and the notes of the reclaim. A
 // signal that arrived while it waited for the lock claims nothing.
-func claim(ctx context.Context, dir, agent, label string) (*Task, string, func(), Notes, error) {
+func claim(ctx context.Context, dir, agent, label string, maxRunning int) (*Task, string, func(), Notes, error) {
 	unlock, err := store.Lock(dir)
 	if err != nil {
 		return nil, "", nil, Notes{}, err
@@ -750,6 +755,17 @@ func claim(ctx context.Context, dir, agent, label string) (*Task, string, func()
 	i := slices.IndexFunc(s.tasks, func(t Task) bool {
 		return t.Status == Queued && (agent == "" || t.Agent == agent) && (label == "" || t.Label == label) && claimable(t, byID)
 	})
+	if maxRunning > 0 { // #155: running tasks of the label (or all) count against the cap
+		running := 0
+		for _, t := range s.tasks {
+			if t.Status == Running && (label == "" || t.Label == label) {
+				running++
+			}
+		}
+		if running >= maxRunning {
+			i = -1
+		}
+	}
 	if err == nil && i >= 0 {
 		t := &s.tasks[i]
 		session = t.Session
