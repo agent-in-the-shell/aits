@@ -59,6 +59,12 @@ Result fields:
   stopped_tasks
                Only for incomplete, Claude Code only: the description of
                each background agent or workflow that was stopped.
+  report       With --report, on ok or incomplete: the agent's last line
+               "AITS-REPORT {...}" read as {state, summary, question}, where
+               state is done, blocked (it needs a decision or information:
+               question) or failed. summary and question are cut at 2000
+               bytes. The status and the answer are as without it.
+  report_error With --report, when there is no usable report line: why.
   usage        What the run spent, when the agent reported it, on any
                status: input_tokens (every prompt token, cached ones
                included), cached_input_tokens, output_tokens and, Claude
@@ -76,6 +82,15 @@ Statuses:
                     exited, even after a timeout; it was stopped.
   incomplete        The agent answered, but background work it was waiting
                     for was stopped before it reported back.
+
+Report (--report): aits appends this to the prompt, after a blank line,
+and reads the answer's last non-empty line:
+
+  When you finish, end your reply with one last line of exactly this form,
+  with nothing after it:
+  AITS-REPORT {"state":"done","summary":"one sentence on what you did"}
+  Use "state":"blocked" with a "question" field when you need a decision or
+  information to go on, and "state":"failed" when you could not do the task.
 
 Background work: Claude Code runs agents and workflows in the background
 and gives the agent another turn when each one reports back; the answer is
@@ -121,12 +136,13 @@ func submitCommand() *Command {
 			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
 			allow := repeated(fs, "allow-tool", allowToolUsage)
+			report := fs.Bool("report", false, reportUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
 				if err != nil {
 					return 0, err
 				}
-				req := shell.Request{
+				req := shell.Request{Report: *report,
 					Agent: *agent, Prompt: prompt, Dir: dir, Timeout: *timeout,
 					Environ: env.Environ, Pass: *pass, Session: *session, Model: *model, Write: *write,
 					AllowTools: *allow, Kill: env.Kill,
@@ -239,6 +255,9 @@ Claude Code leaves .claude/.cc-writes in the working directory.
 
 // writeUsage is the help of --write, for shell submit and task create.
 const writeUsage = "Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox."
+
+// reportUsage is the --report flag of submit and task create (#157).
+const reportUsage = "Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question."
 
 // writeWarning is printed on stderr, in both output modes, by an invocation
 // that gives --write (P9).

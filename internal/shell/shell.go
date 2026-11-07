@@ -59,6 +59,9 @@ type Request struct {
 	// Kill, once closed, makes a run being stopped or timed out kill the
 	// agent's group at once instead of after the grace period (P10).
 	Kill <-chan struct{}
+	// Report asks the agent for a typed final report: ReportInstruction is
+	// appended to the prompt, and the answer's last line is parsed (#157).
+	Report bool
 	// Activity, if set, is called for each line the agent prints on stdout,
 	// from the goroutine that reads them (#151).
 	Activity func()
@@ -74,15 +77,19 @@ type Usage struct {
 
 // Result describes a run that started.
 type Result struct {
-	Status     Status `json:"status"`
-	Agent      string `json:"agent"`
-	SessionID  string `json:"session_id,omitempty"`
-	Usage      *Usage `json:"usage,omitempty"`
-	Answer     string `json:"answer,omitempty"`
-	ExitCode   *int   `json:"exit_code,omitempty"`   // always set by Submit; nil when no agent ran (P6)
-	DurationMS *int64 `json:"duration_ms,omitempty"` // likewise
-	StderrTail string `json:"stderr_tail,omitempty"`
-	Message    string `json:"message,omitempty"`
+	Status    Status `json:"status"`
+	Agent     string `json:"agent"`
+	SessionID string `json:"session_id,omitempty"`
+	Usage     *Usage `json:"usage,omitempty"`
+	// Report is the agent's AITS-REPORT line, with Request.Report on an ok
+	// or incomplete run; ReportError says why there is none (#157).
+	Report      *Report `json:"report,omitempty"`
+	ReportError string  `json:"report_error,omitempty"`
+	Answer      string  `json:"answer,omitempty"`
+	ExitCode    *int    `json:"exit_code,omitempty"`   // always set by Submit; nil when no agent ran (P6)
+	DurationMS  *int64  `json:"duration_ms,omitempty"` // likewise
+	StderrTail  string  `json:"stderr_tail,omitempty"`
+	Message     string  `json:"message,omitempty"`
 	// DeniedTools names the tool of each call the agent was refused for want
 	// of the user's approval, in order; Claude Code only.
 	DeniedTools []string `json:"denied_tools,omitempty"`
@@ -222,6 +229,9 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	if ctx.Err() != nil {
 		return Result{}, ErrStopped
 	}
+	if req.Report {
+		req.Prompt += ReportInstruction
+	}
 	start := time.Now()
 	obs, err := run(ctx, ag, path, env, req)
 	if err != nil {
@@ -252,7 +262,11 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		res.Answer = obs.events.answer
 	case StatusIncomplete:
 		res.Answer, res.StoppedTasks = obs.events.answer, obs.events.stopped
-	case StatusAgentFailed:
+	}
+	if req.Report && (status == StatusOK || status == StatusIncomplete) {
+		res.Report, res.ReportError = parseReport(res.Answer)
+	}
+	if status == StatusAgentFailed {
 		res.StderrTail = obs.stderrTail
 	}
 	return res, nil

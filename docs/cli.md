@@ -52,6 +52,7 @@ Flags:
   --env NAME          Pass the variable NAME from this environment to the agent. Repeatable.
   --json              Print the result, or the error, as JSON on stdout.
   --model MODEL       Run the agent with MODEL, as its vendor names it (default: the vendor's default).
+  --report            Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question.
   --session ID        Continue the conversation ID: the session_id of an earlier result.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
   --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
@@ -91,6 +92,12 @@ Result fields:
   stopped_tasks
                Only for incomplete, Claude Code only: the description of
                each background agent or workflow that was stopped.
+  report       With --report, on ok or incomplete: the agent's last line
+               "AITS-REPORT {...}" read as {state, summary, question}, where
+               state is done, blocked (it needs a decision or information:
+               question) or failed. summary and question are cut at 2000
+               bytes. The status and the answer are as without it.
+  report_error With --report, when there is no usable report line: why.
   usage        What the run spent, when the agent reported it, on any
                status: input_tokens (every prompt token, cached ones
                included), cached_input_tokens, output_tokens and, Claude
@@ -108,6 +115,15 @@ Statuses:
                     exited, even after a timeout; it was stopped.
   incomplete        The agent answered, but background work it was waiting
                     for was stopped before it reported back.
+
+Report (--report): aits appends this to the prompt, after a blank line,
+and reads the answer's last non-empty line:
+
+  When you finish, end your reply with one last line of exactly this form,
+  with nothing after it:
+  AITS-REPORT {"state":"done","summary":"one sentence on what you did"}
+  Use "state":"blocked" with a "question" field when you need a decision or
+  information to go on, and "state":"failed" when you could not do the task.
 
 Background work: Claude Code runs agents and workflows in the background
 and gives the agent another turn when each one reports back; the answer is
@@ -344,6 +360,7 @@ Flags:
   --json              Print the result, or the error, as JSON on stdout.
   --label LABEL       Label the task LABEL, e.g. the runbook it runs, for list --label and work --label.
   --model MODEL       Run the agent with MODEL, as its vendor names it (default: the vendor's default).
+  --report            Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question. A follow-up has it when its parent has.
   --session ID        Continue the conversation ID: a session_id of an earlier result or of session search.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
   --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
@@ -515,6 +532,9 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  report       Set by create --report, or taken from the parent of a
+               follow-up: the run asks the agent for an AITS-REPORT line
+               (run.report, run.report_error; see shell submit --help).
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
@@ -574,6 +594,9 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  report       Set by create --report, or taken from the parent of a
+               follow-up: the run asks the agent for an AITS-REPORT line
+               (run.report, run.report_error; see shell submit --help).
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
@@ -668,6 +691,9 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  report       Set by create --report, or taken from the parent of a
+               follow-up: the run asks the agent for an AITS-REPORT line
+               (run.report, run.report_error; see shell submit --help).
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,
@@ -777,6 +803,9 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  report       Set by create --report, or taken from the parent of a
+               follow-up: the run asks the agent for an AITS-REPORT line
+               (run.report, run.report_error; see shell submit --help).
   allow_tools  Set by create --allow-tool: the tools the agent runs
                without asking.
   lease        While running: token, pgid and, once the agent has started,

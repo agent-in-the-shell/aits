@@ -32,6 +32,7 @@ type taskRecord struct {
 	Label      string   `json:"label"`
 	AllowTools []string `json:"allow_tools"`
 	Write      bool     `json:"write"`
+	Report     bool     `json:"report"`
 	CreatedAt  string   `json:"created_at"`
 	Lease      *struct {
 		Token     string `json:"token"`
@@ -51,6 +52,8 @@ type taskRecord struct {
 		DeniedTools []string     `json:"denied_tools"`
 		DeniedCalls []deniedCall `json:"denied_calls"`
 		Usage       *usage       `json:"usage"`
+		Report      any          `json:"report"`
+		ReportError string       `json:"report_error"`
 		StartedAt   string       `json:"started_at"`
 		FinishedAt  string       `json:"finished_at"`
 	} `json:"run"`
