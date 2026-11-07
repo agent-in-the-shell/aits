@@ -50,6 +50,7 @@ type taskRecord struct {
 		Message     string       `json:"message"`
 		DeniedTools []string     `json:"denied_tools"`
 		DeniedCalls []deniedCall `json:"denied_calls"`
+		Usage       *usage       `json:"usage"`
 		StartedAt   string       `json:"started_at"`
 		FinishedAt  string       `json:"finished_at"`
 	} `json:"run"`

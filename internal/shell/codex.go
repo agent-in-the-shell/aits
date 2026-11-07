@@ -41,6 +41,24 @@ func parseCodex(ev *events, line []byte) bool {
 			ev.answer = text
 		}
 	case "turn.completed":
+		var e struct {
+			Usage *struct {
+				InputTokens       int64 `json:"input_tokens"`
+				CachedInputTokens int64 `json:"cached_input_tokens"`
+				OutputTokens      int64 `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(line, &e) != nil {
+			return false
+		}
+		if u := e.Usage; u != nil { // per turn: they add up
+			if ev.usage == nil {
+				ev.usage = &Usage{}
+			}
+			ev.usage.InputTokens += u.InputTokens
+			ev.usage.CachedInputTokens += u.CachedInputTokens
+			ev.usage.OutputTokens += u.OutputTokens
+		}
 		ev.done = true
 	case "turn.failed":
 		var e struct {

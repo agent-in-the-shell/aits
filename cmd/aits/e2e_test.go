@@ -175,7 +175,15 @@ type submitResult struct {
 	DeniedTools []string     `json:"denied_tools"`
 	DeniedCalls []deniedCall `json:"denied_calls"`
 	Stopped     []string     `json:"stopped_tasks"`
+	Usage       *usage       `json:"usage"`
 	Error       *errorBody   `json:"error"`
+}
+
+type usage struct {
+	InputTokens       int64    `json:"input_tokens"`
+	CachedInputTokens int64    `json:"cached_input_tokens"`
+	OutputTokens      int64    `json:"output_tokens"`
+	CostUSD           *float64 `json:"cost_usd"`
 }
 
 type deniedCall struct {

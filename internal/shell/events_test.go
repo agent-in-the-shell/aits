@@ -133,3 +133,20 @@ func TestParseClaudeBackground(t *testing.T) {
 		t.Errorf("a long description was kept as %q", ev.stopped)
 	}
 }
+
+// Claude Code's modelUsage and total_cost_usd are cumulative, subagents
+// included: the last result's are the run's (#153).
+func TestParseClaudeUsage(t *testing.T) {
+	in := `{"type":"result","is_error":false,"result":"STARTED","session_id":"s","usage":{"input_tokens":4},"total_cost_usd":0.2,"modelUsage":{"m":{"inputTokens":6,"outputTokens":141,"cacheReadInputTokens":36619,"cacheCreationInputTokens":32312}}}
+{"type":"result","is_error":false,"result":"DONE","session_id":"s","usage":{"input_tokens":4},"total_cost_usd":0.25,"modelUsage":{"m":{"inputTokens":10,"outputTokens":146,"cacheReadInputTokens":63960,"cacheCreationInputTokens":32857},"sub":{"inputTokens":1,"outputTokens":2,"cacheReadInputTokens":3,"cacheCreationInputTokens":4}}}`
+	ev := readEvents(strings.NewReader(in), parseClaude, nil)
+	cost := 0.25
+	want := Usage{InputTokens: 10 + 63960 + 32857 + 1 + 3 + 4, CachedInputTokens: 63960 + 3, OutputTokens: 148, CostUSD: &cost}
+	if u := ev.usage; u == nil || u.InputTokens != want.InputTokens || u.CachedInputTokens != want.CachedInputTokens ||
+		u.OutputTokens != want.OutputTokens || u.CostUSD == nil || *u.CostUSD != cost {
+		t.Errorf("usage = %+v, want %+v", u, want)
+	}
+	if ev := readEvents(strings.NewReader(`{"type":"result","is_error":false,"result":"x","session_id":"s"}`), parseClaude, nil); ev.usage != nil {
+		t.Errorf("no modelUsage: usage = %+v", ev.usage)
+	}
+}

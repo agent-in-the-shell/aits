@@ -64,11 +64,20 @@ type Request struct {
 	Activity func()
 }
 
+// Usage is what a run spent, in one vocabulary for every agent (#153).
+type Usage struct {
+	InputTokens       int64    `json:"input_tokens"`        // every prompt token, cached ones included
+	CachedInputTokens int64    `json:"cached_input_tokens"` // of those, read from the cache
+	OutputTokens      int64    `json:"output_tokens"`
+	CostUSD           *float64 `json:"cost_usd,omitempty"` // as the vendor prices it; Claude Code only
+}
+
 // Result describes a run that started.
 type Result struct {
 	Status     Status `json:"status"`
 	Agent      string `json:"agent"`
 	SessionID  string `json:"session_id,omitempty"`
+	Usage      *Usage `json:"usage,omitempty"`
 	Answer     string `json:"answer,omitempty"`
 	ExitCode   *int   `json:"exit_code,omitempty"`   // always set by Submit; nil when no agent ran (P6)
 	DurationMS *int64 `json:"duration_ms,omitempty"` // likewise
@@ -229,6 +238,7 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		Status:     status,
 		Agent:      ag.name,
 		SessionID:  obs.events.sessionID,
+		Usage:      obs.events.usage,
 		ExitCode:   &code,
 		DurationMS: &ms,
 		Message:    msg,

@@ -11,7 +11,7 @@ func TestParseCodex(t *testing.T) {
 		started   = `{"type":"thread.started","thread_id":"t1"}`
 		turn      = `{"type":"turn.started"}`
 		message   = `{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"the answer"}}`
-		completed = `{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}`
+		completed = `{"type":"turn.completed"}`
 	)
 	lines := func(l ...string) string { return strings.Join(l, "\n") + "\n" }
 	ok := events{sessionID: "t1", answer: "the answer", done: true}
@@ -50,5 +50,16 @@ func TestParseCodex(t *testing.T) {
 				t.Errorf("readEvents = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+// Codex reports usage per turn: the turns add up, and there is no cost (#153).
+func TestParseCodexUsage(t *testing.T) {
+	in := `{"type":"thread.started","thread_id":"t1"}
+{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":5,"reasoning_output_tokens":2}}
+{"type":"turn.completed","usage":{"input_tokens":50,"cached_input_tokens":40,"output_tokens":3}}`
+	ev := readEvents(strings.NewReader(in), parseCodex, nil)
+	if want := (Usage{InputTokens: 150, CachedInputTokens: 120, OutputTokens: 8}); ev.usage == nil || *ev.usage != want {
+		t.Errorf("usage = %+v, want %+v", ev.usage, want)
 	}
 }

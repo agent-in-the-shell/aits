@@ -93,6 +93,12 @@ Claude Code refuses a loop or a command substitution (`for`, `$(...)`)
 even when every command in it is allowed, while a pipe of allowed commands
 runs; ask the agent to put such a step in a script file.
 
+`usage` says what a run spent, on any status the agent reported it:
+`input_tokens` (cached included), `cached_input_tokens`, `output_tokens`
+and, Claude Code only, `cost_usd`. Claude Code's figures cover the whole
+run with its subagents; a task's is `run.usage`. Keep your own budget:
+aits enforces none.
+
 ### Statuses
 
 | status | Meaning | What to do |

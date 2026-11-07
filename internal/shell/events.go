@@ -24,11 +24,12 @@ type events struct {
 	// agent's last message, which so never saw their work (#139).
 	background map[string]string
 	stopped    []string
-	killed     bool // the vendor reported stopping background work itself
-	done       bool // the agent's final event was seen
-	failed     bool // the agent reported that the run failed
-	badLine    bool // a line was not a usable event
-	tooLarge   bool // a line exceeded maxEventSize
+	killed     bool   // the vendor reported stopping background work itself
+	usage      *Usage // what the run spent, as far as the agent reported it (#153)
+	done       bool   // the agent's final event was seen
+	failed     bool   // the agent reported that the run failed
+	badLine    bool   // a line was not a usable event
+	tooLarge   bool   // a line exceeded maxEventSize
 }
 
 // setSession records id unless a session id was already seen.
