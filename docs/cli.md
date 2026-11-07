@@ -53,12 +53,29 @@ Flags:
   --json              Print the result, or the error, as JSON on stdout.
   --model MODEL       Run the agent with MODEL, as its vendor names it (default: the vendor's default).
   --report            Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question.
+  --run-dir value     Run the agent in a new directory BASE/ID of its own (ID: the task id), instead of --cwd; see --help.
   --session ID        Continue the conversation ID: the session_id of an earlier result.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m. (default 30m0s)
+  --worktree          Run the agent in a new detached git worktree of --cwd's repository, under --run-dir or $AITS_HOME/worktree.
   --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
 
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
-invalid_input.
+invalid_input. It may use {{aits.date}} (the run's local date,
+YYYY-MM-DD), {{aits.task_id}} (the task id; for submit, the run id) and
+{{aits.run_dir}} (the directory the agent runs in), filled when the run
+starts, so a queued task gets the day it runs. Another {{aits.NAME}} is
+invalid_input; any other text, {{ included, is left alone.
+
+A directory per run (--run-dir BASE): when the run starts, aits creates
+BASE/ID, mode 700, and the agent works there instead of --cwd (the two
+exclude each other); BASE is created if missing. ID is the task id, or for
+submit a new id of the same form. The result's dir (a task's run.dir) says
+where it ran. --worktree makes that directory a detached git worktree of
+--cwd's repository at its HEAD, under --run-dir BASE or else
+$AITS_HOME/worktree: one tree per agent, so parallel writers never share
+one. git must be on PATH; if it fails, nothing runs (a task ends
+not_started with git's message). aits never removes a worktree: review
+it, merge it, then git worktree remove it.
 
 Output:
   With --json, stdout is exactly one JSON object: a result once the agent has
@@ -98,6 +115,7 @@ Result fields:
                question) or failed. summary and question are cut at 2000
                bytes. The status and the answer are as without it.
   report_error With --report, when there is no usable report line: why.
+  dir          With --run-dir or --worktree: the directory the agent ran in.
   usage        What the run spent, when the agent reported it, on any
                status: input_tokens (every prompt token, cached ones
                included), cached_input_tokens, output_tokens and, Claude
@@ -361,15 +379,32 @@ Flags:
   --label LABEL       Label the task LABEL, e.g. the runbook it runs, for list --label and work --label.
   --model MODEL       Run the agent with MODEL, as its vendor names it (default: the vendor's default).
   --report            Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question. A follow-up has it when its parent has.
+  --run-dir value     Run the agent in a new directory BASE/ID of its own (ID: the task id), instead of --cwd; see --help.
   --session ID        Continue the conversation ID: a session_id of an earlier result or of session search.
   --timeout DURATION  Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds. (default 30m0s)
+  --worktree          Run the agent in a new detached git worktree of --cwd's repository, under --run-dir or $AITS_HOME/worktree.
   --write             Let the agent edit files and run commands in its working directory without asking, inside its vendor's sandbox.
 
 The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With
 neither AITS_HOME nor HOME set, every task command fails (invalid_input).
 
 Prompt: PROMPT, or "-" to read it from stdin, at most 16 MiB; more is
-invalid_input.
+invalid_input. It may use {{aits.date}} (the run's local date,
+YYYY-MM-DD), {{aits.task_id}} (the task id; for submit, the run id) and
+{{aits.run_dir}} (the directory the agent runs in), filled when the run
+starts, so a queued task gets the day it runs. Another {{aits.NAME}} is
+invalid_input; any other text, {{ included, is left alone.
+
+A directory per run (--run-dir BASE): when the run starts, aits creates
+BASE/ID, mode 700, and the agent works there instead of --cwd (the two
+exclude each other); BASE is created if missing. ID is the task id, or for
+submit a new id of the same form. The result's dir (a task's run.dir) says
+where it ran. --worktree makes that directory a detached git worktree of
+--cwd's repository at its HEAD, under --run-dir BASE or else
+$AITS_HOME/worktree: one tree per agent, so parallel writers never share
+one. git must be on PATH; if it fails, nothing runs (a task ends
+not_started with git's message). aits never removes a worktree: review
+it, merge it, then git worktree remove it.
 
 The prompt, --cwd, --model, --allow-tool and --env names must be valid
 UTF-8: a task is stored as JSON text.
@@ -532,6 +567,10 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  run_dir, worktree
+               Set by create --run-dir and --worktree: each run works in
+               a directory of its own, run.dir. A follow-up runs in its
+               parent's run.dir and takes neither.
   report       Set by create --report, or taken from the parent of a
                follow-up: the run asks the agent for an AITS-REPORT line
                (run.report, run.report_error; see shell submit --help).
@@ -594,6 +633,10 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  run_dir, worktree
+               Set by create --run-dir and --worktree: each run works in
+               a directory of its own, run.dir. A follow-up runs in its
+               parent's run.dir and takes neither.
   report       Set by create --report, or taken from the parent of a
                follow-up: the run asks the agent for an AITS-REPORT line
                (run.report, run.report_error; see shell submit --help).
@@ -691,6 +734,10 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  run_dir, worktree
+               Set by create --run-dir and --worktree: each run works in
+               a directory of its own, run.dir. A follow-up runs in its
+               parent's run.dir and takes neither.
   report       Set by create --report, or taken from the parent of a
                follow-up: the run asks the agent for an AITS-REPORT line
                (run.report, run.report_error; see shell submit --help).
@@ -803,6 +850,10 @@ Task fields (--json):
                follow-up: groups tasks for list --label and work --label.
   write        Set by create --write: the agent runs in its vendor's
                sandbox and may write without asking.
+  run_dir, worktree
+               Set by create --run-dir and --worktree: each run works in
+               a directory of its own, run.dir. A follow-up runs in its
+               parent's run.dir and takes neither.
   report       Set by create --report, or taken from the parent of a
                follow-up: the run asks the agent for an AITS-REPORT line
                (run.report, run.report_error; see shell submit --help).

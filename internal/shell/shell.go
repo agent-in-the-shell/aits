@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,6 +60,12 @@ type Request struct {
 	// Kill, once closed, makes a run being stopped or timed out kill the
 	// agent's group at once instead of after the grace period (P10).
 	Kill <-chan struct{}
+	// RunDir, if set, is where the run gets a directory of its own,
+	// RunDir/RunID, in which the agent works instead of Dir; with Worktree
+	// it is a detached git worktree of Dir's repository (#137).
+	RunDir   string
+	RunID    string
+	Worktree bool
 	// Report asks the agent for a typed final report: ReportInstruction is
 	// appended to the prompt, and the answer's last line is parsed (#157).
 	Report bool
@@ -81,6 +88,7 @@ type Result struct {
 	Agent     string `json:"agent"`
 	SessionID string `json:"session_id,omitempty"`
 	Usage     *Usage `json:"usage,omitempty"`
+	Dir       string `json:"dir,omitempty"` // with Request.RunDir: the directory the agent ran in (#137)
 	// Report is the agent's AITS-REPORT line, with Request.Report on an ok
 	// or incomplete run; ReportError says why there is none (#157).
 	Report      *Report `json:"report,omitempty"`
@@ -152,6 +160,17 @@ func (r Request) validate() (agent, error) {
 	}
 	if r.Timeout <= 0 {
 		return agent{}, invalid("timeout must be positive, got %s", r.Timeout)
+	}
+	if err := checkTemplate(r.Prompt); err != nil {
+		return agent{}, err
+	}
+	switch {
+	case r.Worktree && r.RunDir == "":
+		return agent{}, invalid("a worktree run needs a directory to put it in")
+	case r.RunDir != "" && !filepath.IsAbs(r.RunDir):
+		return agent{}, invalid("run directory %q is not absolute", r.RunDir)
+	case r.RunID != "" && (strings.ContainsAny(r.RunID, "/\\") || strings.HasPrefix(r.RunID, ".")):
+		return agent{}, invalid("run id %q cannot name a directory", r.RunID)
 	}
 	for _, name := range r.Pass {
 		if name == "" || strings.Contains(name, "=") {
@@ -229,6 +248,17 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 	if ctx.Err() != nil {
 		return Result{}, ErrStopped
 	}
+	var runDir string
+	if req.RunDir != "" && req.RunID == "" {
+		req.RunID = fmt.Sprintf("%s-%06x", time.Now().UTC().Format("20060102T150405"), rand.Uint32()&0xffffff)
+	}
+	if req.RunDir != "" {
+		if runDir, err = workspace(ctx, req, env); err != nil {
+			return Result{}, err
+		}
+		req.Dir = runDir
+	}
+	req.Prompt = expand(req.Prompt, req.RunID, req.Dir)
 	if req.Report {
 		req.Prompt += ReportInstruction
 	}
@@ -249,6 +279,7 @@ func Submit(ctx context.Context, req Request) (Result, error) {
 		Agent:      ag.name,
 		SessionID:  obs.events.sessionID,
 		Usage:      obs.events.usage,
+		Dir:        runDir,
 		ExitCode:   &code,
 		DurationMS: &ms,
 		Message:    msg,

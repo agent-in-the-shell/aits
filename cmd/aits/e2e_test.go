@@ -176,6 +176,7 @@ type submitResult struct {
 	DeniedCalls []deniedCall `json:"denied_calls"`
 	Stopped     []string     `json:"stopped_tasks"`
 	Usage       *usage       `json:"usage"`
+	Dir         string       `json:"dir"`
 	Error       *errorBody   `json:"error"`
 }
 
