@@ -38,40 +38,47 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 
-func usageError(code, format string, a ...any) *Error {
+// UsageError is an error with code that exits 2 (P5): bad usage or invalid
+// input.
+func UsageError(code, format string, a ...any) *Error {
 	return &Error{Code: code, Message: fmt.Sprintf(format, a...), exit: exitUsage}
 }
 
-func failure(code, format string, a ...any) *Error {
+// Failure is an error with code that exits 1 (P5): the operation failed.
+func Failure(code, format string, a ...any) *Error {
 	return &Error{Code: code, Message: fmt.Sprintf(format, a...), exit: exitFailure}
 }
 
-// Run executes one command line (without the program name) and returns the
-// process exit code.
-func Run(ctx context.Context, args []string, env Env) int {
+// Run executes one command line (without the program name) of the command
+// tree root, Root() for aits or another tree built with NewRoot, and returns
+// the process exit code: one grammar (P4) and output rules (P5) for both
+// binaries.
+func Run(ctx context.Context, root *Command, args []string, env Env) int {
 	env.JSON = wantsJSON(args)
-	code, err := dispatch(ctx, Root(), args, &env)
+	code, err := dispatch(ctx, root, args, &env)
 	if err != nil {
-		return report(&env, err)
+		return report(&env, root.Name, err)
 	}
 	return code
 }
 
-// report writes err to the channel P5 assigns and returns its exit code.
-func report(env *Env, err error) int {
+// report writes err to the channel P5 assigns, prefixed with the program
+// name on stderr, and returns its exit code.
+func report(env *Env, program string, err error) int {
 	var e *Error
 	if !errors.As(err, &e) {
-		e = failure("internal", "%v", err)
+		e = Failure("internal", "%v", err)
 	}
 	if env.JSON {
-		writeJSON(env.Stdout, map[string]any{"error": map[string]string{"code": e.Code, "message": e.Message}})
+		WriteJSON(env.Stdout, map[string]any{"error": map[string]string{"code": e.Code, "message": e.Message}})
 	} else {
-		fmt.Fprintf(env.Stderr, "aits: %s\n", e.Message)
+		fmt.Fprintf(env.Stderr, "%s: %s\n", program, e.Message)
 	}
 	return e.exit
 }
 
-func writeJSON(w io.Writer, v any) {
+// WriteJSON writes v as one line of JSON, without HTML escaping.
+func WriteJSON(w io.Writer, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)

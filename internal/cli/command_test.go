@@ -76,7 +76,7 @@ func TestHelpText(t *testing.T) {
 
 func run(args ...string) (code int, stdout, stderr string) {
 	var out, errOut bytes.Buffer
-	code = Run(context.Background(), args, Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut})
+	code = Run(context.Background(), Root(), args, Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut})
 	return code, out.String(), errOut.String()
 }
 

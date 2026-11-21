@@ -187,7 +187,7 @@ func submitCommand() *Command {
 // and makes cwd absolute (shell submit, task create).
 func promptArgs(ctx context.Context, env *Env, args []string, cwd string) (prompt, dir string, err error) {
 	if len(args) != 1 {
-		return "", "", usageError("invalid_input", "expected one prompt argument, or - to read it from stdin; got %d", len(args))
+		return "", "", UsageError("invalid_input", "expected one prompt argument, or - to read it from stdin; got %d", len(args))
 	}
 	if prompt = args[0]; prompt == "-" {
 		if prompt, err = readPrompt(ctx, env.Stdin); err != nil {
@@ -195,7 +195,7 @@ func promptArgs(ctx context.Context, env *Env, args []string, cwd string) (promp
 		}
 	}
 	if dir, err = filepath.Abs(cwd); err != nil {
-		return "", "", failure("internal", "resolve working directory: %v", err)
+		return "", "", Failure("internal", "resolve working directory: %v", err)
 	}
 	return prompt, dir, nil
 }
@@ -220,10 +220,10 @@ func readPrompt(ctx context.Context, r io.Reader) (string, error) {
 	select {
 	case res := <-ch:
 		if res.err != nil {
-			return "", failure("stdin_failed", "read prompt from stdin: %v", res.err)
+			return "", Failure("stdin_failed", "read prompt from stdin: %v", res.err)
 		}
 		if len(res.b) > maxPrompt {
-			return "", usageError("invalid_input", "the prompt from stdin is over 16 MiB")
+			return "", UsageError("invalid_input", "the prompt from stdin is over 16 MiB")
 		}
 		return string(res.b), nil
 	case <-ctx.Done():
@@ -235,13 +235,13 @@ func submitError(err error) error {
 	var invalid *shell.InvalidRequestError
 	switch {
 	case errors.As(err, &invalid):
-		return usageError("invalid_input", "%s", invalid.Reason)
+		return UsageError("invalid_input", "%s", invalid.Reason)
 	case errors.Is(err, shell.ErrStopped):
-		return failure("stopped", "%v", err)
+		return Failure("stopped", "%v", err)
 	case errors.Is(err, shell.ErrAgentNotFound):
-		return failure("agent_not_found", "%v", err)
+		return Failure("agent_not_found", "%v", err)
 	default:
-		return failure("agent_start_failed", "%v", err)
+		return Failure("agent_start_failed", "%v", err)
 	}
 }
 
@@ -289,7 +289,7 @@ const (
 // the request's Dir and RunDir (#137).
 func workspaceArgs(env *Env, cwd, dir, runDir string, worktree bool) (string, string, error) {
 	if runDir != "" && cwd != "" && !worktree {
-		return "", "", usageError("invalid_input", "--run-dir replaces --cwd; give one of them, or add --worktree to put a worktree of --cwd under --run-dir")
+		return "", "", UsageError("invalid_input", "--run-dir replaces --cwd; give one of them, or add --worktree to put a worktree of --cwd under --run-dir")
 	}
 	base, err := shell.RunBase(env.Environ, runDir, worktree)
 	if err != nil {
@@ -360,11 +360,11 @@ func writeRunNotes(env *Env, res shell.Result) {
 // (P6).
 func writeResult(env *Env, res shell.Result) (int, error) {
 	if res.Status == "" {
-		return 0, failure("internal", "the run ended without a status")
+		return 0, Failure("internal", "the run ended without a status")
 	}
 	switch {
 	case env.JSON:
-		writeJSON(env.Stdout, res)
+		WriteJSON(env.Stdout, res)
 	case res.Status == shell.StatusOK:
 		fmt.Fprintln(env.Stdout, res.Answer)
 	default:

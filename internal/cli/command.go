@@ -27,11 +27,14 @@ type Command struct {
 
 // Root returns the aits command tree.
 func Root() *Command {
-	root := &Command{
-		Name:     "aits",
-		Summary:  "Run coding agents from the command line.",
-		Children: []*Command{shellGroup(), sessionGroup(), taskGroup(), jobGroup(), versionCommand()},
-	}
+	return NewRoot("aits", "Run coding agents from the command line.",
+		shellGroup(), sessionGroup(), taskGroup(), jobGroup(), versionCommand())
+}
+
+// NewRoot returns the root of a command tree named name, with children and a
+// help command after them.
+func NewRoot(name, summary string, children ...*Command) *Command {
+	root := &Command{Name: name, Summary: summary, Children: children}
 	root.Children = append(root.Children, helpCommand(root))
 	return root
 }
@@ -77,17 +80,17 @@ func resolve(root *Command, args []string) (*Command, []string, []string, error)
 		switch {
 		case a == "--":
 			if i+1 < len(args) {
-				return nil, nil, nil, usageError("unknown_command", "unknown command %q for %s", args[i+1], strings.Join(path, " "))
+				return nil, nil, nil, UsageError("unknown_command", "unknown command %q for %s", args[i+1], strings.Join(path, " "))
 			}
 		case isFlag(a):
 			if !isGlobalFlag(a) {
-				return nil, nil, nil, usageError("unknown_flag", "unknown flag %s for %s", a, strings.Join(path, " "))
+				return nil, nil, nil, UsageError("unknown_flag", "unknown flag %s for %s", a, strings.Join(path, " "))
 			}
 			rest = append(rest, a)
 		default:
 			next := cmd.child(a)
 			if next == nil {
-				return nil, nil, nil, usageError("unknown_command", "unknown command %q for %s", a, strings.Join(path, " "))
+				return nil, nil, nil, UsageError("unknown_command", "unknown command %q for %s", a, strings.Join(path, " "))
 			}
 			cmd, path = next, append(path, a)
 		}
@@ -159,7 +162,7 @@ func helpCommand(root *Command) *Command {
 	return &Command{
 		Name:    "help",
 		Args:    "[COMMAND...]",
-		Summary: "Show help for aits or one of its commands.",
+		Summary: "Show help for " + root.Name + " or one of its commands.",
 		Details: "Errors: unknown_command, unknown_flag (exit 2).\n",
 		Setup: func(*flag.FlagSet) Runner {
 			return func(_ context.Context, env *Env, args []string) (int, error) {
@@ -168,7 +171,7 @@ func helpCommand(root *Command) *Command {
 					return 0, err
 				}
 				if len(rest) > 0 {
-					return 0, usageError("unknown_command", "unknown command %q for %s", rest[0], strings.Join(path, " "))
+					return 0, UsageError("unknown_command", "unknown command %q for %s", rest[0], strings.Join(path, " "))
 				}
 				writeHelp(env.Stdout, path, cmd)
 				return exitOK, nil

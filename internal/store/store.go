@@ -64,6 +64,23 @@ func WriteFile(path string, data []byte) error {
 // ~/Library/LaunchAgents.
 func MkdirAll(dir string, perm os.FileMode) error { return os.MkdirAll(dir, perm) }
 
+// Touch creates path as an empty 0600 regular file if it is missing and
+// tightens an existing one to 0600, for a file a library then writes in
+// place, such as a SQLite database.
+func Touch(path string) error {
+	f, fi, err := OpenRegular(path, os.O_RDONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	if fi.Mode().Perm() != 0o600 {
+		err = f.Chmod(0o600)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
 // Remove removes the file path.
 func Remove(path string) error { return os.Remove(path) }
 

@@ -117,7 +117,7 @@ func searchCommand() *Command {
 				if dir != "" {
 					abs, err := filepath.Abs(dir)
 					if err != nil {
-						return 0, failure("internal", "resolve --cwd: %v", err)
+						return 0, Failure("internal", "resolve --cwd: %v", err)
 					}
 					dir = abs
 				}
@@ -138,16 +138,16 @@ func searchError(err error) error {
 	var invalid *session.InvalidQueryError
 	switch {
 	case errors.As(err, &invalid):
-		return usageError("invalid_input", "%s", invalid.Reason)
+		return UsageError("invalid_input", "%s", invalid.Reason)
 	case errors.Is(err, context.Canceled):
-		return failure("stopped", "stopped by a signal")
+		return Failure("stopped", "stopped by a signal")
 	}
-	return failure("internal", "%v", err)
+	return Failure("internal", "%v", err)
 }
 
 func writeSearch(env *Env, out session.Output) {
 	if env.JSON {
-		writeJSON(env.Stdout, out)
+		WriteJSON(env.Stdout, out)
 		return
 	}
 	for _, r := range out.Results {
