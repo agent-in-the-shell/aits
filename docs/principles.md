@@ -15,6 +15,9 @@ is not required.
 **Rule.** There is one `aits` binary. Each command group (`model`, `shell`,
 `task`, `session`, and any added later) is one package under
 `internal/<group>`. A new group needs its own issue with a use case (P2).
+The repository may also build `aits-gw`, a second binary that exists only
+under P15(4); it may import command groups, and nothing that `aits` builds
+may import its packages (`internal/gw/...`).
 Allowed dependency edges between groups are declared in one place and form a
 DAG; lower-level groups (`shell`, `model`) never depend on higher-level ones
 (`task`). Cross-group calls use the target group's Go API — never exec'ing
@@ -24,7 +27,9 @@ DAG; lower-level groups (`shell`, `model`) never depend on higher-level ones
 executable from `PATH`; one JSON shape declared twice and drifting.
 
 **Guard.** A test scans actual imports and fails on any edge missing from the
-declared list, or on a cycle.
+declared list, or on a cycle. A second test lists the dependencies of
+`./cmd/aits` (`go list -deps`) and fails if any package under `internal/gw`
+appears; it lands with the first `internal/gw` code.
 
 ## P2 — Build only what has a caller today
 
@@ -163,7 +168,12 @@ waits a bounded grace period, sends KILL, reaps, and still prints a result —
 with timeout and stop as distinct statuses. Persisted "in progress" state must
 be recoverable by aits itself (for example, a lock the kernel releases when
 its holder exits), without manual repair. One user action is one atomic
-command.
+command. These rules apply to `aits-gw` (P15(4)) as well: it runs in the
+foreground under a supervisor and never daemonizes itself. Its own commands
+(`aits-gw wait`, `aits-gw status`) may require it to be running; no `aits`
+command may. Agents it asks for are queued as tasks and run by
+`aits task work`, never as its children, so restarting `aits-gw` does not
+stop a running agent.
 
 **Prevents.** Orphaned agent processes; a task stuck `running` forever after
 its worker dies; two-step follow-ups that race a background worker; a stale
@@ -231,7 +241,8 @@ macOS.
 
 **Rule.** The release binary (`CGO_ENABLED=0 go build -trimpath
 -ldflags="-s -w" ./cmd/aits`, linux/amd64) stays within the size budget in
-`.github/binary-size-budget`. A change that would exceed it raises the budget
+`.github/binary-size-budget`; the budget measures `aits` only, and `aits-gw`
+has none unless it gets its own file. A change that would exceed it raises the budget
 in the same pull request and says which feature needs the bytes and why a
 smaller way does not work. Heavy standard-library packages (`net/http`,
 `crypto/*`, `text/template`, `regexp` and the like) enter only with the
@@ -268,13 +279,26 @@ hold:
 4. it fits P3 and P14 for every user of the binary. An integration that needs
    a 24/7 public endpoint, credentials for many third-party platforms, or
    dependencies most users never run is hosted elsewhere, and aits is its
-   client;
+   client. "Elsewhere" may be `aits-gw`, a second binary in this
+   repository, when all of these hold:
+   - `aits` imports none of its packages (P1 guard), so its dependencies
+     never reach the `aits` binary and P3 and P14 still hold for every user
+     of `aits`;
+   - P14's budget measures `aits` only;
+   - it is released under its own tag prefix (`gw/vX.Y.Z`, while `aits`
+     keeps `vX.Y.Z`), so a fix for a third-party platform does not force an
+     `aits` release;
+   - its configuration (routes) and credentials live outside the
+     repository, in the user's own files and keychain; the repository holds
+     only generic adapters (P11);
 5. it has a caller today (P2).
 
 **Prevents.** aits growing into a platform: hosting services that callers
 depend on; every user shipping integrations only a few run; releases tied to
-third-party platform fixes.
+third-party platform fixes. A second binary does not change this: users who
+never install `aits-gw` get none of its code, dependencies or releases.
 
 **Guard.** *review-only.* An issue for a new command group, or for a change
 that adds a network dependency, says how it meets each of the five
-conditions.
+conditions. For `aits-gw`, the import condition is checked by the P1 guard;
+the rest stays review-only.
