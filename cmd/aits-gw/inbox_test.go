@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -67,12 +66,7 @@ func snapshot(t *testing.T, dir string) map[string]string {
 // inboxEvents returns the recorded inbox.file events by source id.
 func (h *home) inboxEvents() map[string]map[string]string {
 	h.t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(h.aits, "gw", "gw.db"))
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	defer db.Close()
-	rows, err := db.Query("SELECT source_id, payload, seen FROM events WHERE kind = 'inbox.file'")
+	rows, err := h.db().Query("SELECT source_id, payload, seen FROM events WHERE kind = 'inbox.file'")
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -100,12 +94,7 @@ func (h *home) inboxEvents() map[string]map[string]string {
 // file's mtime (its put_at), so no file was read before it settled.
 func (h *home) settled() {
 	h.t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(h.aits, "gw", "gw.db"))
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	defer db.Close()
-	rows, err := db.Query("SELECT source_id, put_at, ingested_at FROM events WHERE kind = 'inbox.file'")
+	rows, err := h.db().Query("SELECT source_id, put_at, ingested_at FROM events WHERE kind = 'inbox.file'")
 	if err != nil {
 		h.t.Fatal(err)
 	}

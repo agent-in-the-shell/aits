@@ -17,6 +17,7 @@ import (
 func Root() *cli.Command {
 	return cli.NewRoot("aits-gw", "Record events for agents and scripts (shadow mode: nothing is triggered or delivered).",
 		&cli.Command{Name: "event", Summary: "Put events.", Children: []*cli.Command{eventPut()}},
+		&cli.Command{Name: "inbox", Summary: "Compare a file inbox with its events.", Children: []*cli.Command{inboxCheck()}},
 		serveCommand(), statusCommand())
 }
 
@@ -141,8 +142,8 @@ schema_too_new, store (exit 1).
 					return 0, cli.UsageError("invalid_input", "serve takes no arguments")
 				}
 				if *inboxDir != "" {
-					if fi, err := os.Stat(*inboxDir); err != nil || !fi.IsDir() {
-						return 0, cli.UsageError("invalid_input", "--inbox %s is not a directory", *inboxDir)
+					if err := checkInboxDir(*inboxDir); err != nil {
+						return 0, err
 					}
 				}
 				p, err := resolve(env.Environ)
@@ -164,7 +165,92 @@ schema_too_new, store (exit 1).
 	}
 }
 
-// dbError maps a serve or status failure to its error code.
+// checkInboxDir refuses an --inbox that is not a directory.
+func checkInboxDir(dir string) error {
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return cli.UsageError("invalid_input", "--inbox %s is not a directory", dir)
+	}
+	return nil
+}
+
+func inboxCheck() *cli.Command {
+	return &cli.Command{
+		Name:    "check",
+		Summary: "Compare the files under an inbox with the events serve --inbox recorded.",
+		Details: `check walks DIR as serve --inbox does (regular files whose name does not
+start with ".", outside dot-named directories) and matches each file name with
+the inbox.file event of that source id in $AITS_HOME/gw/gw.db. It only reads
+DIR, works whether or not serve is running, and creates an empty database if
+there is none.
+
+Output (--json):
+  {"status":"ok|mismatch","files":N,"events":N,"matched":N,"pending":N,
+   "skipped":N,"missed":[NAME...],"extra":[{"name":…,"reason":…}...],
+   "duplicates":[{"name":…,"reason":…}...]}
+  files       files under DIR that serve --inbox would copy
+  events      inbox.file events recorded
+  matched     names with one file and one event whose size, and content
+              when copied, equal the file's
+  pending     unrecorded files less than 10s old; not counted as missed
+  skipped     entries serve --inbox never copies (not a regular file, or a
+              name it refuses)
+  missed      names of files older than that with no event
+  extra       events with no file (reason no_file), or whose file's size or
+              content differs (changed)
+  duplicates  an event put more than once (reason seen), or one name on more
+              than one file under DIR (files)
+status is ok when missed, extra and duplicates are empty, else mismatch;
+both exit 0. Lists are sorted by name. Without --json, one "name: value"
+line per count, then each list entry indented under its name.
+
+Exit codes:
+  0  Compared (status ok or mismatch).
+  1  DIR or the database could not be read.
+  2  Usage error or invalid input.
+
+Errors: unknown_flag, invalid_input (exit 2); inbox, schema_too_new, store
+(exit 1).
+`,
+		Setup: func(fs *flag.FlagSet) cli.Runner {
+			inboxDir := cli.NonEmpty(fs, "inbox", "The inbox `DIR` that serve --inbox copies; required.", "a directory")
+			return func(ctx context.Context, env *cli.Env, args []string) (int, error) {
+				if len(args) != 0 {
+					return 0, cli.UsageError("invalid_input", "check takes no arguments")
+				}
+				if *inboxDir == "" {
+					return 0, cli.UsageError("invalid_input", "check needs --inbox")
+				}
+				if err := checkInboxDir(*inboxDir); err != nil {
+					return 0, err
+				}
+				r, err := check(ctx, env.Environ, *inboxDir, time.Now())
+				if err != nil {
+					return 0, dbError(err)
+				}
+				if env.JSON {
+					cli.WriteJSON(env.Stdout, r)
+					return 0, nil
+				}
+				fmt.Fprintf(env.Stdout, "status: %s\nfiles: %d\nevents: %d\nmatched: %d\npending: %d\nskipped: %d\nmissed: %d\n",
+					r.Status, r.Files, r.Events, r.Matched, r.Pending, r.Skipped, len(r.Missed))
+				for _, n := range r.Missed {
+					fmt.Fprintf(env.Stdout, "  %s\n", n)
+				}
+				fmt.Fprintf(env.Stdout, "extra: %d\n", len(r.Extra))
+				for _, e := range r.Extra {
+					fmt.Fprintf(env.Stdout, "  %s  %s\n", e.Name, e.Reason)
+				}
+				fmt.Fprintf(env.Stdout, "duplicates: %d\n", len(r.Duplicates))
+				for _, e := range r.Duplicates {
+					fmt.Fprintf(env.Stdout, "  %s  %s\n", e.Name, e.Reason)
+				}
+				return 0, nil
+			}
+		},
+	}
+}
+
+// dbError maps a serve, status or check failure to its error code.
 func dbError(err error) error {
 	var tooNew errSchemaTooNew
 	var walk errInbox
