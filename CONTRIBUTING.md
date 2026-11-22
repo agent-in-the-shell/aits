@@ -55,6 +55,12 @@ The pull-request check script has its own test:
 
     .github/scripts/check-pr-links-issue_test.sh
 
+## Releases
+
+`aits` and `aits-gw` are released independently (P15(4)): `aits` is tagged
+`vX.Y.Z` and `aits-gw` is tagged `gw/vX.Y.Z`, so a fix for one never forces
+a release of the other.
+
 ## Language
 
 Code, docs, issues, pull requests and commit messages are in English.

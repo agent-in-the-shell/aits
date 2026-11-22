@@ -31,6 +31,7 @@ installed with `aits version`.
 | Run a cron or launchd job with a timeout, a lock and alerts | `aits job run NAME -- COMMAND` |
 | See how scheduled jobs last ran, and which are failing | `aits job list` |
 | Install the jobs a file declares into this machine's crontab | `aits job apply FILE` |
+| Record an event, or check what the event gateway recorded | `aits-gw event put`, `aits-gw status`, `aits-gw inbox check` (a separate binary; see below) |
 | Which aits is installed | `aits version` |
 | Full help for any command | `aits help COMMAND...` or `aits COMMAND --help` |
 
@@ -515,6 +516,35 @@ that edit the same files conflict when merged, however separate their trees.
 A director that runs for days or on a schedule does not keep one growing
 session either: each tick starts fresh and rebuilds its view from
 `task list --label LABEL --json` and `events.jsonl`. The queue is its memory.
+
+## Events: aits-gw
+
+`aits-gw` is a second binary from this repository, installed separately.
+It **records** events and, for now, triggers or delivers nothing (shadow
+mode). It shares the grammar, `--json` and exit codes of `aits`. Its reference
+is `aits-gw help` or `aits-gw COMMAND --help`.
+
+- `aits-gw event put KIND --source-id ID [KEY=VALUE...] --json` spools one
+  event and prints `{"status":"spooled","id":…}`. It never needs a running
+  server. KIND and keys are lowercase letters, digits, `.`, `_`, `-`; the same
+  `(KIND, --source-id)` put twice is recorded once and counted as a duplicate,
+  so a retry is safe.
+- `aits-gw serve` records the spool into SQLite. With `--inbox DIR` it also
+  copies, read-only, each file under `DIR` (and its subdirectories) into an
+  `inbox.file` event named after the file. It runs in the foreground under
+  launchd (docs/gw-launchd.md) and stops on SIGTERM with
+  `{"status":"stopped","ingested":N}`. Do not start it from an agent: the
+  user's supervisor owns it, and a second one fails with `already_serving`.
+- `aits-gw status --json` reports `serving`, `spooled`, `rejected`,
+  `events`, `duplicates`, `last_ingested_at` and `schema_version`, with
+  `"status":"ok"`, whether or not serve runs.
+- `aits-gw inbox check --inbox DIR --json` compares the files under `DIR`
+  with their `inbox.file` events: `status` is `ok`, or `mismatch` with the
+  names under `missed` (a file with no event), `extra` (an event with no file,
+  or a changed one) and `duplicates`. Files younger than 10s are `pending`,
+  not missed. Both statuses exit 0; read `status`.
+
+Each command's `--help` lists its error codes and exit codes.
 
 ## Version: aits version
 

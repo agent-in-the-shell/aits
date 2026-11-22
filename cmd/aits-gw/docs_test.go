@@ -140,3 +140,40 @@ func helpErrors(help string) map[string]string {
 	}
 	return errs
 }
+
+// TestSkill enforces P13 for aits-gw: skills/aits/SKILL.md names every
+// aits-gw command, every flag of each, and every status its help documents
+// in a "status":"…" result (P5).
+func TestSkill(t *testing.T) {
+	src, err := os.ReadFile("../../skills/aits/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skill := string(src)
+	flagRow := regexp.MustCompile(`(?m)^  (--[\w-]+)`)
+	status := regexp.MustCompile(`"status":"([\w|]+)"`)
+	statuses := 0
+	walk(gw.Root(), nil, func(path []string, _ *cli.Command) {
+		name := strings.Join(append([]string{"aits-gw"}, path...), " ")
+		if !strings.Contains(skill, "`"+name) {
+			t.Errorf("the skill does not name %q", name)
+		}
+		text := help(t, path)
+		for _, m := range flagRow.FindAllStringSubmatch(text, -1) {
+			if !regexp.MustCompile(m[1] + `\b`).MatchString(skill) {
+				t.Errorf("the skill does not name %s's flag %s", name, m[1])
+			}
+		}
+		for _, m := range status.FindAllStringSubmatch(text, -1) {
+			for _, s := range strings.Split(m[1], "|") {
+				statuses++
+				if !strings.Contains(skill, "`"+s+"`") {
+					t.Errorf("the skill does not name %s's status %q", name, s)
+				}
+			}
+		}
+	})
+	if statuses == 0 {
+		t.Fatal(`no "status":"…" in any aits-gw help`)
+	}
+}
