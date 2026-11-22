@@ -145,15 +145,15 @@ func submitCommand() *Command {
 		Details: submitDetails,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required). One of: "+strings.Join(shell.Agents(), ", ")+".")
-			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory).", "a directory")
+			cwd := NonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory).", "a directory")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m.")
-			session := nonEmpty(fs, "session", "Continue the conversation `ID`: the session_id of an earlier result.", "a session id")
-			model := nonEmpty(fs, "model", modelUsage, "a model name")
+			session := NonEmpty(fs, "session", "Continue the conversation `ID`: the session_id of an earlier result.", "a session id")
+			model := NonEmpty(fs, "model", modelUsage, "a model name")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
 			allow := repeated(fs, "allow-tool", allowToolUsage)
 			report := fs.Bool("report", false, reportUsage)
-			runDir := nonEmpty(fs, "run-dir", runDirUsage, "a directory")
+			runDir := NonEmpty(fs, "run-dir", runDirUsage, "a directory")
 			worktree := fs.Bool("worktree", false, worktreeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)

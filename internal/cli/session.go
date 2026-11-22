@@ -91,8 +91,8 @@ func searchCommand() *Command {
 		Details: searchDetails,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agents := strings.Join(session.Agents(), ", ")
-			agent := nonEmpty(fs, "agent", "Search only `AGENT`'s transcripts. One of: "+agents+".", "an agent (one of: "+agents+")")
-			cwd := nonEmpty(fs, "cwd", "Only sessions whose working directory is `DIR` or below it, with or without symlinks resolved.", "a directory")
+			agent := NonEmpty(fs, "agent", "Search only `AGENT`'s transcripts. One of: "+agents+".", "an agent (one of: "+agents+")")
+			cwd := NonEmpty(fs, "cwd", "Only sessions whose working directory is `DIR` or below it, with or without symlinks resolved.", "a directory")
 			var since time.Duration
 			fs.Func("since", "Only transcripts changed within `DURATION`, e.g. 72h.", func(v string) error {
 				d, err := time.ParseDuration(v)
@@ -107,7 +107,7 @@ func searchCommand() *Command {
 			})
 			limit := fs.Int("limit", session.DefaultLimit, "Return at most `N` results.")
 			sources := strings.Join(session.Sources, ", ")
-			source := nonEmpty(fs, "source", "Only sessions started `KIND`. One of: "+sources+" (see Source below).", "a source (one of: "+sources+")")
+			source := NonEmpty(fs, "source", "Only sessions started `KIND`. One of: "+sources+" (see Source below).", "a source (one of: "+sources+")")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				var terms []string
 				for _, a := range args {

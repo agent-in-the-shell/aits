@@ -118,7 +118,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 		Setup: func(fs *flag.FlagSet) Runner {
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop COMMAND after `DURATION`, e.g. 90s or 30m.")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from this environment to COMMAND and to the alert program.")
-			onAlert := nonEmpty(fs, "on-alert", "Deliver alerts by running `PROGRAM`, an absolute path, with the alert as JSON on stdin.", "a program")
+			onAlert := NonEmpty(fs, "on-alert", "Deliver alerts by running `PROGRAM`, an absolute path, with the alert as JSON on stdin.", "a program")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) < 2 {
 					return 0, UsageError("invalid_input", "expected NAME -- COMMAND [ARG...]")

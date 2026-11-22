@@ -118,11 +118,11 @@ func ingest(ctx context.Context, db *sql.DB, p paths, stderr io.Writer) (int, er
 // errServing means another serve holds the lock.
 var errServing = errors.New("another aits-gw serve is running")
 
-// serve holds the serve lock and ingests the spool every pollEvery until ctx
-// ends; it returns how many events it recorded. The lock is a flock the
-// kernel releases when serve exits, so a crash leaves nothing to repair
-// (P10).
-func serve(ctx context.Context, p paths, stderr io.Writer) (int, error) {
+// serve holds the serve lock and ingests the spool, and the inbox at
+// inboxDir unless it is "", every pollEvery until ctx ends; it returns how
+// many events it recorded. The lock is a flock the kernel releases when serve
+// exits, so a crash leaves nothing to repair (P10).
+func serve(ctx context.Context, p paths, inboxDir string, stderr io.Writer) (int, error) {
 	unlock, err := store.TryLock(p.lock(), true)
 	if errors.Is(err, store.ErrLocked) {
 		return 0, errServing
@@ -136,6 +136,12 @@ func serve(ctx context.Context, p paths, stderr io.Writer) (int, error) {
 		return 0, err
 	}
 	defer db.Close()
+	var in *inbox
+	if inboxDir != "" {
+		if in, err = openInbox(ctx, db, inboxDir); err != nil {
+			return 0, err
+		}
+	}
 	total := 0
 	tick := time.NewTicker(pollEvery)
 	defer tick.Stop()
@@ -144,6 +150,13 @@ func serve(ctx context.Context, p paths, stderr io.Writer) (int, error) {
 		total += n
 		if err != nil && ctx.Err() == nil {
 			return total, err
+		}
+		if in != nil {
+			n, err := in.scan(ctx, db, stderr, time.Now())
+			total += n
+			if err != nil && ctx.Err() == nil {
+				return total, err
+			}
 		}
 		select {
 		case <-ctx.Done():
