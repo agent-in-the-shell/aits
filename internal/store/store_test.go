@@ -194,3 +194,35 @@ func TestOpenAppendAndRotate(t *testing.T) {
 		t.Error("OpenAppend followed a symlink")
 	}
 }
+
+func TestTouch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "db")
+	if err := Touch(path); err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, path); m != 0o600 {
+		t.Errorf("new file mode %v, want 0600", m)
+	}
+	if err := os.WriteFile(path, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Touch(path); err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, path); m != 0o600 {
+		t.Errorf("existing file mode %v, want 0600 (tightened)", m)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "keep" {
+		t.Errorf("content = %q, want it kept", b)
+	}
+	if err := os.Symlink(path, filepath.Join(dir, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Touch(filepath.Join(dir, "link")); err == nil {
+		t.Error("Touch followed a symlink")
+	}
+}

@@ -58,11 +58,11 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 		}
 		f := fs.Lookup(name)
 		if f == nil {
-			return nil, usageError("unknown_flag", "unknown flag %s", a)
+			return nil, UsageError("unknown_flag", "unknown flag %s", a)
 		}
 		_, many := f.Value.(*list)
 		if seen[f.Name] && !many && !isBoolFlag(f) {
-			return nil, usageError("invalid_input", "flag --%s is given more than once", f.Name)
+			return nil, UsageError("invalid_input", "flag --%s is given more than once", f.Name)
 		}
 		seen[f.Name] = true
 		flags = append(flags, a)
@@ -70,13 +70,13 @@ func parseArgs(fs *flag.FlagSet, args []string) ([]string, error) {
 			continue
 		}
 		if i+1 == len(args) {
-			return nil, usageError("invalid_input", "flag %s needs a value", a)
+			return nil, UsageError("invalid_input", "flag %s needs a value", a)
 		}
 		i++
 		flags = append(flags, args[i])
 	}
 	if err := fs.Parse(flags); err != nil {
-		return nil, usageError("invalid_input", "%v", err)
+		return nil, UsageError("invalid_input", "%v", err)
 	}
 	if help {
 		return nil, errHelp

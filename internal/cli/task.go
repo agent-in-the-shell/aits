@@ -202,7 +202,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				}
 				base := ""
 				if *after != "" && *runDir != "" {
-					return 0, usageError("invalid_input", "a follow-up runs in its parent's directory: it takes no --run-dir or --worktree")
+					return 0, UsageError("invalid_input", "a follow-up runs in its parent's directory: it takes no --run-dir or --worktree")
 				}
 				if *after == "" {
 					if dir, base, err = workspaceArgs(env, *cwd, dir, *runDir, *worktree); err != nil {
@@ -215,7 +215,7 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 				}
 				warnGrants(env, t.Write, t.AllowTools)
 				if env.JSON {
-					writeJSON(env.Stdout, map[string]string{"id": t.ID, "status": string(t.Status)})
+					WriteJSON(env.Stdout, map[string]string{"id": t.ID, "status": string(t.Status)})
 				} else {
 					fmt.Fprintln(env.Stdout, t.ID)
 				}
@@ -279,7 +279,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 			label := labelFlag(fs, "Show only tasks labelled `LABEL` (create --label).")
 			return func(_ context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
-					return 0, usageError("invalid_input", "list takes no arguments")
+					return 0, UsageError("invalid_input", "list takes no arguments")
 				}
 				tasks, notes, err := task.List(env.Environ)
 				if err != nil {
@@ -322,7 +322,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 				}
 				if env.JSON {
 					reportNotes(env, task.Notes{Unknown: notes.Unknown}) // skipped ids are in the JSON
-					writeJSON(env.Stdout, struct {
+					WriteJSON(env.Stdout, struct {
 						Tasks   []item   `json:"tasks"`
 						Skipped []string `json:"skipped"`
 					}{items, append([]string{}, notes.Skipped...)})
@@ -358,7 +358,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 		Setup: func(*flag.FlagSet) Runner {
 			return func(_ context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
-					return 0, usageError("invalid_input", "expected one task id; got %d", len(args))
+					return 0, UsageError("invalid_input", "expected one task id; got %d", len(args))
 				}
 				t, err := task.Show(env.Environ, args[0])
 				if err != nil {
@@ -424,7 +424,7 @@ Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1
 			anyOne := fs.Bool("any", false, "With several ids, return once any of them is done or failed, not all.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) == 0 {
-					return 0, usageError("invalid_input", "expected one or more task ids")
+					return 0, UsageError("invalid_input", "expected one or more task ids")
 				}
 				if len(args) > 1 {
 					return waitMany(ctx, env, args, *anyOne, *timeout)
@@ -434,9 +434,9 @@ Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1
 				var late *task.TimeoutError
 				switch {
 				case errors.As(err, &late):
-					return 0, failure("timeout", "%v", late)
+					return 0, Failure("timeout", "%v", late)
 				case errors.Is(err, context.Canceled):
-					return 0, failure("stopped", "stopped while waiting for task %s", printable(id))
+					return 0, Failure("stopped", "stopped while waiting for task %s", printable(id))
 				case err != nil:
 					return 0, taskError(err)
 				}
@@ -455,15 +455,15 @@ func waitMany(ctx context.Context, env *Env, ids []string, anyOne bool, timeout 
 	var e *Error
 	switch {
 	case errors.Is(err, task.ErrWaitTimeout):
-		e = failure("timeout", "%d of %d tasks still queued or running after %s", len(w.Pending), len(ids), timeout)
+		e = Failure("timeout", "%d of %d tasks still queued or running after %s", len(w.Pending), len(ids), timeout)
 	case errors.Is(err, context.Canceled):
-		e = failure("stopped", "stopped while waiting for %d tasks", len(w.Pending))
+		e = Failure("stopped", "stopped while waiting for %d tasks", len(w.Pending))
 	case err != nil:
 		return 0, taskError(err)
 	}
 	for _, t := range w.Ended {
 		if t.Run == nil || t.Run.Status == "" {
-			return 0, failure("internal", "task %s has a run without a status", t.ID)
+			return 0, Failure("internal", "task %s has a run without a status", t.ID)
 		}
 	}
 	if env.JSON {
@@ -478,7 +478,7 @@ func waitMany(ctx context.Context, env *Env, ids []string, anyOne bool, timeout 
 		if e != nil {
 			out.Error = map[string]string{"code": e.Code, "message": e.Message} // as report writes an error
 		}
-		writeJSON(env.Stdout, out)
+		WriteJSON(env.Stdout, out)
 	} else {
 		for _, t := range w.Ended {
 			if err := writeTask(env, t); err != nil {
@@ -545,10 +545,10 @@ Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 			maxRunning := fs.Int("max-running", 0, "Claim only while fewer than `N` tasks (of --label, if given) are running in the queue.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
-					return 0, usageError("invalid_input", "work takes no arguments")
+					return 0, UsageError("invalid_input", "work takes no arguments")
 				}
 				if *jobs < 0 || *maxRunning < 0 {
-					return 0, usageError("invalid_input", "--jobs and --max-running must not be negative")
+					return 0, UsageError("invalid_input", "--jobs and --max-running must not be negative")
 				}
 				if *jobs > 0 {
 					return workJobs(ctx, env, *agent, *label, *jobs, *maxRunning)
@@ -560,7 +560,7 @@ Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 				}
 				if t == nil {
 					if env.JSON {
-						writeJSON(env.Stdout, map[string]string{"status": "empty"})
+						WriteJSON(env.Stdout, map[string]string{"status": "empty"})
 					}
 					return exitOK, nil
 				}
@@ -633,7 +633,7 @@ func workJobs(ctx context.Context, env *Env, agent, label string, jobs, maxRunni
 	}
 	if worked == 0 && !failed {
 		if env.JSON {
-			writeJSON(env.Stdout, map[string]string{"status": "empty"})
+			WriteJSON(env.Stdout, map[string]string{"status": "empty"})
 		}
 		return exitOK, nil
 	}
@@ -648,10 +648,10 @@ func workJobs(ctx context.Context, env *Env, agent, label string, jobs, maxRunni
 // status is refused (P6).
 func writeTask(env *Env, t task.Task) error {
 	if t.Run != nil && t.Run.Status == "" {
-		return failure("internal", "task %s has a run without a status", t.ID)
+		return Failure("internal", "task %s has a run without a status", t.ID)
 	}
 	if env.JSON {
-		writeJSON(env.Stdout, t)
+		WriteJSON(env.Stdout, t)
 		return nil
 	}
 	fmt.Fprintf(env.Stdout, "%s  %s  %s  %s\n", t.ID, t.Status, t.Agent, t.Cwd)
@@ -683,11 +683,11 @@ func taskError(err error) error {
 	var invalid *shell.InvalidRequestError
 	switch {
 	case errors.As(err, &invalid):
-		return usageError("invalid_input", "%s", invalid.Reason)
+		return UsageError("invalid_input", "%s", invalid.Reason)
 	case errors.Is(err, shell.ErrStopped):
-		return failure("stopped", "%v", err)
+		return Failure("stopped", "%v", err)
 	}
-	return failure("internal", "%v", err)
+	return Failure("internal", "%v", err)
 }
 
 // labelFlag declares --label for list and work: a label as create takes it.
@@ -754,16 +754,16 @@ Errors: unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1
 			timeout := fs.Duration("timeout", 30*time.Second, "Wait at most `DURATION` for a running task's worker to stop it.")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
-					return 0, usageError("invalid_input", "expected one task id; got %d", len(args))
+					return 0, UsageError("invalid_input", "expected one task id; got %d", len(args))
 				}
 				id := args[0]
 				t, err := task.Cancel(ctx, env.Environ, id, *timeout, func() { reportNotes(env, task.Notes{Unknown: []string{id}}) })
 				var late *task.TimeoutError
 				switch {
 				case errors.As(err, &late):
-					return 0, failure("timeout", "task %s is still running after %s; its worker has the stop request", printable(id), *timeout)
+					return 0, Failure("timeout", "task %s is still running after %s; its worker has the stop request", printable(id), *timeout)
 				case errors.Is(err, context.Canceled):
-					return 0, failure("stopped", "stopped while waiting for task %s to stop", printable(id))
+					return 0, Failure("stopped", "stopped while waiting for task %s to stop", printable(id))
 				case err != nil:
 					return 0, taskError(err)
 				}

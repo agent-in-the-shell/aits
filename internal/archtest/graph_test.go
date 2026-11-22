@@ -11,12 +11,14 @@ const module = "github.com/agent-in-the-shell/aits/internal/"
 
 // allowed is the declared dependency graph between command groups (P1): the
 // groups each group may import. Shared packages (cli, store, archtest) are
-// not groups.
+// not groups. gw is aits-gw's package (P15(4)): it may import groups, and no
+// group imports it; TestAitsExcludesGateway checks the aits binary as a whole.
 var allowed = map[string][]string{
 	"shell":   nil,
 	"session": nil,
 	"task":    {"shell"},
 	"job":     {"shell"},
+	"gw":      nil,
 }
 
 // TestGroupDependencies enforces P1: every import between command groups is

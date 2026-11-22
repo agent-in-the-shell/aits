@@ -43,7 +43,8 @@ budget in the same pull request and says why. Run the same staticcheck locally w
 - Tests against real vendors are opt-in behind a build tag and are not run in
   default CI.
 - The CLI reference is generated from help: after changing a command, run
-  `go test ./cmd/aits -run TestCLIDocs -update` (P13).
+  `go test ./cmd/aits -run TestCLIDocs -update` (P13); for `aits-gw`,
+  `go test ./cmd/aits-gw -run TestCLIDocs -update` rewrites `docs/gw-cli.md`.
 - `go test ./cmd/aits -run TestSkill` fails when the skill does not name
   every command, flag and result status; fix the skill, not the test.
 - `go test -tags live ./cmd/aits -run TestLive` starts and then continues one

@@ -26,7 +26,7 @@ func main() {
 		<-sigs
 		close(kill)
 	}()
-	os.Exit(cli.Run(ctx, os.Args[1:], cli.Env{
+	os.Exit(cli.Run(ctx, cli.Root(), os.Args[1:], cli.Env{
 		Stdin:   os.Stdin,
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,

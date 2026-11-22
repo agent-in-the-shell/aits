@@ -33,15 +33,15 @@ Errors: unknown_flag, invalid_input (exit 2); unknown_version (exit 1).
 		Setup: func(*flag.FlagSet) Runner {
 			return func(_ context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
-					return 0, usageError("invalid_input", "version takes no arguments")
+					return 0, UsageError("invalid_input", "version takes no arguments")
 				}
 				info, ok := debug.ReadBuildInfo()
 				// Without version control information Go records "(devel)".
 				if !ok || !strings.HasPrefix(info.Main.Version, "v") {
-					return 0, failure("unknown_version", "this aits records no version (built with -buildvcs=false or outside a git checkout)")
+					return 0, Failure("unknown_version", "this aits records no version (built with -buildvcs=false or outside a git checkout)")
 				}
 				if env.JSON {
-					writeJSON(env.Stdout, map[string]string{"version": info.Main.Version})
+					WriteJSON(env.Stdout, map[string]string{"version": info.Main.Version})
 				} else {
 					fmt.Fprintln(env.Stdout, info.Main.Version)
 				}

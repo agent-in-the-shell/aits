@@ -121,7 +121,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 			onAlert := nonEmpty(fs, "on-alert", "Deliver alerts by running `PROGRAM`, an absolute path, with the alert as JSON on stdin.", "a program")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) < 2 {
-					return 0, usageError("invalid_input", "expected NAME -- COMMAND [ARG...]")
+					return 0, UsageError("invalid_input", "expected NAME -- COMMAND [ARG...]")
 				}
 				rec, err := job.Run(ctx, job.Request{
 					Name: args[0], Command: args[1:], Timeout: *timeout,
@@ -131,7 +131,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					return 0, taskError(err)
 				}
 				if env.JSON {
-					writeJSON(env.Stdout, rec)
+					WriteJSON(env.Stdout, rec)
 				} else {
 					fmt.Fprintf(env.Stdout, "%s  %s  %s\n", rec.Name, rec.Status, rec.Alert)
 					if rec.Message != "" {
@@ -185,7 +185,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 		Setup: func(*flag.FlagSet) Runner {
 			return func(_ context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 0 {
-					return 0, usageError("invalid_input", "list takes no arguments")
+					return 0, UsageError("invalid_input", "list takes no arguments")
 				}
 				states, skipped, err := job.List(env.Environ)
 				if err != nil {
@@ -196,7 +196,7 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 					return 0, taskError(err)
 				}
 				if env.JSON {
-					writeJSON(env.Stdout, struct {
+					WriteJSON(env.Stdout, struct {
 						Jobs    []job.State     `json:"jobs"`
 						Sched   []job.Heartbeat `json:"sched"`
 						Skipped []string        `json:"skipped"`
@@ -306,18 +306,18 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 			sched := fs.Bool("sched", false, "Run the jobs from a LaunchAgent's job sched, not cron (macOS).")
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
-					return 0, usageError("invalid_input", "expected FILE")
+					return 0, UsageError("invalid_input", "expected FILE")
 				}
 				self, err := selfPath(env)
 				if err != nil {
-					return 0, failure("internal", "%v", err)
+					return 0, Failure("internal", "%v", err)
 				}
 				res, err := job.Apply(ctx, job.ApplyRequest{File: args[0], Aits: self, DryRun: *dryRun, Sched: *sched, Environ: env.Environ})
 				if err != nil {
 					return 0, taskError(err)
 				}
 				if env.JSON {
-					writeJSON(env.Stdout, res)
+					WriteJSON(env.Stdout, res)
 					return exitOK, nil
 				}
 				for _, g := range []struct {
@@ -375,13 +375,13 @@ Errors: unknown_flag, invalid_input (exit 2); internal (exit 1).
 		Setup: func(*flag.FlagSet) Runner {
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				if len(args) != 1 {
-					return 0, usageError("invalid_input", "expected FILE")
+					return 0, UsageError("invalid_input", "expected FILE")
 				}
 				err := job.Sched(ctx, job.SchedRequest{
 					File: args[0], Environ: env.Environ, Kill: env.Kill,
 					Report: func(rec job.Record) {
 						if env.JSON {
-							writeJSON(env.Stdout, rec)
+							WriteJSON(env.Stdout, rec)
 							return
 						}
 						fmt.Fprintf(env.Stdout, "%s  %s  %s\n", rec.Name, rec.Status, rec.Alert)

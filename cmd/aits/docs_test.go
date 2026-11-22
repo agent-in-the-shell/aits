@@ -239,13 +239,13 @@ func commandPath(args []string) []string {
 }
 
 // errorCodes maps each error code that the files the globs name pass to
-// usageError or failure to the exit code it causes.
+// UsageError or Failure to the exit code it causes.
 func errorCodes(t *testing.T, globs ...string) map[string]string {
 	t.Helper()
-	exit := map[string]string{"usageError": "exit 2", "failure": "exit 1"}
+	exit := map[string]string{"UsageError": "exit 2", "Failure": "exit 1"}
 	codes := map[string]string{}
 	for _, glob := range globs {
-		for _, m := range sourceMatches(t, glob, `\b(usageError|failure)\(\s*"(\w+)"`) {
+		for _, m := range sourceMatches(t, glob, `\b(UsageError|Failure)\(\s*"(\w+)"`) {
 			codes[m[2]] = exit[m[1]]
 		}
 	}
