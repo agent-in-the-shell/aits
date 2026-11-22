@@ -49,6 +49,11 @@ To run tasks on a schedule, let cron or launchd start `aits task create` and
 
 The full reference is [docs/cli.md](docs/cli.md).
 
+`aits-gw`, a second binary from this repository, records events for agents
+and scripts; it is installed separately and needs none of `aits`. Its
+reference is [docs/gw-cli.md](docs/gw-cli.md), and
+[docs/gw-launchd.md](docs/gw-launchd.md) runs it under launchd.
+
 ## Agent skill
 
 [skills/aits/SKILL.md](skills/aits/SKILL.md) teaches a coding agent when and
