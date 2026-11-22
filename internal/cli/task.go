@@ -180,17 +180,17 @@ Errors: unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (e
 `,
 		Setup: func(fs *flag.FlagSet) Runner {
 			agent := fs.String("agent", "", "`AGENT` CLI to run (required unless --after). One of: "+strings.Join(shell.Agents(), ", ")+".")
-			cwd := nonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory, or with --after the parent's).", "a directory")
-			after := nonEmpty(fs, "after", "Continue the conversation of task `ID` once it is done, with its agent and cwd.", "a task id")
-			session := nonEmpty(fs, "session", "Continue the conversation `ID`: a session_id of an earlier result or of session search.", "a session id")
+			cwd := NonEmpty(fs, "cwd", "Run the agent in `DIR` (default: the current directory, or with --after the parent's).", "a directory")
+			after := NonEmpty(fs, "after", "Continue the conversation of task `ID` once it is done, with its agent and cwd.", "a task id")
+			session := NonEmpty(fs, "session", "Continue the conversation `ID`: a session_id of an earlier result or of session search.", "a session id")
 			timeout := fs.Duration("timeout", shell.DefaultTimeout, "Stop the agent after `DURATION`, e.g. 90s or 30m, in whole milliseconds.")
-			model := nonEmpty(fs, "model", modelUsage, "a model name")
+			model := NonEmpty(fs, "model", modelUsage, "a model name")
 			pass := repeated(fs, "env", "Pass the variable `NAME` from the worker's environment to the agent.")
 			write := fs.Bool("write", false, writeUsage)
 			allow := repeated(fs, "allow-tool", allowToolUsage)
-			label := nonEmpty(fs, "label", "Label the task `LABEL`, e.g. the runbook it runs, for list --label and work --label.", "a label")
+			label := NonEmpty(fs, "label", "Label the task `LABEL`, e.g. the runbook it runs, for list --label and work --label.", "a label")
 			report := fs.Bool("report", false, reportUsage+" A follow-up has it when its parent has.")
-			runDir := nonEmpty(fs, "run-dir", runDirUsage, "a directory")
+			runDir := NonEmpty(fs, "run-dir", runDirUsage, "a directory")
 			worktree := fs.Bool("worktree", false, worktreeUsage)
 			return func(ctx context.Context, env *Env, args []string) (int, error) {
 				prompt, dir, err := promptArgs(ctx, env, args, *cwd)
@@ -539,7 +539,7 @@ Exit codes:
 Errors: unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).
 `,
 		Setup: func(fs *flag.FlagSet) Runner {
-			agent := nonEmpty(fs, "agent", "Only claim tasks for `AGENT`.", "an agent (one of: "+strings.Join(shell.Agents(), ", ")+")")
+			agent := NonEmpty(fs, "agent", "Only claim tasks for `AGENT`.", "an agent (one of: "+strings.Join(shell.Agents(), ", ")+")")
 			label := labelFlag(fs, "Only claim tasks labelled `LABEL` (create --label).")
 			jobs := fs.Int("jobs", 0, "Run up to `N` tasks at once, claiming more as they end, until nothing is claimable.")
 			maxRunning := fs.Int("max-running", 0, "Claim only while fewer than `N` tasks (of --label, if given) are running in the queue.")

@@ -96,9 +96,10 @@ type server struct {
 	done           chan error
 }
 
-func (h *home) serve() *server {
+// serve starts "aits-gw serve --json" with extra args.
+func (h *home) serve(extra ...string) *server {
 	h.t.Helper()
-	cmd, stdout, stderr := h.command("serve", "--json")
+	cmd, stdout, stderr := h.command(append([]string{"serve", "--json"}, extra...)...)
 	if err := cmd.Start(); err != nil {
 		h.t.Fatal(err)
 	}
@@ -233,7 +234,7 @@ func TestAcceptance(t *testing.T) {
 	s := h.serve()
 	h.until("the first event to be recorded", func(st status) bool { return st.Spooled == 0 && st.Events == 1 })
 	h.put("report.ready", "--source-id", "2026-11-21-am", "path=/tmp/r.md")
-	st := h.until("the re-send to be counted", func(st status) bool { return st.Duplicates == 1 })
+	st := h.until("the re-send to be counted", func(st status) bool { return st.Duplicates == 1 && st.Spooled == 0 })
 	if !st.Serving || st.Spooled != 0 || st.Events != 1 || st.LastIngestedAt == "" {
 		t.Errorf("status while serving = %+v", st)
 	}

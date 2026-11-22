@@ -103,10 +103,10 @@ func isBoolFlag(f *flag.Flag) bool {
 	return ok && b.IsBoolFlag()
 }
 
-// nonEmpty declares a string flag that refuses an explicitly empty value, so
+// NonEmpty declares a string flag that refuses an explicitly empty value, so
 // "--name=" is never read as "not given" (P6). The error reads
 // `invalid value "" for flag -name: needs <need>`.
-func nonEmpty(fs *flag.FlagSet, name, usage, need string) *string {
+func NonEmpty(fs *flag.FlagSet, name, usage, need string) *string {
 	v := new(string)
 	fs.Func(name, usage, func(s string) error {
 		if s == "" {

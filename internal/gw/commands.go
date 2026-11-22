@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -103,30 +104,52 @@ recorded again. A spool file that is not an event is moved to
 spool/rejected and reported on stderr; serve keeps going. Only one serve
 runs at a time.
 
+With --inbox DIR, each poll also walks DIR and its subdirectories, which
+another program owns, and copies each regular file whose name does not start
+with "." into an event, once its mtime is 2s old:
+  kind       inbox.file
+  source_id  the file's name, so a file the other program moves into a
+             subdirectory (such as done/) stays one event
+  payload    name; dir, the subdirectory it was first seen in ("." for DIR);
+             size; content, the bytes if valid UTF-8 and at most 32 KiB,
+             else content_omitted: too_large or not_utf8
+  put_at     the file's mtime
+serve only reads DIR: it never creates, moves, rewrites, removes or changes
+the mode of anything there. Each name is copied once; a restart does not copy
+recorded names again. A file that cannot be copied (a symlink, an unreadable
+file) is reported once on stderr and skipped.
+
 SIGTERM, SIGINT or SIGHUP stops it after the event in hand.
 
 Output: on stop, "stopped: N events ingested"; with --json
 {"status":"stopped","ingested":N}, where N counts events read from the spool,
-duplicates included.
+duplicates included, and files copied from the inbox.
 
 Exit codes:
   0  Stopped by a signal.
-  1  Another serve is running, or the spool or database failed.
+  1  Another serve is running, the inbox could not be walked, or the spool
+     or database failed.
   2  Usage error or invalid input.
 
-Errors: unknown_flag, invalid_input (exit 2); already_serving, schema_too_new,
-store (exit 1).
+Errors: unknown_flag, invalid_input (exit 2); already_serving, inbox,
+schema_too_new, store (exit 1).
 `,
-		Setup: func(*flag.FlagSet) cli.Runner {
+		Setup: func(fs *flag.FlagSet) cli.Runner {
+			inboxDir := cli.NonEmpty(fs, "inbox", "Also copy the files under `DIR`, read-only, into inbox.file events.", "a directory")
 			return func(ctx context.Context, env *cli.Env, args []string) (int, error) {
 				if len(args) != 0 {
 					return 0, cli.UsageError("invalid_input", "serve takes no arguments")
+				}
+				if *inboxDir != "" {
+					if fi, err := os.Stat(*inboxDir); err != nil || !fi.IsDir() {
+						return 0, cli.UsageError("invalid_input", "--inbox %s is not a directory", *inboxDir)
+					}
 				}
 				p, err := resolve(env.Environ)
 				if err != nil {
 					return 0, dbError(err)
 				}
-				n, err := serve(ctx, p, env.Stderr)
+				n, err := serve(ctx, p, *inboxDir, env.Stderr)
 				if err != nil {
 					return 0, dbError(err)
 				}
@@ -144,9 +167,12 @@ store (exit 1).
 // dbError maps a serve or status failure to its error code.
 func dbError(err error) error {
 	var tooNew errSchemaTooNew
+	var walk errInbox
 	switch {
 	case errors.Is(err, errServing):
 		return cli.Failure("already_serving", "%v", err)
+	case errors.As(err, &walk):
+		return cli.Failure("inbox", "%v", err)
 	case errors.As(err, &tooNew):
 		return cli.Failure("schema_too_new", "%v", err)
 	}
