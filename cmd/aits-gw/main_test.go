@@ -217,6 +217,18 @@ func (h *home) put(args ...string) putResult {
 	return r
 }
 
+// db opens the gateway's database for a test to read or plant rows; it is
+// closed when the test ends.
+func (h *home) db() *sql.DB {
+	h.t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(h.aits, "gw", "gw.db"))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	h.t.Cleanup(func() { db.Close() })
+	return db
+}
+
 // TestAcceptance runs the scenario of #165: a put with no server, a serve
 // that records it, a re-send counted as a duplicate, and a SIGTERM that
 // stops serve with its result.
@@ -409,14 +421,9 @@ func TestPermissions(t *testing.T) {
 func TestSchemaTooNew(t *testing.T) {
 	h := newHome(t)
 	h.status()
-	db, err := sql.Open("sqlite", filepath.Join(h.aits, "gw", "gw.db"))
-	if err != nil {
+	if _, err := h.db().Exec("PRAGMA user_version = 99"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("PRAGMA user_version = 99"); err != nil {
-		t.Fatal(err)
-	}
-	db.Close()
 	for _, cmd := range []string{"status", "serve"} {
 		wantError(t, cmd, h.run(cmd, "--json"), 1, "schema_too_new")
 	}

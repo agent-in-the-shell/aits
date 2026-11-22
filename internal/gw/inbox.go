@@ -59,29 +59,51 @@ func openInbox(ctx context.Context, db *sql.DB, dir string) (*inbox, error) {
 	return in, rows.Err()
 }
 
-// scan records each file under the inbox that has settled and has not been
-// seen, and returns how many it recorded. A file's source id is its name, so
-// a file the consumer moved into a subdirectory is not a second event. A
-// failure to walk the inbox is an errInbox.
-func (in *inbox) scan(ctx context.Context, db *sql.DB, stderr io.Writer, now time.Time) (int, error) {
-	n := 0
-	err := filepath.WalkDir(in.dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return errInbox{err}
-		}
-		if ctx.Err() != nil {
-			return filepath.SkipAll
-		}
-		name := d.Name()
+// walkInbox calls fn for each entry under dir that is not a directory, skipping
+// names that start with "." (a writer's temp files, hidden directories). The
+// adapter and inbox check walk the same files through it. A failure to walk
+// is an errInbox.
+func walkInbox(dir string, fn func(path string, d fs.DirEntry) error) error {
+	return filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		switch {
-		case path == in.dir:
+		case err != nil:
+			return errInbox{err}
+		case path == dir:
 			return nil
-		case strings.HasPrefix(name, "."): // a writer's temp file, or hidden
+		case strings.HasPrefix(d.Name(), "."):
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
-		case d.IsDir() || in.seen[name]:
+		case d.IsDir():
+			return nil
+		}
+		return fn(path, d)
+	})
+}
+
+// uncopyable returns why the adapter never copies the entry d, or "".
+func uncopyable(d fs.DirEntry) string {
+	if !d.Type().IsRegular() {
+		return "not a regular file"
+	}
+	if why := validSource(d.Name()); why != "" {
+		return "name " + why
+	}
+	return ""
+}
+
+// scan records each file under the inbox that has settled and has not been
+// seen, and returns how many it recorded. A file's source id is its name, so
+// a file the consumer moved into a subdirectory is not a second event.
+func (in *inbox) scan(ctx context.Context, db *sql.DB, stderr io.Writer, now time.Time) (int, error) {
+	n := 0
+	err := walkInbox(in.dir, func(path string, d fs.DirEntry) error {
+		if ctx.Err() != nil {
+			return filepath.SkipAll
+		}
+		name := d.Name()
+		if in.seen[name] {
 			return nil
 		}
 		skip := func(why string) error {
@@ -89,11 +111,8 @@ func (in *inbox) scan(ctx context.Context, db *sql.DB, stderr io.Writer, now tim
 			fmt.Fprintf(stderr, "aits-gw: inbox file %s skipped: %s\n", name, why)
 			return nil
 		}
-		if !d.Type().IsRegular() {
-			return skip("not a regular file")
-		}
-		if why := validSource(name); why != "" {
-			return skip("name " + why)
+		if why := uncopyable(d); why != "" {
+			return skip(why)
 		}
 		fi, err := d.Info()
 		if errors.Is(err, fs.ErrNotExist) || err == nil && now.Sub(fi.ModTime()) < settle {

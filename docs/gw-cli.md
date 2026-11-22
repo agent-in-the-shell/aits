@@ -12,6 +12,7 @@ Record events for agents and scripts (shadow mode: nothing is triggered or deliv
 
 Commands:
   event   Put events.
+  inbox   Compare a file inbox with its events.
   serve   Record spooled events in the database until stopped.
   status  Show whether serve is running and what is spooled and recorded.
   help    Show help for aits-gw or one of its commands.
@@ -66,6 +67,67 @@ Exit codes:
   2  Usage error or invalid input.
 
 Errors: unknown_flag, invalid_input (exit 2); store (exit 1).
+```
+
+## aits-gw inbox
+
+```text
+Usage: aits-gw inbox COMMAND
+
+Compare a file inbox with its events.
+
+Commands:
+  check  Compare the files under an inbox with the events serve --inbox recorded.
+
+Run 'aits-gw inbox COMMAND --help' for details.
+
+Errors: unknown_command, unknown_flag (exit 2).
+```
+
+## aits-gw inbox check
+
+```text
+Usage: aits-gw inbox check [flags]
+
+Compare the files under an inbox with the events serve --inbox recorded.
+
+Flags:
+  --inbox DIR  The inbox DIR that serve --inbox copies; required.
+  --json       Print the result, or the error, as JSON on stdout.
+
+check walks DIR as serve --inbox does (regular files whose name does not
+start with ".", outside dot-named directories) and matches each file name with
+the inbox.file event of that source id in $AITS_HOME/gw/gw.db. It only reads
+DIR, works whether or not serve is running, and creates an empty database if
+there is none.
+
+Output (--json):
+  {"status":"ok|mismatch","files":N,"events":N,"matched":N,"pending":N,
+   "skipped":N,"missed":[NAME...],"extra":[{"name":…,"reason":…}...],
+   "duplicates":[{"name":…,"reason":…}...]}
+  files       files under DIR that serve --inbox would copy
+  events      inbox.file events recorded
+  matched     names with one file and one event whose size, and content
+              when copied, equal the file's
+  pending     unrecorded files less than 10s old; not counted as missed
+  skipped     entries serve --inbox never copies (not a regular file, or a
+              name it refuses)
+  missed      names of files older than that with no event
+  extra       events with no file (reason no_file), or whose file's size or
+              content differs (changed)
+  duplicates  an event put more than once (reason seen), or one name on more
+              than one file under DIR (files)
+status is ok when missed, extra and duplicates are empty, else mismatch;
+both exit 0. Lists are sorted by name. Without --json, one "name: value"
+line per count, then each list entry indented under its name.
+
+Exit codes:
+  0  Compared (status ok or mismatch).
+  1  DIR or the database could not be read.
+  2  Usage error or invalid input.
+
+Errors: unknown_flag, invalid_input (exit 2); inbox, schema_too_new, store
+(exit 1).
 ```
 
 ## aits-gw serve
