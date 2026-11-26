@@ -16,7 +16,7 @@ import (
 	"github.com/agent-in-the-shell/aits/internal/task"
 )
 
-var update = flag.Bool("update", false, "rewrite docs/cli.md from the binary's help output")
+var update = flag.Bool("update", false, "rewrite docs/cli.md from the binary's help output, and site/cli.html and site/principles.html from docs/")
 
 // TestCLIDocs enforces P13: docs/cli.md is exactly the help the binary prints.
 func TestCLIDocs(t *testing.T) {

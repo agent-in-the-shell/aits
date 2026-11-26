@@ -45,6 +45,13 @@ budget in the same pull request and says why. Run the same staticcheck locally w
 - The CLI reference is generated from help: after changing a command, run
   `go test ./cmd/aits -run TestCLIDocs -update` (P13); for `aits-gw`,
   `go test ./cmd/aits-gw -run TestCLIDocs -update` rewrites `docs/gw-cli.md`.
+- The website lives in `site/` and has no build step. `index.html` is
+  written by hand; `TestSiteMatchesHelp` fails when it names a command,
+  group, flag or status the help does not have, or misses one. `cli.html`
+  and `principles.html` are generated from `docs/cli.md` and
+  `docs/principles.md`: after changing either, run
+  `go test ./cmd/aits -run TestSitePages -update`. Pushes to `main` that touch
+  `site/` publish it to GitHub Pages.
 - `go test ./cmd/aits -run TestSkill` fails when the skill does not name
   every command, flag and result status; fix the skill, not the test.
 - `go test -tags live ./cmd/aits -run TestLive` starts and then continues one

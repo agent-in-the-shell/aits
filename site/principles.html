@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Principles: aits</title>
+<meta name="description" content="The design rules for aits: each states the rule, the failure it prevents, and the guard that enforces it. Rendered from docs/principles.md.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="aits">
+<meta property="og:title" content="aits principles">
+<meta property="og:description" content="The design rules for aits: each states the rule, the failure it prevents, and the guard that enforces it. Rendered from docs/principles.md.">
+<meta property="og:image" content="https://agent-in-the-shell.github.io/aits/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="aits principles">
+<meta name="twitter:description" content="The design rules for aits: each states the rule, the failure it prevents, and the guard that enforces it. Rendered from docs/principles.md.">
+<meta name="theme-color" content="#ecebe5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0d14" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="base.css">
+<script>try{var t=localStorage.getItem('aits-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+</head>
+<body class="doc-page">
+<div class="vt-edge" aria-hidden="true"></div>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="aits home">
+      <span class="wm">aits</span><span class="cur" aria-hidden="true"></span>
+    </a>
+    <span class="tag">pre-release</span>
+    <nav class="nav" aria-label="Site">
+      <span class="sub"><a href="index.html#commands">Commands</a><a href="index.html#usage">Usage</a><a href="index.html#agents">For agents</a></span>
+      <a href="cli.html">CLI<span class="lg"> reference</span></a>
+      <a href="principles.html" aria-current="page">Principles</a>
+    </nav>
+    <a class="gh" href="https://github.com/agent-in-the-shell/aits" aria-label="aits on GitHub">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <button class="theme" id="theme" type="button" aria-label="Switch color theme">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5a6.5 6.5 0 010 13z" fill="currentColor"/></svg>
+    </button>
+  </div>
+  <div class="fuse" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+<div class="doc-head" id="top" data-hero="ci">
+  <div class="wrap">
+    <span class="num">docs/principles.md</span>
+    <h1>Principles<span class="sq" aria-hidden="true"></span></h1>
+    <p class="cicount" aria-hidden="true"><i class="cc-st"></i><b class="cc-n">15</b><span class="cc-of">/15</span> <span class="cc-l">rules, each with its guard</span></p>
+    <p class="lede">Each principle states the rule, the failure it prevents, and the guard that enforces it. A guard marked <span class="ro">review-only</span> cannot be checked mechanically and relies on code review; every other guard is a test or CI check. Guards land with the first code they protect — a guard over code that does not exist yet is not required.</p>
+    <p class="meta">The design rules for aits. Approved in <a href="https://github.com/agent-in-the-shell/aits/blob/main/docs/superpowers/specs/2026-10-13-aits-foundation-design.md">the foundation spec</a>; change them only through an issue. This page renders <a href="https://github.com/agent-in-the-shell/aits/blob/main/docs/principles.md"><code>docs/principles.md</code></a>.</p>
+    <ol class="pgrid" aria-label="All principles"><li><a href="#p1"><span class="pn">P1</span><span class="pt">One binary</span></a></li><li><a href="#p2"><span class="pn">P2</span><span class="pt">Build only what has a caller today</span></a></li><li><a href="#p3"><span class="pn">P3</span><span class="pt">Stdlib first</span></a></li><li><a href="#p4"><span class="pn">P4</span><span class="pt">One grammar</span></a></li><li><a href="#p5"><span class="pn">P5</span><span class="pt">Machine-readable by contract</span></a></li><li><a href="#p6"><span class="pn">P6</span><span class="pt">Fail closed</span></a></li><li><a href="#p7"><span class="pn">P7</span><span class="pt">One storage root</span></a></li><li><a href="#p8"><span class="pn">P8</span><span class="pt">Content and secret hygiene</span></a></li><li><a href="#p9"><span class="pn">P9</span><span class="pt">Safe defaults for exposure and privilege</span></a></li><li><a href="#p10"><span class="pn">P10</span><span class="pt">Owned processes</span></a></li><li><a href="#p11"><span class="pn">P11</span><span class="pt">Clean-room</span></a></li><li><a href="#p12"><span class="pn">P12</span><span class="pt">Test the built binary</span></a></li><li><a href="#p13"><span class="pn">P13</span><span class="pt">Ship together</span></a></li><li><a href="#p14"><span class="pn">P14</span><span class="pt">Small binary</span></a></li><li><a href="#p15"><span class="pn">P15</span><span class="pt">A toolbox for agents</span></a></li></ol>
+    <div class="ticker" aria-hidden="true"><span><b><i>P1</i> One binary</b><b><i>P2</i> Build only what has a caller today</b><b><i>P3</i> Stdlib first</b><b><i>P4</i> One grammar</b><b><i>P5</i> Machine-readable by contract</b><b><i>P6</i> Fail closed</b><b><i>P7</i> One storage root</b><b><i>P8</i> Content and secret hygiene</b><b><i>P9</i> Safe defaults for exposure and privilege</b><b><i>P10</i> Owned processes</b><b><i>P11</i> Clean-room</b><b><i>P12</i> Test the built binary</b><b><i>P13</i> Ship together</b><b><i>P14</i> Small binary</b><b><i>P15</i> A toolbox for agents</b><b><i>P1</i> One binary</b><b><i>P2</i> Build only what has a caller today</b><b><i>P3</i> Stdlib first</b><b><i>P4</i> One grammar</b><b><i>P5</i> Machine-readable by contract</b><b><i>P6</i> Fail closed</b><b><i>P7</i> One storage root</b><b><i>P8</i> Content and secret hygiene</b><b><i>P9</i> Safe defaults for exposure and privilege</b><b><i>P10</i> Owned processes</b><b><i>P11</i> Clean-room</b><b><i>P12</i> Test the built binary</b><b><i>P13</i> Ship together</b><b><i>P14</i> Small binary</b><b><i>P15</i> A toolbox for agents</b></span></div>
+  </div>
+</div>
+
+<div class="wrap doc">
+  <nav class="toc" aria-label="Principles on this page">
+    <h2>15 rules</h2>
+    <ol>
+      <li><a href="#p1">P1 <span class="t t2">One binary</span></a></li>
+      <li><a href="#p2">P2 <span class="t t2">Build only what has a caller today</span></a></li>
+      <li><a href="#p3">P3 <span class="t t2">Stdlib first</span></a></li>
+      <li><a href="#p4">P4 <span class="t t2">One grammar</span></a></li>
+      <li><a href="#p5">P5 <span class="t t2">Machine-readable by contract</span></a></li>
+      <li><a href="#p6">P6 <span class="t t2">Fail closed</span></a></li>
+      <li><a href="#p7">P7 <span class="t t2">One storage root</span></a></li>
+      <li><a href="#p8">P8 <span class="t t2">Content and secret hygiene</span></a></li>
+      <li><a href="#p9">P9 <span class="t t2">Safe defaults for exposure and privilege</span></a></li>
+      <li><a href="#p10">P10 <span class="t t2">Owned processes</span></a></li>
+      <li><a href="#p11">P11 <span class="t t2">Clean-room</span></a></li>
+      <li><a href="#p12">P12 <span class="t t2">Test the built binary</span></a></li>
+      <li><a href="#p13">P13 <span class="t t2">Ship together</span></a></li>
+      <li><a href="#p14">P14 <span class="t t2">Small binary</span></a></li>
+      <li><a href="#p15">P15 <span class="t t2">A toolbox for agents</span></a></li>
+    </ol>
+  </nav>
+
+  <div class="doc-body">
+
+  <article class="prin" id="p1"><div class="big">P1</div><div>
+    <h2>One binary, command groups with a declared dependency graph</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>There is one <code>aits</code> binary. Each command group (<code>model</code>, <code>shell</code>, <code>task</code>, <code>session</code>, and any added later) is one package under <code>internal/&lt;group&gt;</code>. A new group needs its own issue with a use case (P2). The repository may also build <code>aits-gw</code>, a second binary that exists only under P15(4); it may import command groups, and nothing that <code>aits</code> builds may import its packages (<code>internal/gw/...</code>). Allowed dependency edges between groups are declared in one place and form a DAG; lower-level groups (<code>shell</code>, <code>model</code>) never depend on higher-level ones (<code>task</code>). Cross-group calls use the target group&#39;s Go API — never exec&#39;ing <code>aits</code> itself, never parsing another group&#39;s JSON output.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Version skew between separately built tools; resolving the wrong executable from <code>PATH</code>; one JSON shape declared twice and drifting.</p></dd>
+      <dt class="g">Guard</dt><dd><p>A test scans actual imports and fails on any edge missing from the declared list, or on a cycle. A second test lists the dependencies of <code>./cmd/aits</code> (<code>go list -deps</code>) and fails if any package under <code>internal/gw</code> appears; it lands with the first <code>internal/gw</code> code.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p2"><div class="big">P2</div><div>
+    <h2>Build only what has a caller today</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>Every feature traces to an issue with a concrete use case: who runs it, with what input, which command, and what result. No reserved states, dead flags, aliases, or config files for a single knob.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Declared-but-never-set states, docs naming callers that do not exist, and side products growing inside a core service.</p></dd>
+      <dt class="g">Guard</dt><dd><p><code>staticcheck</code> (including unused checks) in CI. Whether a feature has a real caller is <span class="ro">review-only</span>.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p3"><div class="big">P3</div><div>
+    <h2>Stdlib first, no cgo</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>Builds use <code>CGO_ENABLED=0</code>. Every direct dependency is listed in <code>docs/dependencies.md</code> with the reason it is needed. Expected early entries: <code>modernc.org/sqlite</code> (pure-Go SQLite with FTS5) and <code>golang.org/x/sys</code>.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Dependency sprawl (for example, a telemetry stack pulling in an RPC framework for a CLI) and builds that cannot cross-compile to a static binary.</p></dd>
+      <dt class="g">Guard</dt><dd><p>CI builds with <code>CGO_ENABLED=0</code>; a check fails when <code>go.mod</code>&#39;s direct requirements and <code>docs/dependencies.md</code> disagree.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p4"><div class="big">P4</div><div>
+    <h2>One grammar</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>All commands share one parser. Flags may appear before or after positional arguments; <code>--</code> ends flag parsing. An unknown command or flag is a usage error (exit 2) — it is never treated as a prompt or silently dropped. No aliases, no implicit default verb. An explicit flag always beats an environment variable. One vocabulary of vendor names across all groups.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>A typo sent to an agent as a prompt; an environment variable silently overriding <code>--agent</code>; commands disagreeing on flag position and exit codes.</p></dd>
+      <dt class="g">Guard</dt><dd><p>A table-driven test walks the command tree: every command has help, an unknown flag exits 2, and every command that produces output accepts <code>--json</code>.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p5"><div class="big">P5</div><div>
+    <h2>Machine-readable by contract</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>stdout carries only the result; diagnostics go to stderr. With <code>--json</code>, errors are also printed to stdout as <code>{&#34;error&#34;:{&#34;code&#34;:&#34;…&#34;,&#34;message&#34;:&#34;…&#34;}}</code> so a caller parses one stream. Exit codes: <code>0</code> success, <code>1</code> operation failed, <code>2</code> usage error or invalid input. A child process&#39;s own exit code is reported inside the JSON result, not passed through as aits&#39;s exit code. Output shapes are documented in help and docs; before 1.0 they may change.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Exit code 1 meaning both &#34;bad usage&#34; and &#34;the agent failed&#34;; results that look successful but are empty.</p></dd>
+      <dt class="g">Guard</dt><dd><p>Functional tests against the built binary assert stdout/stderr separation and exit codes.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p6"><div class="big">P6</div><div>
+    <h2>Fail closed, no zero-value success</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>Input that cannot be parsed, is outside the allowed set, or conflicts with other input is an error (exit 2). &#34;Cannot determine&#34; is also not allowed through. Every result carries an explicit <code>status</code> value; empty output or a zero value never means success.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Flags that some backends silently ignored; zero-value results read as success; arguments parsed wrongly without an error.</p></dd>
+      <dt class="g">Guard</dt><dd><p>Each feature issue&#39;s acceptance includes binary tests for its main failure paths. The CLI refuses to print a result with an empty <code>status</code>, and fails with <code>internal</code> instead; tests check each place that prints one.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p7"><div class="big">P7</div><div>
+    <h2>One storage root, safe writes</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>All project-owned files live under one root, <code>$AITS_HOME</code> (default <code>~/.local/share/aits</code>), with one subdirectory per command group. One function resolves paths; there are no legacy-path fallbacks. Directories are 0700 and files 0600, tightened on existing paths too. Writes go through temp file plus rename. SQLite schemas are versioned with <code>user_version</code> migrations only. Vendor-owned data (for example <code>~/.claude</code>) stays where the vendor keeps it.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Several namespaces and legacy paths silently shadowing new ones; permission fixes landing one call site at a time; two different migration styles.</p></dd>
+      <dt class="g">Guard</dt><dd><p>Tests assert actual on-disk permissions. A structural test forbids, outside the storage package, every <code>os</code> function that creates, moves, changes or removes a file or directory, <code>OpenFile</code> and <code>OpenRoot</code> whatever their use (<code>internal/archtest/storage_test.go</code>).</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p8"><div class="big">P8</div><div>
+    <h2>Content and secret hygiene</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>A child process receives an explicit environment: its adapter&#39;s allowlist plus variables the user names with <code>--env NAME</code>. Prompts are not placed in argv when the vendor accepts stdin. Logs and diagnostics never contain credentials or upstream response bodies. The model gateway&#39;s audit record holds metadata only — no prompt or completion content. Captured child output is bounded.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Every API key in the parent environment reaching the child; prompts visible in <code>ps</code>; upstream error bodies (which can echo prompt content) written to logs; unbounded output buffered in memory.</p></dd>
+      <dt class="g">Guard</dt><dd><p>Tests plant a canary secret and assert it is absent from the child environment and argv and from aits&#39;s stdout and stderr, on success and on a failure path; a test asserts oversized output is truncated.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p9"><div class="big">P9</div><div>
+    <h2>Safe defaults for exposure and privilege</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>Network listeners bind to <code>127.0.0.1</code> by default. A server refuses to start without an auth token, and every endpoint except health requires it. Privilege-raising flags (for example, bypassing a vendor&#39;s permission prompts) are per-invocation only — never enabled by environment variable or config — and print a warning on stderr. Only official, documented vendor APIs and CLIs are used; aits never impersonates another client.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Listening on all interfaces by default; unauthenticated metrics; terms-of-service risk and constant version-chasing from impersonating subscription clients.</p></dd>
+      <dt class="g">Guard</dt><dd><p>Binary tests: <code>serve</code> without a token refuses to start; the default bind is loopback; no environment variable enables a privilege-raising flag.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p10"><div class="big">P10</div><div>
+    <h2>Owned processes, recoverable state</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>aits runs in the foreground and never daemonizes itself: it does not fork into the background, detach from its session, re-execute itself or write pid files, and no command starts another aits process. A long-running command, such as a server or a looping worker, is allowed when the user starts it in the foreground and supervises it with a tool of their choice (launchd, systemd, tmux). Every other command works on its own and never requires a running aits process; a long-running process does not own agents that other commands depend on (#111). Each child runs in its own process group; on timeout, cancel or SIGTERM aits sends TERM, waits a bounded grace period, sends KILL, reaps, and still prints a result — with timeout and stop as distinct statuses. Persisted &#34;in progress&#34; state must be recoverable by aits itself (for example, a lock the kernel releases when its holder exits), without manual repair. One user action is one atomic command. These rules apply to <code>aits-gw</code> (P15(4)) as well: it runs in the foreground under a supervisor and never daemonizes itself. Its own commands (<code>aits-gw wait</code>, <code>aits-gw status</code>) may require it to be running; no <code>aits</code> command may. Agents it asks for are queued as tasks and run by <code>aits task work</code>, never as its children, so restarting <code>aits-gw</code> does not stop a running agent.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Orphaned agent processes; a task stuck <code>running</code> forever after its worker dies; two-step follow-ups that race a background worker; a stale background server still running after an upgrade; commands that fail because a server is not running; one server crash orphaning every agent.</p></dd>
+      <dt class="g">Guard</dt><dd><p>Tests with a fake vendor that spawns a grandchild assert nothing survives a timeout or SIGTERM; a test asserts the task of a dead worker is reclaimed, even when its pid now belongs to a live process. A structural test forbids the calls that detach or re-execute aits — <code>os.Executable</code>, <code>os.StartProcess</code>, <code>syscall.ForkExec</code>, <code>syscall.Exec</code>, <code>Setsid</code>, <code>Noctty</code> — outside tests and testdata (<code>internal/archtest/process_test.go</code>). That no command requires a running aits process is <span class="ro">review-only</span>.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p11"><div class="big">P11</div><div>
+    <h2>Clean-room, issue-first</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>Every change starts from a self-contained public issue: the problem, the use case, acceptance (exact commands, expected output, main failure cases) and what is explicitly out of scope. The reference implementation informs behaviour and lessons only; code is never copied. Public text never contains the reference&#39;s private paths, commit IDs, file names or internal names. An issue lists reference behaviours deliberately not carried over, and why. One pull request per issue, with <code>Closes #n</code> in its description.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Importing private code together with its legacy; leaking private information into a public repo.</p></dd>
+      <dt class="g">Guard</dt><dd><p>Issue and pull request templates; a CI check that the pull request description contains <code>Closes #</code>. &#34;No copied code&#34; and &#34;no private details&#34; are <span class="ro">review-only</span>.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p12"><div class="big">P12</div><div>
+    <h2>Test the built binary, never the user&#39;s environment</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>Functional tests build <code>aits</code> and run it. Vendors are always fakes: fake <code>claude</code> and <code>codex</code> executables, fake upstream HTTP servers. Every test uses a temporary <code>AITS_HOME</code> and <code>HOME</code>, no external network and no accounts. Tests against real vendors are opt-in behind a build tag and are not part of default CI; they use the real <code>HOME</code>, where vendor credentials live, and keep <code>AITS_HOME</code> temporary. Internal logic and edge-case tables may still use unit tests.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Tests that pass only on a developer&#39;s machine; tests that read or damage the user&#39;s real agent state.</p></dd>
+      <dt class="g">Guard</dt><dd><p>CI runs the test suite with <code>HOME</code> pointing at a read-only directory, so any test writing to the real environment fails.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p13"><div class="big">P13</div><div>
+    <h2>Ship together, on supported platforms</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>One pull request delivers the code, CLI help, docs, the agent skill (<code>skills/aits/SKILL.md</code>) and tests for a change. The CLI reference is generated from help, never hand-written. Supported platforms are Linux and macOS on amd64 and arm64.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>Help, docs, the skill agents learn aits from, and behaviour drifting apart.</p></dd>
+      <dt class="g">Guard</dt><dd><p><code>TestCLIDocs</code>, run by <code>go test ./...</code> in CI, fails when <code>docs/cli.md</code> differs from the help; <code>TestSkill</code> fails when the skill does not name every command, flag and result status. Whether the skill&#39;s prose still matches the behaviour is <span class="ro">review-only</span>. The CI matrix covers Linux and macOS.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p14"><div class="big">P14</div><div>
+    <h2>Small binary, no over-engineering</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>The release binary (<code>CGO_ENABLED=0 go build -trimpath -ldflags=&#34;-s -w&#34; ./cmd/aits</code>, linux/amd64) stays within the size budget in <code>.github/binary-size-budget</code>; the budget measures <code>aits</code> only, and <code>aits-gw</code> has none unless it gets its own file. A change that would exceed it raises the budget in the same pull request and says which feature needs the bytes and why a smaller way does not work. Heavy standard-library packages (<code>net/http</code>, <code>crypto/*</code>, <code>text/template</code>, <code>regexp</code> and the like) enter only with the feature that needs them, inside that command group. Build the least that meets the issue: no abstraction, option or layer before it has a caller.</p></dd>
+      <dt class="p">Prevents</dt><dd><p>The binary growing quietly with every import; a heavy package pulled in for one convenience function; general-purpose machinery nobody asked for.</p></dd>
+      <dt class="g">Guard</dt><dd><p>CI builds the release binary for linux/amd64, prints its size, and fails when it exceeds the budget. Whether code is bigger than its job is <span class="ro">review-only</span>.</p></dd>
+    </dl>
+  </div></article>
+
+  <article class="prin" id="p15"><div class="big">P15</div><div>
+    <h2>A toolbox for agents, not a platform</h2>
+    <dl class="rpg">
+      <dt class="r">Rule</dt><dd><p>aits is the tools an agent calls from a shell: it runs other agents (<code>shell</code>), finds earlier conversations (<code>session</code>), coordinates work (<code>task</code>), runs the commands an OS scheduler starts (<code>job</code>), and, once each has a caller, calls models (<code>model</code>) and reaches people and chat platforms as a client of a service that hosts them. A command group is scoped by what aits adds to a run, not by what is run: <code>job</code> does not ask whether its command is an agent (#129). A feature belongs in aits when all of these hold:</p><ol><li>its caller is an agent or a script, one command per action, with a <code>--json</code> result (P5, P10);</li><li>it runs locally and in the foreground; a long-running command is allowed under P10, and no other command depends on it;</li><li>aits adds something of its own: an environment allowlist, sandbox and permissions, timeouts and process groups, recoverable state, one vocabulary across vendors. Passing an API through unchanged does not count;</li><li>it fits P3 and P14 for every user of the binary. An integration that needs a 24/7 public endpoint, credentials for many third-party platforms, or dependencies most users never run is hosted elsewhere, and aits is its client. &#34;Elsewhere&#34; may be <code>aits-gw</code>, a second binary in this repository, when all of these hold:<ul><li><code>aits</code> imports none of its packages (P1 guard), so its dependencies never reach the <code>aits</code> binary and P3 and P14 still hold for every user of <code>aits</code>;<ul><li>P14&#39;s budget measures <code>aits</code> only;</li><li>it is released under its own tag prefix (<code>gw/vX.Y.Z</code>, while <code>aits</code> keeps <code>vX.Y.Z</code>), so a fix for a third-party platform does not force an <code>aits</code> release;</li><li>its configuration (routes) and credentials live outside the repository, in the user&#39;s own files and keychain; the repository holds only generic adapters (P11);</li></ul></li></ul></li><li>it has a caller today (P2).</li></ol></dd>
+      <dt class="p">Prevents</dt><dd><p>aits growing into a platform: hosting services that callers depend on; every user shipping integrations only a few run; releases tied to third-party platform fixes. A second binary does not change this: users who never install <code>aits-gw</code> get none of its code, dependencies or releases.</p></dd>
+      <dt class="g">Guard</dt><dd><p><em>review-only.</em> An issue for a new command group, or for a change that adds a network dependency, says how it meets each of the five conditions. For <code>aits-gw</code>, the import condition is checked by the P1 guard; the rest stays review-only.</p></dd>
+    </dl>
+  </div></article>
+
+  <p class="more"><a href="https://github.com/agent-in-the-shell/aits/blob/main/CONTRIBUTING.md">Contributing guide</a>: open an issue first, one pull request per issue, and every review checks the change against these rules.</p>
+  </div>
+</div>
+</main>
+
+<p class="totop wrap"><a href="#top">Back to top <span aria-hidden="true">&#8593;</span></a></p>
+<footer>
+  <div class="wrap">
+    <div class="f1">
+      <a class="logo f-logo" href="index.html" aria-label="aits home"><span class="wm">aits</span><span class="cur" aria-hidden="true"></span></a>
+      <div class="f-inst"><code><span class="p">$ </span>go install <span class="nb">github.com/</span><wbr><span class="nb">agent-in-the-shell/</span><wbr><span class="nb">aits/cmd/</span><wbr><span class="nb">aits@latest</span></code><button class="copy" type="button" data-copy="go install github.com/agent-in-the-shell/aits/cmd/aits@latest" aria-label="Copy install command">Copy</button></div>
+      <span class="f-meta">pre-release &#183; MIT</span>
+    </div>
+    <nav class="f2" aria-label="Footer">
+      <a href="index.html">Home</a>
+      <a href="cli.html">CLI reference</a>
+      <a href="principles.html">Principles</a>
+      <a href="https://github.com/agent-in-the-shell/aits/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/agent-in-the-shell/aits">GitHub</a>
+      <a href="https://github.com/agent-in-the-shell/aits/blob/main/LICENSE">License</a>
+    </nav>
+  </div>
+</footer>
+<script src="site.js"></script>
+<script src="base.js"></script>
+</body>
+</html>

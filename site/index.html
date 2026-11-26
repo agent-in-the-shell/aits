@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aits: run coding agents from the command line</title>
+<meta name="description" content="aits is one Go binary that runs Claude Code and Codex from the shell, queues their work and finds their past sessions. With --json, every call prints one JSON object. Pre-release, MIT.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="aits">
+<meta property="og:title" content="aits: run coding agents from the command line">
+<meta property="og:description" content="One Go binary, built for AI agents to call. Hand a prompt to Claude Code or Codex, queue agent work, and find earlier sessions to continue.">
+<meta property="og:image" content="https://agent-in-the-shell.github.io/aits/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#ecebe5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0d14" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="film.css">
+<script>try{var t=localStorage.getItem('aits-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+</head>
+<body class="home">
+<div class="vt-edge" aria-hidden="true"></div>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="aits home"><span class="wm">aits</span><span class="cur" aria-hidden="true"></span></a>
+    <span class="tag">pre-release</span>
+    <nav class="nav" aria-label="Site">
+      <span class="sub"><a href="#film">The film</a><a href="#commands">Commands</a><a href="#usage">Usage</a><a href="#agents">For agents</a></span>
+      <a href="cli.html">CLI<span class="lg"> reference</span></a>
+      <a href="principles.html">Principles</a>
+    </nav>
+    <a class="gh" href="https://github.com/agent-in-the-shell/aits" aria-label="aits on GitHub">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.530 5.470 7.590.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.130-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <button class="theme" id="theme" type="button" aria-label="Switch color theme">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5a6.5 6.5 0 010 13z" fill="currentColor"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+<section class="hero" id="top">
+  <div class="wrap hero-g">
+    <div class="hero-l">
+      <p class="kicker"><span class="tag">pre-release</span><span>one Go binary</span><span>MIT</span><span class="plat">Linux and macOS, amd64 and arm64</span></p>
+      <h1 class="h1" id="h1" aria-label="Run coding agents from the command line."><span class="ln" aria-hidden="true">Run coding</span><span class="ln" aria-hidden="true">agents from</span><span class="ln" aria-hidden="true">the command</span><span class="ln" aria-hidden="true">line<span class="blk"></span></span></h1>
+      <p class="lede">aits drives <strong>Claude Code</strong> and <strong>Codex</strong> for you, queues their work and finds their past conversations. It is built for AI agents to call: one command per action, and with <code>--json</code>, one JSON object on stdout.</p>
+      <div class="install" role="group" aria-label="Install command">
+        <span class="lbl">Install</span>
+        <pre tabindex="0"><span class="p">$ </span>go install github.com/<wbr>agent-in-the-shell/<wbr>aits/cmd/<wbr>aits@latest</pre>
+        <button class="copy" type="button" data-copy="go install github.com/agent-in-the-shell/aits/cmd/aits@latest" aria-label="Copy install command">Copy</button>
+      </div>
+      <ul class="avail" aria-label="Command groups"><li><i></i>shell submit <em>available</em></li><li><i></i>task <em>available</em></li><li><i></i>session search <em>available</em></li><li><i></i>job <em>available</em></li></ul>
+      <p class="prereq">Needs Go and the <code>claude</code> or <code>codex</code> CLI you already log in to. Check with <code>aits version</code>. aits never talks to a model itself.</p>
+    </div>
+
+    <div class="sig" id="sig" role="group" aria-labelledby="sig-h">
+      <h2 class="sr" id="sig-h">One aits call, played live</h2>
+      <div class="sig-hd" aria-hidden="true"><span class="sig-st" id="sigSt"><i></i><b>exit 0</b></span><span class="sig-tmo" id="sigTmo"><span>--timeout 3s</span><i><b></b></i><em>3.0s</em></span><span class="sig-ms"><span>duration_ms</span><b id="sigMs">81234</b></span></div>
+      <p class="sig-cmd" id="sigCmd1"><span class="who">you</span><span class="c-p">$ </span><span class="t" id="sigC1">aits shell submit <span class="c-f">--agent</span> codex <span class="c-f">--cwd</span> ~/src/proj <span class="c-f">--json</span> <span class="c-s">"Review internal/task for bugs; list them, change nothing"</span></span></p>
+      <div class="sig-proc" id="sigProc" aria-hidden="true">
+        <span class="pn pa">aits</span><span class="pw"></span>
+        <span class="pgrp"><span class="pgl">own process group</span><span class="pn pc">codex exec</span><span class="kids"><i></i><i></i><i></i></span><span class="shock" aria-hidden="true"></span><span class="term" id="sigTerm">TERM &#8594; group &#183; +5s KILL</span></span>
+      </div>
+      <div class="sig-json" id="sigJson"><div class="jr">{</div><div class="jr in"><span class="k">"status"</span>: <span class="v s ok">"ok"</span>,</div><div class="jr in"><span class="k">"agent"</span>: <span class="v s">"codex"</span>,</div><div class="jr in"><span class="k">"session_id"</span>: <span class="v sv" id="sigSv">"&#8230;"</span>,</div><div class="jr in"><span class="k">"answer"</span>: <span class="v s">"&#8230;the agent's review, as text&#8230;"</span>,</div><div class="jr in"><span class="k">"exit_code"</span>: <span class="v n">0</span>,</div><div class="jr in"><span class="k">"duration_ms"</span>: <span class="v n">81234</span></div><div class="jr">}</div></div>
+      <p class="sig-err" id="sigErr" hidden><span class="lt">stderr</span><span>aits: warning: --write lets the agent edit files and run commands in its working directory without asking</span></p>
+      <p class="sig-cmd sig-next" id="sigCmd2"><span class="who">next</span><span class="c-p">$ </span><span class="t">aits shell submit <span class="c-f">--agent</span> codex <span class="c-f">--cwd</span> ~/src/proj <span class="c-f c-hot">--session</span> <span class="slot got" id="sigSlot">&lt;session_id&gt;</span> <span id="sigX2"><span class="c-f">--write</span> <span class="c-f">--json</span> <span class="c-s">"Fix the first bug you listed and run its tests"</span></span></span></p>
+      <p class="sig-note" id="sigNote">Without <code>--write</code> the agent can read but not change anything. <b>session_id</b> goes back in with <code>--session</code>.</p>
+      <svg class="sig-thread" id="sigThread" aria-hidden="true"><path/><circle r="5"/></svg>
+      <div class="keys" role="toolbar" aria-label="Play an example run">
+        <button class="key" type="button" data-run="review" aria-pressed="true"><b>review</b><span>read-only</span></button>
+        <button class="key" type="button" data-run="write" aria-pressed="false"><b>--write</b><span>fix it</span></button>
+        <button class="key" type="button" data-run="timeout" aria-pressed="false"><b>--timeout</b><span>3s</span></button>
+        <button class="key kc" type="button" data-run="stop" aria-pressed="false"><b>^C</b><span>TERM group</span></button>
+      </div>
+      <a class="cue" href="#film"><span>Watch one call, frame by frame</span><span class="arr" aria-hidden="true">&#8595;</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="film" id="film" aria-labelledby="film-h">
+  <div class="film-intro wrap"><span class="num">00 / the session</span><h2 id="film-h">One call, frame by frame.</h2><p>One <code>aits shell submit</code>, from the prompt you type to the queue that picks up the follow-up. Commands and output shape from the aits docs; ids and answers are elided (&#8230;).</p><a class="skipfilm" href="#commands">Skip the film <span aria-hidden="true">&#8595;</span></a></div>
+  <div class="stage" id="stage">
+    <div class="grid-bg" aria-hidden="true"></div>
+    <div class="hud" aria-hidden="true">
+      <span class="rec"><i></i>rec</span>
+      <span class="scn"><b id="scnN">01</b><span>/08</span> <span id="scnT">type</span></span>
+      <span class="ticks" id="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><b id="tickFill"></b></span>
+      <span class="tc" id="tc">00:00:00:00</span>
+      <a class="hud-skip" href="#commands" tabindex="-1">skip &#8595;</a>
+    </div>
+    <div class="iris" aria-hidden="true"></div>
+    <div class="shutter" aria-hidden="true"></div>
+
+    <!-- 01 type -->
+    <div class="scene sc-type" data-n="1">
+      <h3 class="st"><span>01</span> Type.</h3>
+      <div class="body">
+        <p class="cmd big" id="cmd1"><span class="c-p">$ </span>aits shell submit <span class="c-f f-agent">--agent</span> codex <span class="c-f">--cwd</span> ~/src/proj <span class="c-f f-json">--json</span> <span class="c-s">"Review internal/task for bugs; list them, change nothing"</span><span class="caret" aria-hidden="true"></span></p>
+        <div class="tags"><span class="tg t1"><b>--agent</b> claude | codex</span><span class="tg t2"><b>--json</b> one JSON object per call</span></div>
+      </div>
+      <div class="keyrow" aria-hidden="true"><span class="kcap" data-t="aits shell submit">aits shell submit</span><span class="kcap" data-t="--agent">--agent</span><span class="kcap" data-t="--cwd">--cwd</span><span class="kcap" data-t="--json">--json</span><span class="kcap kp" data-t="&quot;Review">"PROMPT"</span><span class="kcap kr" data-t="RET">return &#8629;</span></div>
+      <p class="cap">aits drives Claude Code and Codex for you. One command per action.</p>
+    </div>
+
+    <!-- 02 spawn + 03 work -->
+    <div class="scene sc-proc" data-n="2">
+      <h3 class="st st-a"><span>02</span> Spawn.</h3>
+      <h3 class="st st-b"><span>03</span> Work.</h3>
+      <div class="body">
+        <div class="cam" id="cam">
+          <svg class="pg" id="pg" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="aits starts the agent, codex, in its own process group, with its child processes inside the group">
+            <defs><clipPath id="codexClip"><rect x="452" y="232" width="276" height="136" rx="8"/></clipPath></defs>
+            <g class="n-aits"><rect class="node" x="40" y="250" width="200" height="100" rx="10"/><text x="140" y="298" class="tl">aits</text><text x="140" y="326" class="ts">foreground</text></g>
+            <path class="wire w0" d="M240 300 H 440"/>
+            <g class="grp"><rect class="gbox" x="330" y="70" width="840" height="460" rx="22"/><text x="360" y="112" class="tg1">own process group</text><text x="1140" y="112" class="tg2" text-anchor="end">timeout &#8594; TERM &#183; +5s KILL</text></g>
+            <g class="n-codex"><rect class="node hot" x="440" y="220" width="300" height="160" rx="12"/>
+              <g clip-path="url(#codexClip)"><g class="stream" id="stream"></g></g>
+              <text x="590" y="216" class="tl tl-up">codex exec</text>
+            </g>
+            <path class="wire w1" d="M740 300 C 800 300, 800 170, 860 170"/>
+            <path class="wire w2" d="M740 300 H 860"/>
+            <path class="wire w3" d="M740 300 C 800 300, 800 430, 860 430"/>
+            <g class="kid k1"><rect class="node sm" x="860" y="135" width="260" height="70" rx="8"/><text x="990" y="178" class="ts2">child process</text></g>
+            <g class="kid k2"><rect class="node sm" x="860" y="265" width="260" height="70" rx="8"/><text x="990" y="308" class="ts2">child process</text></g>
+            <g class="kid k3"><rect class="node sm" x="860" y="395" width="260" height="70" rx="8"/><text x="990" y="438" class="ts2">child process</text></g>
+            <g class="ro"><rect x="452" y="400" width="196" height="40" rx="20"/><text x="550" y="427">read-only</text></g>
+          </svg>
+        </div>
+        <div class="meter" aria-hidden="true"><span class="mk">"duration_ms"</span><b id="dur">81234</b></div>
+      </div>
+      <p class="cap cap-a">Each agent runs in its own process group. On a timeout or a signal, aits sends TERM to the group, then KILL 5s later, and still prints the result.</p>
+      <p class="cap cap-b">Without <code>--write</code> the agent can read but not change anything. <code>--timeout</code> (default 30m) stops the agent.</p>
+    </div>
+
+    <!-- 04 assemble -->
+    <div class="scene sc-json" data-n="4">
+      <div class="raw" id="raw" aria-hidden="true"></div>
+      <h3 class="st"><span>04</span> Assemble.</h3>
+      <div class="body">
+        <div class="jx" id="jx" role="img" aria-label='{"status":"ok","agent":"codex","session_id":"…","answer":"…the agent&#39;s review, as text…","exit_code":0,"duration_ms":81234}'>
+          <div class="jr br">{</div>
+          <div class="jr in"><span class="k">"status"</span>: <span class="v s">"ok"</span>,</div>
+          <div class="jr in"><span class="k">"agent"</span>: <span class="v s">"codex"</span>,</div>
+          <div class="jr in"><span class="k">"session_id"</span>: <span class="v sv" id="sv">"…"</span>,</div>
+          <div class="jr in"><span class="k">"answer"</span>: <span class="v s">"…the agent's review, as text…"</span>,</div>
+          <div class="jr in"><span class="k">"exit_code"</span>: <span class="v n">0</span>,</div>
+          <div class="jr in"><span class="k">"duration_ms"</span>: <span class="v n">81234</span></div>
+          <div class="jr br">}</div>
+        </div>
+      </div>
+      <p class="cap cap-a"><b>status</b> Always present, never empty. Read it, not only the exit code.</p>
+      <p class="cap cap-b"><b>exit_code</b> The agent's own exit code, reported inside the result.</p>
+      <p class="cap cap-c">With <code>--json</code>, one JSON object on stdout. Indented here for reading; aits prints one line.</p>
+    </div>
+
+    <!-- 05 hand off -->
+    <div class="scene sc-hand" data-n="5">
+      <h3 class="st"><span>05</span> Hand off.</h3>
+      <div class="body">
+        <p class="cmd mid" id="cmd2"><span class="c-p">$ </span>aits shell submit <span class="c-f">--agent</span> codex <span class="c-f">--cwd</span> ~/src/proj <span class="c-f c-hot">--session</span> <span class="slot" id="slot">&lt;session_id&gt;</span> <span class="c-f c-w">--write</span> <span class="c-f">--json</span> <span class="c-s">"Fix the first bug you listed and run its tests"</span><span class="caret" aria-hidden="true"></span></p>
+        <div class="lanes">
+          <div class="lane lo"><span class="lt">stdout</span><code>{"status":"ok",<wbr>"agent":"codex",<wbr>"session_id":"…",<wbr>"answer":"…",<wbr>"exit_code":0,<wbr>"duration_ms":…}</code></div>
+          <div class="lane le"><span class="lt">stderr</span><code>aits: warning: --write lets the agent edit files and run commands in its working directory without asking</code></div>
+        </div>
+      </div>
+      <p class="cap cap-a"><b>session_id</b> Pass it back with <code>--session</code> to continue the same conversation.</p>
+      <p class="cap cap-b"><b>--write</b> The warning goes to stderr, so stdout stays one object.</p>
+    </div>
+
+    <!-- 06 queue + 07 claim -->
+    <div class="scene sc-queue" data-n="6">
+      <h3 class="st st-a"><span>06</span> Queue.</h3>
+      <h3 class="st st-b"><span>07</span> Claim.</h3>
+      <div class="body">
+        <div class="qterm" id="qcmd"><span class="ql ql1"><span class="c-p">$ </span>id=$(aits task create <span class="c-f">--agent</span> claude <span class="c-f">--cwd</span> ~/src/proj <span class="c-s">"Review internal/session for bugs"</span>)</span><span class="ql ql2"><span class="c-p">$ </span>next=$(aits task create <span class="c-f c-hot">--after</span> "$id" <span class="c-s">"Fix the first bug you found"</span>)</span></div>
+        <div class="qb" id="qb" role="img" aria-label="Queue board: a cron task is done, task id is running, its follow-up next is queued behind it with --after id">
+          <div class="qc qq"><h4>Queued</h4><div class="slot2" id="q0"><div class="card cn" id="cNext"><span class="id">$next</span><span class="pr">"Fix the first bug you found"</span><span class="meta"><b class="lock">--after $id</b> claimable once $id is done, in the same session</span></div></div><div class="slot2" id="q1"></div></div>
+          <div class="qc qr"><h4>Running</h4><div class="slot2" id="r0"><div class="card ci" id="cId"><i class="lease" aria-hidden="true"></i><span class="id">$id</span><span class="pr">"Review internal/session for bugs"</span><span class="meta">claude, ~/src/proj; lease: token, pgid</span></div></div></div>
+          <div class="qc qd"><h4>Done</h4><div class="slot2" id="d0"><div class="card cc"><span class="id">from cron</span><span class="pr">"Review the commits since yesterday for bugs"</span><span class="meta">run.status ok, session_id, answer</span></div></div><div class="slot2" id="d1"></div></div>
+        </div>
+        <div class="workers">
+          <div class="wk" id="wA"><span class="wn">terminal 1</span><span class="wlog" aria-hidden="true"></span><span class="wl"><span class="c-p">$ </span>aits task work <span class="c-f">--json</span></span><span class="wo wo-a">{&#8230;the task it ran&#8230;}</span></div>
+          <div class="wk" id="wB"><span class="wn">terminal 2</span><span class="wlog" aria-hidden="true"></span><span class="wl"><span class="c-p">$ </span>aits task work <span class="c-f">--json</span></span><span class="wo">{"status":"empty"}</span></div>
+        </div>
+      </div>
+      <p class="cap cap-a"><b>Create</b> <code>task create</code> stores the prompt and prints the task id. <b>Chain</b> <code>--after ID</code> continues that task's session once it is done.</p>
+      <p class="cap cap-b"><b>Work</b> <code>task work</code> claims the oldest claimable task, runs it, records the result and exits. Run it in several terminals.</p>
+      <p class="cap cap-c">With nothing claimable, <code>task work</code> prints <code>{"status":"empty"}</code> and exits 0.</p>
+    </div>
+
+    <!-- 08 end -->
+    <div class="scene sc-end" data-n="8">
+      <div class="body">
+        <p class="kin"><span class="kl" id="k1">One command per action.</span><span class="kl" id="k2">One JSON object on stdout.</span></p>
+        <p class="endi" id="endi"><span class="c-p">$</span><span>go install github.com/agent-in-the-shell/aits/cmd/aits@latest</span></p>
+      </div>
+      <p class="cap">Four command groups, one grammar.</p>
+    </div>
+
+    <svg class="trail" id="trail" aria-hidden="true"><path/></svg>
+    <div class="fx-layer" aria-hidden="true">
+      <div class="marq" id="marq"><span>{"status":"ok","agent":"codex","session_id":<i class="hole">"&#8230;"</i>,"answer":"&#8230;","exit_code":0,"duration_ms":81234} {"status":"ok","agent":"codex","session_id":<i class="hole">"&#8230;"</i>,"answer":"&#8230;","exit_code":0,"duration_ms":81234}</span></div>
+      <div class="flyer" id="flyer"><b>session_id</b></div>
+    </div>
+  </div>
+</section>
+
+<section id="commands">
+  <div class="wrap">
+    <div class="sec-h">
+      <div><span class="num">01 / synopsis</span><h2>Four command groups, one grammar.</h2></div>
+      <p>One grammar for all of them: flags go before or after the prompt, <code>--</code> ends flags, an unknown flag is exit 2 and never a prompt, and every command that prints output takes <code>--json</code>.</p>
+    </div>
+
+    <div class="syn json">
+      <div class="grp">
+        <div><div class="gname">aits shell</div><span class="st">available</span><p>Run one prompt through Claude Code or Codex. Get the answer and a session id back.</p></div>
+        <ul class="lines">
+          <li><span class="c">aits shell submit</span> <span class="g"><span class="o">--agent</span> <span class="a">claude|codex</span></span> <span class="g"><span class="o">[--cwd</span> <span class="a">DIR</span><span class="o">]</span></span> <span class="g"><span class="o">[--session</span> <span class="a">ID</span><span class="o">]</span></span> <span class="g"><span class="o">[--model</span> <span class="a">MODEL</span><span class="o">]</span></span> <span class="g"><span class="o">[--timeout</span> <span class="a">DURATION</span><span class="o">]</span></span> <span class="g"><span class="o">[--write]</span></span> <span class="g"><span class="o">[--worktree]</span></span> <span class="g"><span class="o">[--run-dir</span> <span class="a">BASE</span><span class="o">]</span></span> <span class="g"><span class="o">[--report]</span></span> <span class="g"><span class="o">[--allow-tool</span> <span class="a">TOOL</span><span class="o">]…</span></span> <span class="g"><span class="o">[--env</span> <span class="a">NAME</span><span class="o">]…</span></span> <span class="g"><span class="o">[--json]</span></span> <span class="g">(<span class="a">PROMPT</span> | -)</span>
+            <span class="out">{"status":"ok",<wbr>"agent":"claude",<wbr>"session_id":"…",<wbr>"answer":"…",<wbr>"exit_code":0,<wbr>"duration_ms":12345}</span></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div><div class="gname">aits task</div><span class="st">available</span><p>A local work queue. Create tasks now, work them later, chain a follow-up into the same session.</p></div>
+        <ul class="lines">
+          <li><span class="c">aits task create</span> <span class="g">(<span class="o">--agent</span> <span class="a">AGENT</span> | <span class="o">--after</span> <span class="a">ID</span>)</span> <span class="g"><span class="o">[--cwd</span> <span class="a">DIR</span><span class="o">]</span></span> <span class="g"><span class="o">[--write]</span></span> <span class="g"><span class="o">[</span><span class="a">submit flags</span><span class="o">]</span></span> <span class="g"><span class="o">[--json]</span></span> <span class="g">(<span class="a">PROMPT</span> | -)</span>
+            <span class="out">{"id":"…",<wbr>"status":"queued"}</span></li>
+          <li><span class="c">aits task work</span> <span class="g"><span class="o">[--agent</span> <span class="a">AGENT</span><span class="o">]</span></span> <span class="g"><span class="o">[--json]</span></span>
+            <span class="out">the task it ran, or {"status":"empty"} when nothing is claimable</span></li>
+          <li><span class="c">aits task wait</span> <span class="a">ID</span> <span class="g"><span class="o">[--timeout</span> <span class="a">DURATION</span><span class="o">]</span></span> <span class="g"><span class="o">[--json]</span></span></li>
+          <li><span class="c">aits task list</span> <span class="g"><span class="o">[--json]</span></span> &nbsp; <span class="c">aits task show</span> <span class="a">ID</span> <span class="g"><span class="o">[--json]</span></span> &nbsp; <span class="c">aits task cancel</span> <span class="a">ID</span> <span class="g"><span class="o">[--json]</span></span></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div><div class="gname">aits session</div><span class="st">available</span><p>Full-text search over the agents' own transcripts. Every result carries a session id you can continue.</p></div>
+        <ul class="lines">
+          <li><span class="c">aits session search</span> <span class="g"><span class="o">[--agent</span> <span class="a">AGENT</span><span class="o">]</span></span> <span class="g"><span class="o">[--cwd</span> <span class="a">DIR</span><span class="o">]</span></span> <span class="g"><span class="o">[--since</span> <span class="a">DURATION</span><span class="o">]</span></span> <span class="g"><span class="o">[--source</span> <span class="a">interactive|scripted</span><span class="o">]</span></span> <span class="g"><span class="o">[--limit</span> <span class="a">N</span><span class="o">]</span></span> <span class="g"><span class="o">[--json]</span></span> <span class="a">TERM</span>…
+            <span class="out">{"results":[{"agent":"claude",<span class="w"><wbr></span>"session_id":"…",<span class="w"><wbr></span>"cwd":"…",<span class="w"><wbr></span>"updated_at":"…",<span class="w"><wbr></span>"snippet":"…"}],<wbr>"skipped":{"files":0,<span class="w"><wbr></span>"lines":0}}</span></li>
+        </ul>
+      </div>
+      <div class="grp">
+        <div><div class="gname">aits job</div><span class="st">available</span><p>Run the commands cron or launchd starts: a timeout, a lock, a log, a run record and deduplicated alerts.</p></div>
+        <ul class="lines">
+          <li><span class="c">aits job run</span> <span class="g"><span class="o">[--timeout</span> <span class="a">DURATION</span><span class="o">]</span></span> <span class="g"><span class="o">[--on-alert</span> <span class="a">PROGRAM</span><span class="o">]</span></span> <span class="g"><span class="o">[--env</span> <span class="a">NAME</span><span class="o">]…</span></span> <span class="g"><span class="o">[--json]</span></span> <span class="a">NAME</span> -- <span class="a">COMMAND</span> <span class="g"><span class="o">[</span><span class="a">ARG</span><span class="o">…]</span></span>
+            <span class="out">{"name":"…",<wbr>"status":"ok",<wbr>"exit_code":0,<wbr>"duration_ms":…,<wbr>"alert":"none"}</span></li>
+          <li><span class="c">aits job list</span> <span class="g"><span class="o">[--json]</span></span></li>
+          <li><span class="c">aits job apply</span> <span class="g"><span class="o">[--dry-run]</span></span> <span class="g"><span class="o">[--sched]</span></span> <span class="g"><span class="o">[--json]</span></span> <span class="a">FILE</span> &nbsp; <span class="c">aits job sched</span> <span class="g"><span class="o">[--json]</span></span> <span class="a">FILE</span></li>
+        </ul>
+      </div>
+    </div>
+    <p class="syn-foot"><code>--agent</code> is required unless <code>--after</code>. <code>submit flags</code> are the other flags of <code>shell submit</code>, such as <code>--model</code>, <code>--timeout</code>, <code>--allow-tool</code> and <code>--env</code>. Also: <code>aits version</code> and <code>aits help</code>. Every flag is in the <a href="cli.html">CLI reference</a>.</p>
+  </div>
+</section>
+
+<section id="usage">
+  <div class="wrap">
+    <div class="sec-h stack">
+      <div><span class="num">02 / usage</span><h2>Pick a job.</h2></div>
+      <p>Real commands from the README and the agent skill, with the JSON they print. Each one is a single call that returns.</p>
+    </div>
+
+    <div class="demo">
+      <div class="tabs" role="tablist" aria-label="Usage examples">
+        <button class="tab" role="tab" id="t-hand" aria-controls="p-hand" aria-selected="true"><b>Hand off a prompt</b><span>Ask one agent, continue the session.</span></button>
+        <button class="tab" role="tab" id="t-queue" aria-controls="p-queue" aria-selected="false" tabindex="-1"><b>Queue work</b><span>Create now, work later, chain follow-ups.</span></button>
+        <button class="tab" role="tab" id="t-find" aria-controls="p-find" aria-selected="false" tabindex="-1"><b>Find a session</b><span>Search transcripts, pick up where you left off.</span></button>
+        <button class="tab" role="tab" id="t-cron" aria-controls="p-cron" aria-selected="false" tabindex="-1"><b>Run on a schedule</b><span>cron or launchd starts aits. aits never stays in the background.</span></button>
+      </div>
+
+      <div class="panels json">
+      <div class="panel" role="tabpanel" id="p-hand" aria-labelledby="t-hand">
+        <div class="turn"><div class="who you">you</div>
+<pre><span class="c-p">$ </span>aits shell submit <span class="c-f">--agent</span> claude <span class="c-f">--cwd</span> ~/src/proj <span class="c-f">--json</span> <span class="c-s">"Summarize what this repo does"</span></pre></div>
+        <div class="turn reply"><div class="who">aits</div>
+<pre><span class="c-x">{</span><span class="c-k">"status"</span>:<span class="c-s">"ok"</span>,<span class="c-k">"agent"</span>:<span class="c-s">"claude"</span>,<span class="c-k">"session_id"</span>:<span class="sid">"…"</span>,<span class="c-k">"answer"</span>:<span class="c-s">"…"</span>,<span class="c-k">"exit_code"</span>:<span class="c-n">0</span>,<span class="c-k">"duration_ms"</span>:<span class="c-n">12345</span><span class="c-x">}</span></pre></div>
+        <div class="turn"><div class="who you">you</div>
+<pre><span class="c-p">$ </span>aits shell submit <span class="c-f">--agent</span> claude <span class="c-f">--cwd</span> ~/src/proj <span class="c-f">--session</span> <span class="sid">&lt;session_id&gt;</span> <span class="c-f">--json</span> <span class="c-s">"Now fix the first issue"</span></pre></div>
+        <div class="turn"><div class="who you">you</div>
+<pre><span class="c-p">$ </span>aits shell submit <span class="c-f">--agent</span> claude <span class="c-f">--allow-tool</span> <span class="c-s">"Bash(git diff:*)"</span> <span class="c-f">--json</span> <span class="c-s">"Review the uncommitted changes"</span></pre></div>
+        <div class="turn err"><div class="who">stderr</div>
+<pre>aits: warning: --allow-tool lets the agent run Bash(git diff:*) without asking</pre></div>
+        <div class="turn"><div class="who you">stdin</div>
+<pre><span class="c-p">$ </span>aits shell submit <span class="c-f">--agent</span> claude <span class="c-f">--json</span> - &lt; prompt.md   <span class="c-x"># a long prompt, at most 16 MiB</span></pre></div>
+        <div class="pnotes"><h4>Notes</h4><ul>
+          <li><b>codex</b><span><code>--agent codex</code> runs Codex CLI the same way. Codex only runs inside a git repository. Without <code>--write</code> it runs read-only; with <code>--write</code> it gets <code>-s workspace-write</code> and <code>.git</code> stays read-only, so you commit afterwards.</span></li>
+          <li><b>timeout</b><span><code>--timeout</code> (default 30m) stops the agent. A timed-out result still carries <code>session_id</code>, so continue with <code>--session</code> and a narrower prompt, or raise <code>--timeout</code>.</span></li>
+          <li><b>read-only</b><span>Without <code>--write</code> the agent can read but not change anything. Claude Code refuses tools that need approval and lists them in <code>denied_tools</code>; a refusal does not change the status, so read <code>answer</code> and <code>denied_tools</code> together.</span></li>
+        </ul></div>
+      </div>
+
+      <div class="panel off" aria-hidden="true" role="tabpanel" id="p-queue" aria-labelledby="t-queue">
+        <div class="board" role="img" aria-label="Queue board: a cron task is done, task id is running, its follow-up next is queued behind it with --after id">
+          <div class="board-h"><span>a moment in $AITS_HOME/task</span><span>illustration</span></div>
+          <div class="cols">
+            <div class="col q"><h4>Queued <span>1</span></h4>
+              <div class="card"><span class="id">$next</span><span class="pr">"Fix the first bug you found"</span><span class="meta"><b>--after $id</b>: claimable once $id is done, in the same session</span></div>
+            </div>
+            <div class="col r"><h4>Running <span>1</span></h4>
+              <div class="card"><span class="id">$id</span><span class="pr">"Review internal/session for bugs"</span><span class="meta">claude, ~/src/proj; lease: token, pgid</span></div>
+            </div>
+            <div class="col d"><h4>Done <span>1</span></h4>
+              <div class="card"><span class="id">from cron</span><span class="pr">"Review the commits since yesterday for bugs"</span><span class="meta">run.status ok, session_id, answer</span></div>
+            </div>
+          </div>
+        </div>
+        <ol class="steps">
+          <li><b>Create</b><code>task create</code> stores the prompt and prints the task id.</li>
+          <li><b>Chain</b><code>--after ID</code> continues that task's session once it is done, with its agent and cwd.</li>
+          <li><b>Work</b><code>task work</code> claims the oldest claimable task, runs it, records the result and exits. Run it in several terminals.</li>
+          <li><b>Wait</b><code>task wait ID</code> blocks until done or failed. A dead worker ends as failed, <code>worker_died</code>.</li>
+        </ol>
+        <div class="turn"><div class="who you">you</div>
+<pre><span class="c-p">$ </span>id=$(aits task create <span class="c-f">--agent</span> claude <span class="c-f">--cwd</span> ~/src/proj <span class="c-s">"Review internal/session for bugs"</span>)
+<span class="c-p">$ </span>next=$(aits task create <span class="c-f">--after</span> "$id" <span class="c-s">"Fix the first bug you found"</span>)
+<span class="c-p">$ </span>aits task work <span class="c-f">--json</span>                      <span class="c-x"># one task per call</span>
+<span class="c-p">$ </span>aits task wait "$id" <span class="c-f">--timeout</span> 9m <span class="c-f">--json</span></pre></div>
+        <div class="pnotes"><h4>Notes</h4><ul>
+          <li><b>queue</b><span>The queue is <code>$AITS_HOME/task</code>, default <code>~/.local/share/aits/task</code>. With nothing claimable, <code>task work</code> prints <code>{"status":"empty"}</code> and exits 0.</span></li>
+        </ul></div>
+      </div>
+
+      <div class="panel off" aria-hidden="true" role="tabpanel" id="p-find" aria-labelledby="t-find">
+        <div class="scan" aria-hidden="true"><div class="scan-q"><span class="c-p">$ </span>aits session search <span class="c-f">--since</span> 72h <mark>process</mark> <mark>group</mark> <mark>timeout</mark></div><div class="scan-body" id="scanbody"></div></div>
+        <div class="turn"><div class="who you">you</div>
+<pre><span class="c-p">$ </span>aits session search <span class="c-f">--agent</span> claude <span class="c-f">--cwd</span> ~/src/proj <span class="c-f">--since</span> 72h <span class="c-f">--json</span> process group timeout</pre></div>
+        <div class="turn reply"><div class="who">aits</div>
+<pre><span class="c-x">{</span><span class="c-k">"results"</span>:<span class="c-x">[{</span><span class="c-k">"agent"</span>:<span class="c-s">"claude"</span>,<span class="c-k">"session_id"</span>:<span class="sid">"…"</span>,<span class="c-k">"cwd"</span>:<span class="c-s">"/Users/…/proj"</span>,<span class="c-k">"updated_at"</span>:<span class="c-s">"…"</span>,<span class="c-k">"snippet"</span>:<span class="c-s">"…"</span><span class="c-x">}]</span>,<span class="c-k">"skipped"</span>:<span class="c-x">{</span><span class="c-k">"files"</span>:<span class="c-n">0</span>,<span class="c-k">"lines"</span>:<span class="c-n">0</span><span class="c-x">}}</span></pre></div>
+        <div class="turn"><div class="who you">you</div>
+<pre><span class="c-p">$ </span>aits shell submit <span class="c-f">--agent</span> claude <span class="c-f">--cwd</span> /Users/…/proj <span class="c-f">--session</span> <span class="sid">&lt;session_id&gt;</span> <span class="c-f">--json</span> <span class="c-s">"Where did we leave this?"</span></pre></div>
+        <div class="turn"><div class="who you">text</div>
+<pre><span class="c-p">$ </span>aits session search process group timeout
+<span class="c-x">UPDATED_AT  AGENT  SESSION_ID  CWD</span>         <span class="c-x"># printed without --json</span>
+<span class="c-x">    SNIPPET</span>                      <span class="c-x"># the format, not a header: one such line per result</span></pre></div>
+        <div class="pnotes"><h4>Notes</h4><ul>
+          <li><b>source</b><span><code>--source interactive</code> keeps sessions a person ran. <code>--source scripted</code> keeps ones run by <code>claude -p</code> or <code>codex exec</code>, which includes aits's own runs.</span></li>
+          <li><b>scope</b><span>Searched: user and assistant message text, and prompts queued while the agent was working. Not searched: tool calls or their output, model thinking, subagent transcripts, compaction summaries.</span></li>
+          <li><b>match</b><span>Every term must appear somewhere in the session, ignoring case. Results are newest first, at most <code>--limit</code> (default 20). No match is <code>"results":[]</code> with exit 0.</span></li>
+        </ul></div>
+      </div>
+
+      <div class="panel off" aria-hidden="true" role="tabpanel" id="p-cron" aria-labelledby="t-cron">
+        <div class="turn"><div class="who you">crontab</div>
+<pre><span class="c-x"># queue a review each weekday at 09:00</span>
+0 9 * * 1-5  aits task create <span class="c-f">--agent</span> claude <span class="c-f">--cwd</span> ~/src/proj <span class="c-s">"Review the commits since yesterday for bugs"</span>
+<span class="c-x"># work the queue every 5 minutes</span>
+*/5 * * * *  aits task work <span class="c-f">--json</span> &gt;&gt; ~/aits-work.log</pre></div>
+        <div class="turn reply"><div class="who">aits</div>
+<pre><span class="c-x"># a run with nothing to do is harmless: it exits 0</span>
+<span class="c-x">{</span><span class="c-k">"status"</span>:<span class="c-s">"empty"</span><span class="c-x">}</span></pre></div>
+        <div class="turn"><div class="who you">launchd</div>
+<pre><span class="c-x">&lt;!-- ~/Library/<wbr>LaunchAgents/<wbr>local.aits-work.plist, excerpt --&gt;</span>
+&lt;key&gt;ProgramArguments&lt;/key&gt;
+&lt;array&gt;<span class="nb">&lt;string&gt;/opt/homebrew/bin/aits&lt;/string&gt;</span><wbr><span class="nb">&lt;string&gt;task&lt;/string&gt;</span><wbr><span class="nb">&lt;string&gt;work&lt;/string&gt;</span><wbr><span class="nb">&lt;string&gt;--json&lt;/string&gt;</span>&lt;/array&gt;
+&lt;key&gt;StartInterval&lt;/key&gt;&lt;integer&gt;300&lt;/integer&gt;</pre></div>
+        <div class="pnotes"><h4>Notes</h4><ul>
+          <li><b>macOS</b><span>Prefer a launchd agent in <code>~/Library/LaunchAgents</code>: it never starts a job again while it is running. Use <code>StartInterval 300</code> for work and <code>StartCalendarInterval</code> for create.</span></li>
+          <li><b>overlap</b><span>Overlapping cron runs claim different tasks, never the same one, so slow tasks can pile up workers. To keep one, use launchd, or <code>flock -n</code> on Linux.</span></li>
+          <li><b>env</b><span>A scheduled job gets a bare environment. <code>PATH</code> must reach <code>aits</code> and the agent CLI, <code>HOME</code> must be yours, and <code>--env</code> variables are set in the work job, not the create job.</span></li>
+        </ul></div>
+      </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="contract">
+  <div class="wrap">
+    <div class="sec-h">
+      <div><span class="num">03 / contract</span><h2>Built to be parsed.</h2></div>
+      <p>An agent calling aits should never have to guess what happened. The output rules come from the project's principles, and tests against the built binary check them.</p>
+    </div>
+    <div class="parse" id="parse">
+      <div class="parse-in"><span class="lt">stdout</span><code id="pLine">{"status":"<b data-k="status">ok</b>",​"agent":"<b data-k="agent">codex</b>",​"session_id":"<b data-k="sid">&#8230;</b>",​"answer":"&#8230;",​"exit_code":<b data-k="exit">0</b>,​"duration_ms":<b data-k="dur">81234</b>}</code></div>
+      <div class="parse-arrow" aria-hidden="true"><span>read it</span></div>
+      <dl class="parse-out" aria-label="The same result, read field by field">
+        <div><dt>status</dt><dd data-k="status">ok</dd></div>
+        <div><dt>agent</dt><dd data-k="agent">codex</dd></div>
+        <div><dt>session_id</dt><dd data-k="sid">&#8230;</dd></div>
+        <div><dt>exit_code</dt><dd data-k="exit">0</dd></div>
+        <div><dt>duration_ms</dt><dd data-k="dur">81234</dd></div>
+      </dl>
+    </div>
+    <div class="exits" role="list" aria-label="Exit codes">
+      <div role="listitem"><span class="n z">0</span><div><b>Success</b><p>For <code>shell submit</code>, the status is <code>ok</code>. An idle <code>task work</code> and a search with no match exit 0 too, so read the result.</p></div></div>
+      <div role="listitem"><span class="n">1</span><div><b>Failed</b><p>A status other than <code>ok</code>, or aits could not finish.</p></div></div>
+      <div role="listitem"><span class="n">2</span><div><b>Usage error</b><p>Or invalid input. Nothing was started or written.</p></div></div>
+    </div>
+    <div class="contract">
+      <div>
+        <h3>One stream to read</h3>
+        <p>stdout carries only the result. Diagnostics and warnings go to stderr. With <code>--json</code>, errors are JSON on stdout too:</p>
+        <pre>{"error":{"code":"…",<wbr>"message":"…"}}</pre>
+      </div>
+      <div>
+        <h3>An explicit status</h3>
+        <p>Empty output never means success. <code>shell submit</code> reports one of:</p>
+        <div class="statuses"><code class="ok">ok</code><code>agent_failed</code><code>bad_agent_output</code><code>output_too_large</code><code>timeout</code><code>stopped</code><code>incomplete</code></div>
+        <p>Every status but <code>ok</code> carries a one-line <code>message</code>, and <code>session_id</code> whenever the agent reported one.</p>
+      </div>
+      <div>
+        <h3>Stopped cleanly</h3>
+        <p>Each agent runs in its own process group. On a timeout or a signal, aits sends TERM to the group, then KILL 5s later, waits for it to exit and still prints the result.</p>
+        <p>aits runs in the foreground: it never forks into the background or writes pid files.</p>
+      </div>
+    </div>
+    <div class="prow">
+      <span class="prow-h">Enforced by</span>
+      <a href="principles.html#p5"><span class="pid">P5</span><b>Machine-readable by contract</b><span class="prev"><em>Prevents</em>exit 1 meaning both "bad usage" and "the agent failed".</span></a>
+      <a href="principles.html#p6"><span class="pid">P6</span><b>Fail closed, no zero-value success</b><span class="prev"><em>Prevents</em>zero-value results read as success.</span></a>
+      <a href="principles.html#p10"><span class="pid">P10</span><b>Owned processes, recoverable state</b><span class="prev"><em>Prevents</em>orphaned agent processes and a task stuck running forever after its worker dies.</span></a>
+      <a class="all" href="principles.html">All fifteen principles&nbsp;<span aria-hidden="true">&#8594;</span></a>
+    </div>
+  </div>
+</section>
+
+<section id="agents" class="band">
+  <div class="wrap">
+    <div class="sec-h">
+      <div><span class="num">04 / for agents</span><h2>Teach your agent to use it.</h2></div>
+      <p>The repo ships an agent skill, <code>skills/aits/SKILL.md</code>, that tells a coding agent when and how to call aits: which command for which job, what each status means, and how to run a review-and-fix loop.</p>
+    </div>
+        <div class="install multi skill" role="group" aria-label="Install the skill for Claude Code">
+      <span class="lbl">Skill</span>
+      <pre tabindex="0"><span class="ln"><span class="p">$ </span>git clone <span class="nb">https://github.com/</span><wbr><span class="nb">agent-in-the-shell/aits</span></span><span class="ln"><span class="p">$ </span>mkdir -p ~/.claude/skills &amp;&amp; cp -R aits/skills/aits ~/.claude/skills/</span></pre>
+      <button class="copy" type="button" data-copy="git clone https://github.com/agent-in-the-shell/aits&#10;mkdir -p ~/.claude/skills &amp;&amp; cp -R aits/skills/aits ~/.claude/skills/" aria-label="Copy skill install commands">Copy</button>
+    </div>
+    <div class="band-grid">
+      <div>
+        <ul class="band-notes">
+          <li><strong>Install it where your agent loads skills.</strong> For Claude Code, that is <code>~/.claude/skills</code>.</li>
+          <li><strong>Update it with the binary.</strong> Each change to the CLI updates the skill in the same commit, and a test fails when the skill does not name every command, flag and result status.</li>
+          <li><strong>The help wins.</strong> When the skill and <code>aits COMMAND --help</code> disagree, the skill tells the agent to follow the help.</li>
+        </ul>
+      </div>
+      <table class="jobs">
+        <caption>Which command, from SKILL.md</caption>
+        <thead><tr><th scope="col">Job</th><th scope="col">Command</th></tr></thead>
+        <tbody>
+          <tr><td>Ask an agent one thing and wait for the answer</td><td><code><span class="nb">aits shell submit</span></code></td></tr>
+          <tr><td>Continue that conversation</td><td><code><span class="nb">aits shell submit</span> <span class="nb">--session ID</span></code></td></tr>
+          <tr><td>Find an earlier conversation to continue</td><td><code><span class="nb">aits session search</span></code></td></tr>
+          <tr><td>Queue work and collect it later</td><td><code><span class="nb">aits task create</span></code>, then <code><span class="nb">aits task work</span></code></td></tr>
+          <tr><td>Wait for a queued task to finish</td><td><code><span class="nb">aits task wait ID</span> <span class="nb">--timeout 9m</span></code></td></tr>
+          <tr><td>Queue a follow-up in the same conversation</td><td><code><span class="nb">aits task create</span> <span class="nb">--after ID</span></code></td></tr>
+          <tr><td>See queued and finished work</td><td><code><span class="nb">aits task list</span></code>, <code><span class="nb">aits task show ID</span></code></td></tr>
+          <tr><td>Which aits is installed</td><td><code><span class="nb">aits version</span></code></td></tr>
+          <tr><td>Full help for any command</td><td><code><span class="nb">aits help COMMAND...</span></code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="scope">
+  <div class="wrap">
+    <div class="sec-h stack">
+      <div><span class="num">05 / scope</span><h2>A toolbox, not a platform.</h2></div>
+      <p>aits is the tools an agent calls from a shell. A feature belongs in aits when its caller is an agent or a script, it runs locally and in the foreground, aits adds something of its own, it fits a small binary for every user, and it has a caller today. <a href="principles.html#p15">Principle P15</a>.</p>
+    </div>
+    <div class="isnot">
+      <div class="yes">
+        <h3><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M4 11.5l4.5 4.5L18 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg>What aits is</h3>
+        <ul>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M4 11.5l4.5 4.5L18 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>One command per action</strong>, with a <code>--json</code> result.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M4 11.5l4.5 4.5L18 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>Local and in the foreground.</strong> It never daemonizes, and no command needs a running aits process.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M4 11.5l4.5 4.5L18 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>A layer of its own over vendor CLIs:</strong> an environment allowlist, sandbox and permissions, timeouts and process groups, recoverable state, one vocabulary for both agents.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M4 11.5l4.5 4.5L18 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>A client</strong> of services that host things, where those exist.</span></li>
+        </ul>
+      </div>
+      <div class="no">
+        <h3><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M5 5l12 12M17 5L5 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg>What aits is not</h3>
+        <ul>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M5 5l12 12M17 5L5 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>A host</strong> for services other commands depend on.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M5 5l12 12M17 5L5 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>The agent's loop</strong>, a workflow engine or a set of stop conditions. The caller owns the loop.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M5 5l12 12M17 5L5 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>A resident scheduler.</strong> cron and launchd run the queue.</span></li>
+          <li><svg width="18" height="18" viewBox="0 0 22 22" aria-hidden="true"><path d="M5 5l12 12M17 5L5 17" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square"/></svg><span><strong>A TUI</strong>, a way to attach to live agents, or a bundle of chat-platform adapters.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="close">
+  <div class="wrap">
+    <div>
+      <span class="num">06 / try it</span>
+      <h2>Hand your next prompt to a second agent<span class="h-sq" aria-hidden="true"></span><span class="sr">.</span></h2>
+      <p>aits is pre-release: output shapes may change before 1.0. Issues come first, one pull request per issue, and every change ships with its help, docs, skill and tests.</p>
+    </div>
+    <div class="acts">
+      <a class="btn primary" href="https://github.com/agent-in-the-shell/aits">github.com/agent-in-the-shell/aits <span aria-hidden="true">&#8599;</span></a>
+      <a class="btn" href="cli.html">CLI reference <span aria-hidden="true">&#8594;</span></a>
+      <a class="btn" href="https://github.com/agent-in-the-shell/aits/blob/main/CONTRIBUTING.md">Contributing guide <span aria-hidden="true">&#8599;</span></a>
+    </div>
+  </div>
+</section>
+</main>
+<footer>
+  <div class="wrap">
+    <div class="f1">
+      <a class="logo f-logo" href="index.html" aria-label="aits home"><span class="wm">aits</span><span class="cur" aria-hidden="true"></span></a>
+      <div class="f-inst"><code><span class="p">$ </span>go install <span class="nb">github.com/</span><wbr><span class="nb">agent-in-the-shell/</span><wbr><span class="nb">aits/cmd/</span><wbr><span class="nb">aits@latest</span></code><button class="copy" type="button" data-copy="go install github.com/agent-in-the-shell/aits/cmd/aits@latest" aria-label="Copy install command">Copy</button></div>
+      <span class="f-meta">pre-release &#183; MIT</span>
+    </div>
+    <nav class="f2" aria-label="Footer">
+      <a href="index.html">Home</a>
+      <a href="cli.html">CLI reference</a>
+      <a href="principles.html">Principles</a>
+      <a href="https://github.com/agent-in-the-shell/aits/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/agent-in-the-shell/aits">GitHub</a>
+      <a href="https://github.com/agent-in-the-shell/aits/blob/main/LICENSE">License</a>
+    </nav>
+  </div>
+</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="base.js"></script>
+<script src="film.js"></script>
+</body>
+</html>
+
+</body></html>

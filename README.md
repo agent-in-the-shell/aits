@@ -1,13 +1,16 @@
 # aits
 
+**Website: [agent-in-the-shell.github.io/aits](https://agent-in-the-shell.github.io/aits/)**
+· [CLI reference](https://agent-in-the-shell.github.io/aits/cli.html)
+· [Principles](https://agent-in-the-shell.github.io/aits/principles.html)
+
 Run coding agents from the command line: dispatch work to vendor agent CLIs,
-queue and follow up on it, search past agent sessions, and route LLM requests
-through an OpenAI-compatible gateway — one Go binary, built for AI agents to
-call.
+queue and follow up on it, search past agent sessions, and run the commands
+a scheduler starts — one Go binary, built for AI agents to call.
 
 > **Status:** pre-release. `aits shell submit` (Claude Code and Codex, with
-> `--session` to continue), `aits session search` and `aits task` work;
-> `model` is planned.
+> `--session` to continue), `aits session search`, `aits task` and `aits job`
+> work.
 
 ## Install
 
