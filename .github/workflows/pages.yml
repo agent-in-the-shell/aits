@@ -1,0 +1,38 @@
+name: pages
+
+# Publishes site/ (#174) to GitHub Pages. The pages are static files with no
+# build step; tests in cmd/aits keep them in step with the help (P13).
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage the published files
+        # Only what the pages load; site/layout.tmpl is the generator's input.
+        run: |
+          mkdir _site
+          cp site/*.html site/*.css site/*.js site/*.svg site/*.png _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

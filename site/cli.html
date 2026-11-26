@@ -1,0 +1,936 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLI reference: aits</title>
+<meta name="description" content="Every aits command and flag, with result fields, statuses, errors and exit codes. Rendered from docs/cli.md, which is the help of the current build.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="aits">
+<meta property="og:title" content="aits CLI reference">
+<meta property="og:description" content="Every aits command and flag, with result fields, statuses, errors and exit codes. Rendered from docs/cli.md, which is the help of the current build.">
+<meta property="og:image" content="https://agent-in-the-shell.github.io/aits/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="aits CLI reference">
+<meta name="twitter:description" content="Every aits command and flag, with result fields, statuses, errors and exit codes. Rendered from docs/cli.md, which is the help of the current build.">
+<meta name="theme-color" content="#ecebe5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0d14" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="base.css">
+<script>try{var t=localStorage.getItem('aits-theme');if(t)document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+</head>
+<body class="doc-page">
+<div class="vt-edge" aria-hidden="true"></div>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="logo" href="index.html" aria-label="aits home">
+      <span class="wm">aits</span><span class="cur" aria-hidden="true"></span>
+    </a>
+    <span class="tag">pre-release</span>
+    <nav class="nav" aria-label="Site">
+      <span class="sub"><a href="index.html#commands">Commands</a><a href="index.html#usage">Usage</a><a href="index.html#agents">For agents</a></span>
+      <a href="cli.html" aria-current="page">CLI<span class="lg"> reference</span></a>
+      <a href="principles.html">Principles</a>
+    </nav>
+    <a class="gh" href="https://github.com/agent-in-the-shell/aits" aria-label="aits on GitHub">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <button class="theme" id="theme" type="button" aria-label="Switch color theme">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5a6.5 6.5 0 010 13z" fill="currentColor"/></svg>
+    </button>
+  </div>
+  <div class="fuse" aria-hidden="true"></div>
+</header>
+
+<main id="main">
+<div class="doc-head" id="top" data-hero="help">
+  <div class="wrap">
+    <span class="num"><span class="hp" aria-hidden="true"><span class="c-p">$ </span>aits help</span>reference</span>
+    <h1>CLI reference<span class="sq" aria-hidden="true"></span></h1>
+    <p class="lede">Every command and flag in the current build. This page renders <a href="https://github.com/agent-in-the-shell/aits/blob/main/docs/cli.md"><code>docs/cli.md</code></a>, which is generated from the help output of <code>aits</code> and checked against it in CI. The installed binary's help is the authority for its version: run <code>aits help COMMAND...</code> or <code>aits COMMAND --help</code>.</p>
+    <p class="meta">pre-release: output shapes may change before 1.0.</p>
+    <div class="ticker" aria-hidden="true"><span><b><i>$</i> aits shell submit</b><b><i>$</i> aits session search</b><b><i>$</i> aits task create</b><b><i>$</i> aits task list</b><b><i>$</i> aits task show</b><b><i>$</i> aits task wait</b><b><i>$</i> aits task work</b><b><i>$</i> aits task cancel</b><b><i>$</i> aits job run</b><b><i>$</i> aits job list</b><b><i>$</i> aits job apply</b><b><i>$</i> aits job sched</b><b><i>$</i> aits version</b><b><i>$</i> aits help</b><b><i>$</i> aits shell submit</b><b><i>$</i> aits session search</b><b><i>$</i> aits task create</b><b><i>$</i> aits task list</b><b><i>$</i> aits task show</b><b><i>$</i> aits task wait</b><b><i>$</i> aits task work</b><b><i>$</i> aits task cancel</b><b><i>$</i> aits job run</b><b><i>$</i> aits job list</b><b><i>$</i> aits job apply</b><b><i>$</i> aits job sched</b><b><i>$</i> aits version</b><b><i>$</i> aits help</b></span></div>
+  </div>
+</div>
+
+<div class="wrap doc">
+  <nav class="toc" aria-label="Commands on this page">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#aits">aits</a></li>
+      <li class="grp-l">shell</li>
+      <li><a href="#shell">shell</a></li>
+      <li><a href="#shell-submit">shell submit</a></li>
+      <li class="grp-l">session</li>
+      <li><a href="#session">session</a></li>
+      <li><a href="#session-search">session search</a></li>
+      <li class="grp-l">task</li>
+      <li><a href="#task">task</a></li>
+      <li><a href="#task-create">task create</a></li>
+      <li><a href="#task-list">task list</a></li>
+      <li><a href="#task-show">task show</a></li>
+      <li><a href="#task-wait">task wait</a></li>
+      <li><a href="#task-work">task work</a></li>
+      <li><a href="#task-cancel">task cancel</a></li>
+      <li class="grp-l">job</li>
+      <li><a href="#job">job</a></li>
+      <li><a href="#job-run">job run</a></li>
+      <li><a href="#job-list">job list</a></li>
+      <li><a href="#job-apply">job apply</a></li>
+      <li><a href="#job-sched">job sched</a></li>
+      <li class="grp-l">version</li>
+      <li><a href="#version">version</a></li>
+      <li class="grp-l">help</li>
+      <li><a href="#help">help</a></li>
+    </ol>
+  </nav>
+
+  <div class="doc-body json">
+
+  <section class="cmd" id="aits" style="padding-top:0;border-top:0">
+    <div class="cmd-h"><h2>aits</h2></div>
+    <p class="sum">Run coding agents from the command line.</p>
+<pre class="usage">Usage: <span class="k">aits</span> COMMAND</pre>
+    <h3>Commands</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr><td><a href="#shell">shell</a></td><td>Run prompts through vendor agent CLIs.</td></tr>
+        <tr><td><a href="#session">session</a></td><td>Search the coding agents&#39; own conversation transcripts.</td></tr>
+        <tr><td><a href="#task">task</a></td><td>Queue agent runs, work them one at a time, and read their results.</td></tr>
+        <tr><td><a href="#job">job</a></td><td>Run scheduled commands with a timeout, a lock, a run record and alerts.</td></tr>
+        <tr><td><a href="#version">version</a></td><td>Print the version of this aits binary.</td></tr>
+        <tr><td><a href="#help">help</a></td><td>Show help for aits or one of its commands.</td></tr>
+      </tbody>
+    </table>
+    <p>Run &#39;aits COMMAND <code>--help</code>&#39; for details.</p>
+    <p><b>Errors.</b> unknown_command, unknown_flag (exit 2).</p>
+  </section>
+
+  <section class="cmd" id="shell">
+    <div class="cmd-h"><h2>aits shell</h2></div>
+    <p class="sum">Run prompts through vendor agent CLIs.</p>
+<pre class="usage">Usage: <span class="k">aits shell</span> COMMAND</pre>
+    <h3>Commands</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr><td><a href="#shell-submit">submit</a></td><td>Run one prompt through an agent CLI and return the answer and session id.</td></tr>
+      </tbody>
+    </table>
+    <p>Run &#39;aits shell COMMAND <code>--help</code>&#39; for details.</p>
+    <p><b>Errors.</b> unknown_command, unknown_flag (exit 2).</p>
+  </section>
+
+  <section class="cmd" id="shell-submit">
+    <div class="cmd-h"><h2><span class="par">aits shell</span> submit</h2></div>
+    <p class="sum">Run one prompt through an agent CLI and return the answer and session id.</p>
+<pre class="usage">Usage: <span class="k">aits shell submit</span> [flags] (PROMPT | -)</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--agent</code> <span class="a">AGENT</span></td><td>AGENT CLI to run (required). One of: claude, codex.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--allow-tool</code> <span class="a">TOOL</span></td><td>Let the agent run TOOL without asking (claude only), e.g. &#34;Bash(git diff:*)&#34;. Repeatable.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--cwd</code> <span class="a">DIR</span></td><td>Run the agent in DIR (default: the current directory).</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--env</code> <span class="a">NAME</span></td><td>Pass the variable NAME from this environment to the agent. Repeatable.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--model</code> <span class="a">MODEL</span></td><td>Run the agent with MODEL, as its vendor names it (default: the vendor&#39;s default).</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--report</code></td><td>Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--run-dir</code> <span class="a">value</span></td><td>Run the agent in a new directory BASE/ID of its own (ID: the task id), instead of <code>--cwd</code>; see <code>--help</code>.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--session</code> <span class="a">ID</span></td><td>Continue the conversation ID: the session_id of an earlier result.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--timeout</code> <span class="a">DURATION</span></td><td>Stop the agent after DURATION, e.g. 90s or 30m.</td><td class="c-dflt">30m0s</td></tr>
+        <tr><td><code>--worktree</code></td><td>Run the agent in a new detached git worktree of <code>--cwd</code>&#39;s repository, under <code>--run-dir</code> or $AITS_HOME/worktree.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--write</code></td><td>Let the agent edit files and run commands in its working directory without asking, inside its vendor&#39;s sandbox.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p><b>Prompt.</b> PROMPT, or &#34;-&#34; to read it from stdin, at most 16 MiB; more is invalid_input. It may use {{aits.date}} (the run&#39;s local date, YYYY-MM-DD), {{aits.task_id}} (the task id; for submit, the run id) and {{aits.run_dir}} (the directory the agent runs in), filled when the run starts, so a queued task gets the day it runs. Another {{aits.NAME}} is invalid_input; any other text, {{ included, is left alone.</p>
+    <p>A directory per run (<code>--run-dir</code> BASE): when the run starts, aits creates BASE/ID, mode 700, and the agent works there instead of <code>--cwd</code> (the two exclude each other); BASE is created if missing. ID is the task id, or for submit a new id of the same form. The result&#39;s dir (a task&#39;s run.dir) says where it ran. <code>--worktree</code> makes that directory a detached git worktree of <code>--cwd</code>&#39;s repository at its HEAD, under <code>--run-dir</code> BASE or else $AITS_HOME/worktree: one tree per agent, so parallel writers never share one. git must be on PATH; if it fails, nothing runs (a task ends not_started with git&#39;s message). aits never removes a worktree: review it, merge it, then git worktree remove it.</p>
+    <h3>Output</h3>
+<pre class="out-block">With --json, stdout is exactly one JSON object: a result once the agent has
+started, otherwise {&#34;error&#34;:{&#34;code&#34;:&#34;…&#34;,&#34;message&#34;:&#34;…&#34;}}. Without --json,
+stdout is the answer for status ok and empty otherwise; everything else
+goes to stderr, with control characters in the message, session id and
+denied calls shown as Go escapes (\x1b, \r): one &#34;denied: TOOL INPUT&#34;
+line per call.</pre>
+    <h3>Result fields</h3>
+<pre class="out-block">status       Always. One of the statuses below.
+agent        Always.
+session_id   When the agent reported one, on every status; pass it to --session.
+answer       For ok, and for incomplete: what the agent wrote before
+             its background work was stopped.
+exit_code    Always. The agent&#39;s exit code; -1 if a signal ended it.
+duration_ms  Always.
+stderr_tail  Only for agent_failed: the last 4 KiB of the agent&#39;s stderr.
+message      Every status but ok: one line explaining it.
+denied_tools Claude Code only, on every status: the tool of each call
+             refused for want of your approval, in order.
+             claude -p never stops to ask, and a refusal leaves the
+             status as it is: the agent may have finished another way.
+denied_calls With denied_tools: one {tool, input} per call, in the same
+             order. input is the call&#39;s command, file_path,
+             notebook_path, path, url or pattern (the first it has), at
+             most 500 bytes; none for a call without one. Claude Code
+             refuses a loop or a command substitution (for, $(...))
+             even when each command in it is allowed; a pipe of
+             allowed commands runs. Put such a step in a script.
+stopped_tasks
+             Only for incomplete, Claude Code only: the description of
+             each background agent or workflow that was stopped.
+report       With --report, on ok or incomplete: the agent&#39;s last line
+             &#34;AITS-REPORT {...}&#34; read as {state, summary, question}, where
+             state is done, blocked (it needs a decision or information:
+             question) or failed. summary and question are cut at 2000
+             bytes. The status and the answer are as without it.
+report_error With --report, when there is no usable report line: why.
+dir          With --run-dir or --worktree: the directory the agent ran in.
+usage        What the run spent, when the agent reported it, on any
+             status: input_tokens (every prompt token, cached ones
+             included), cached_input_tokens, output_tokens and, Claude
+             Code only, cost_usd as Claude Code prices it. Claude
+             Code&#39;s figures cover the whole run, subagents included;
+             Codex&#39;s add up its turns. aits enforces no budget.</pre>
+    <h3>Statuses</h3>
+<pre class="out-block">ok                The agent answered.
+agent_failed      The agent exited non-zero or reported an error.
+bad_agent_output  The agent&#39;s JSON events were not usable.
+output_too_large  One output event exceeded 16 MiB; the agent was stopped.
+timeout           --timeout elapsed before the agent exited; it was stopped.
+stopped           aits got SIGTERM, SIGINT or SIGHUP before the agent
+                  exited, even after a timeout; it was stopped.
+incomplete        The agent answered, but background work it was waiting
+                  for was stopped before it reported back.</pre>
+    <p><b>Report (--report).</b> aits appends this to the prompt, after a blank line, and reads the answer&#39;s last non-empty line:</p>
+<pre class="out-block">When you finish, end your reply with one last line of exactly this form,
+with nothing after it:
+AITS-REPORT {&#34;state&#34;:&#34;done&#34;,&#34;summary&#34;:&#34;one sentence on what you did&#34;}
+Use &#34;state&#34;:&#34;blocked&#34; with a &#34;question&#34; field when you need a decision or
+information to go on, and &#34;state&#34;:&#34;failed&#34; when you could not do the task.</pre>
+    <p><b>Background work.</b> Claude Code runs agents and workflows in the background and gives the agent another turn when each one reports back; the answer is the last turn&#39;s. aits sets CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 for claude, so Claude Code waits for that work until <code>--timeout</code>; pass the variable with <code>--env</code> to set your own limit. Background work Claude Code stopped, at that limit or for any other reason, before it reported back makes the run incomplete. A command the agent ran in the background (run_in_background) is not waited for: it is stopped when the agent exits, and the status stays as it is. Codex waits for no background work.</p>
+    <p><b>Stopping.</b> on a timeout or a signal, aits sends TERM to the agent&#39;s process group and KILL 5s later, or at once on a second signal. It still waits for the group to exit and prints the result.</p>
+    <p><b>Model (--model).</b> passed to claude as <code>--model</code> MODEL and to codex as -m MODEL, for a new conversation and a resumed one. aits keeps no list of models: a name the vendor rejects is agent_failed. A name that starts with &#34;-&#34; or has spaces or control characters is invalid_input.</p>
+    <p><b>Write (--write).</b> the agent edits files and runs commands without asking, inside its vendor&#39;s sandbox; aits opens no network, and your own vendor settings still apply. shell submit (once the agent starts) and task create (once the task is stored) print on stderr, with <code>--json</code> too:</p>
+<pre class="out-block">aits: warning: --write lets the agent edit files and run commands in its working directory without asking</pre>
+<pre class="out-block">claude  --permission-mode acceptEdits and a sandbox in --settings: file
+        tools write in the working directory; commands write there and
+        in Claude Code&#39;s temp directory.
+codex   -s workspace-write: commands write in the working directory, /tmp
+        and $TMPDIR; .git stays read-only. Without --write codex gets
+        -s read-only, a resumed session too.</pre>
+    <p>A write anywhere else fails, such as a build cache under $HOME. A command the sandbox stops is not in denied_tools: it looks like any failed command. Claude Code leaves .claude/.cc-writes in the working directory.</p>
+    <p>Allowed tools (<code>--allow-tool</code> TOOL): the agent runs TOOL without asking, for this invocation only; every other call that needs approval is still refused and listed in denied_tools. TOOL is Claude Code&#39;s own syntax, such as Read, &#34;Bash(git diff:*)&#34; or mcp__server__tool, passed as <code>--allowed</code>Tools TOOL; aits does not check that it exists. Without <code>--write</code> an allowed command runs outside any sandbox, with the network; with <code>--write</code> it runs in the sandbox. codex has no list of allowed tools: <code>--allow-tool</code> with codex is invalid_input. A TOOL that is empty, starts with &#34;-&#34;, or has a comma or control characters is invalid_input. Like <code>--write</code> it warns on stderr, once per tool:</p>
+<pre class="out-block">aits: warning: --allow-tool lets the agent run TOOL without asking</pre>
+    <h3>Errors (nothing was started)</h3>
+<pre class="out-block">unknown_flag        exit 2  No such flag for this command.
+invalid_input       exit 2  A flag value, the prompt or an argument is invalid.
+agent_not_found     exit 1  The agent CLI is not on PATH.
+agent_start_failed  exit 1  The agent CLI could not be started.
+stdin_failed        exit 1  The prompt could not be read from stdin.
+stopped             exit 1  aits got a signal before the agent started.
+internal            exit 1  An unexpected failure inside aits.</pre>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  The status is ok.
+1  Any other status, or an error marked exit 1 above.
+2  Usage error or invalid input; nothing was started.</pre>
+  </section>
+
+  <section class="cmd" id="session">
+    <div class="cmd-h"><h2>aits session</h2></div>
+    <p class="sum">Search the coding agents&#39; own conversation transcripts.</p>
+<pre class="usage">Usage: <span class="k">aits session</span> COMMAND</pre>
+    <h3>Commands</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr><td><a href="#session-search">search</a></td><td>Find conversations that contain every term, with an id to continue them.</td></tr>
+      </tbody>
+    </table>
+    <p>Run &#39;aits session COMMAND <code>--help</code>&#39; for details.</p>
+    <p><b>Errors.</b> unknown_command, unknown_flag (exit 2).</p>
+  </section>
+
+  <section class="cmd" id="session-search">
+    <div class="cmd-h"><h2><span class="par">aits session</span> search</h2></div>
+    <p class="sum">Find conversations that contain every term, with an id to continue them.</p>
+<pre class="usage">Usage: <span class="k">aits session search</span> [flags] TERM...</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--agent</code> <span class="a">AGENT</span></td><td>Search only AGENT&#39;s transcripts. One of: claude, codex.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--cwd</code> <span class="a">DIR</span></td><td>Only sessions whose working directory is DIR or below it, with or without symlinks resolved.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--limit</code> <span class="a">N</span></td><td>Return at most N results.</td><td class="c-dflt">20</td></tr>
+        <tr><td><code>--since</code> <span class="a">DURATION</span></td><td>Only transcripts changed within DURATION, e.g. 72h.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--source</code> <span class="a">KIND</span></td><td>Only sessions started KIND. One of: interactive, scripted (see Source below).</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <h3>Output</h3>
+<pre class="out-block">With --json, stdout is exactly one JSON object:
+{&#34;results&#34;:[...],&#34;skipped&#34;:{&#34;files&#34;:N,&#34;lines&#34;:N}}, or on failure
+{&#34;error&#34;:{&#34;code&#34;:&#34;…&#34;,&#34;message&#34;:&#34;…&#34;}}. Without --json, each
+result is a line &#34;UPDATED_AT  AGENT  SESSION_ID  CWD&#34; and an indented
+snippet, and anything skipped is reported on stderr. Text output shows
+control characters from transcripts as Go escapes (\x1b, \r); --json
+carries the original text. No match is not an error.</pre>
+    <h3>Result fields</h3>
+<pre class="out-block">agent        The agent whose transcript matched.
+session_id   Pass it to &#34;aits shell submit --session&#34; to continue.
+cwd          The session&#39;s working directory, as the agent recorded it.
+updated_at   When the transcript file last changed, in UTC; newest first.
+snippet      Text around the first term in the newest message with it.</pre>
+    <h3>Skipped</h3>
+<pre class="out-block">files        Transcript paths that could not be read or are not regular files
+             (pipes, devices, directories; never opened), and transcripts
+             that hold messages but name no session or cwd.
+lines        Lines that were not JSON or were longer than 64 MiB. A file that
+             --cwd or --source rules out is read no further, so its later
+             lines are not counted.</pre>
+    <h3>Searched</h3>
+<pre class="out-block">User and assistant message text, and prompts queued while the agent was
+working; every term somewhere in the session, ignoring case. Not tool calls
+or their output, model thinking, subagent transcripts (Claude&#39;s or Codex&#39;s),
+compaction summaries, or text the agent CLI adds to a turn by itself
+(instructions such as AGENTS.md, reminders, notifications, &#34;!&#34; shell
+output, interruption and API-error notices).</pre>
+    <h3>Source (--source)</h3>
+<pre class="out-block">A session&#39;s kind is the first value its transcript records:
+claude  entrypoint of the first event that has one
+          interactive  cli, claude-vscode, claude-desktop
+          scripted     sdk-cli (claude -p), sdk-ts, sdk-py
+codex   payload.source of the first line (session_meta), when a string
+          interactive  cli, vscode
+          scripted     exec
+A session with no such value, or a value not listed, is of unknown kind:
+returned without --source, left out by both values. Observed with Claude
+Code 2.1.299 and Codex CLI 0.159.2; not a documented vendor contract.</pre>
+    <h3>Transcripts</h3>
+<pre class="out-block">claude  $CLAUDE_CONFIG_DIR/projects/*/*.jsonl (default ~/.claude)
+codex   $CODEX_HOME/sessions/*/*/*/rollout-*.jsonl (default ~/.codex)
+Subdirectories that cannot be read are passed over without a count; if a
+vendor changes this layout, its sessions are not found. If neither the
+variable nor HOME is set for an agent searched, the search fails
+(invalid_input).</pre>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  The search ran, with or without results.
+1  Stopped by a signal, or an unexpected failure.
+2  Usage error or invalid input.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="task">
+    <div class="cmd-h"><h2>aits task</h2></div>
+    <p class="sum">Queue agent runs, work them one at a time, and read their results.</p>
+<pre class="usage">Usage: <span class="k">aits task</span> COMMAND</pre>
+    <h3>Commands</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr><td><a href="#task-create">create</a></td><td>Queue a prompt for an agent; prints the task id.</td></tr>
+        <tr><td><a href="#task-list">list</a></td><td>List tasks, oldest first.</td></tr>
+        <tr><td><a href="#task-show">show</a></td><td>Show one task and its run.</td></tr>
+        <tr><td><a href="#task-wait">wait</a></td><td>Wait until a task, or all or any of several, is done or failed.</td></tr>
+        <tr><td><a href="#task-work">work</a></td><td>Claim the oldest claimable task, run it, record the result, exit.</td></tr>
+        <tr><td><a href="#task-cancel">cancel</a></td><td>Withdraw a queued task, or stop a running one through its worker.</td></tr>
+      </tbody>
+    </table>
+    <p>Run &#39;aits task COMMAND <code>--help</code>&#39; for details.</p>
+    <p><b>Errors.</b> unknown_command, unknown_flag (exit 2).</p>
+    <p><b>Running on a schedule.</b> let the OS scheduler start aits, or declare the commands as jobs and run them from aits job sched (see &#34;aits job <code>--help</code>&#34;). A crontab that queues a review each weekday at 09:00 and works the queue every 5 minutes:</p>
+<pre class="out-block">0 9 * * 1-5  aits task create --agent claude --cwd ~/src/proj &#34;Review the commits since yesterday for bugs&#34;
+*/5 * * * *  aits task work --json &gt;&gt; ~/aits-work.log</pre>
+    <p>work exits 0 with {&#34;status&#34;:&#34;empty&#34;} when nothing is claimable, so a run with nothing to do is harmless. Runs that overlap claim different tasks, never the same one, so a slow task can leave several workers running at once; cap them with work <code>--max-running</code> N, which counts running tasks across every worker, or start work from a scheduler that does not overlap a job (launchd does not).</p>
+    <p>On macOS use a launchd agent in ~/Library/LaunchAgents: ProgramArguments for the command, StartInterval 300 for work or StartCalendarInterval for create, and EnvironmentVariables for what the job needs.</p>
+    <p>A scheduled job does not get your shell&#39;s environment:</p>
+<pre class="out-block">PATH   must reach aits and the agent CLI (claude, codex): cron&#39;s default
+       PATH has neither if they live in ~/.local/bin or Homebrew. Without
+       the agent, the task fails with run status not_started.
+HOME   must be yours: the agent&#39;s login lives there, and the queue too
+       unless AITS_HOME is set; create and work must use the same queue.
+--env  names variables that work passes to the agent from the worker&#39;s
+       own environment, so set them in the work job, not the create job.</pre>
+    <p>Claude on macOS keeps its login in the login keychain, which a job started by cron, launchd or SSH cannot read: claude fails with &#34;Not logged in&#34; there even though it works in a terminal. Create a token once with &#34;claude setup-token&#34; (valid a year), keep it in a mode-600 file, and have the work job&#39;s script export it before aits task work:</p>
+<pre class="out-block">export CLAUDE_CODE_OAUTH_TOKEN=&#34;$(cat ~/.config/claude-token)&#34;</pre>
+    <p>aits passes CLAUDE_CODE_OAUTH_TOKEN, like ANTHROPIC_API_KEY, to claude when it is set; never put the token itself in a crontab line or an argument. Do not rely on ~/.claude/.credentials.json, which Claude Code writes when the keychain refuses a write: two copies of one login can sign each other out. A token run has no claude.ai connectors. To keep the keychain login and its connectors, run the jobs from a LaunchAgent instead: declare them in a file and install it with &#34;aits job apply FILE <code>--sched</code>&#34;.</p>
+    <p>A long unattended task may start background agents or workflows (claude): it waits for them until its <code>--timeout</code>, and ends incomplete, not done, if one was stopped before it reported back (see &#34;shell submit <code>--help</code>&#34;).</p>
+  </section>
+
+  <section class="cmd" id="task-create">
+    <div class="cmd-h"><h2><span class="par">aits task</span> create</h2></div>
+    <p class="sum">Queue a prompt for an agent; prints the task id.</p>
+<pre class="usage">Usage: <span class="k">aits task create</span> [flags] (PROMPT | -)</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--after</code> <span class="a">ID</span></td><td>Continue the conversation of task ID once it is done, with its agent and cwd.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--agent</code> <span class="a">AGENT</span></td><td>AGENT CLI to run (required unless <code>--after</code>). One of: claude, codex.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--allow-tool</code> <span class="a">TOOL</span></td><td>Let the agent run TOOL without asking (claude only), e.g. &#34;Bash(git diff:*)&#34;. Repeatable.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--cwd</code> <span class="a">DIR</span></td><td>Run the agent in DIR (default: the current directory, or with <code>--after</code> the parent&#39;s).</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--env</code> <span class="a">NAME</span></td><td>Pass the variable NAME from the worker&#39;s environment to the agent. Repeatable.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--label</code> <span class="a">LABEL</span></td><td>Label the task LABEL, e.g. the runbook it runs, for list <code>--label</code> and work <code>--label</code>.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--model</code> <span class="a">MODEL</span></td><td>Run the agent with MODEL, as its vendor names it (default: the vendor&#39;s default).</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--report</code></td><td>Ask the agent to end with a typed AITS-REPORT line, returned as report: state done, blocked or failed, summary, question. A follow-up has it when its parent has.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--run-dir</code> <span class="a">value</span></td><td>Run the agent in a new directory BASE/ID of its own (ID: the task id), instead of <code>--cwd</code>; see <code>--help</code>.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--session</code> <span class="a">ID</span></td><td>Continue the conversation ID: a session_id of an earlier result or of session search.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--timeout</code> <span class="a">DURATION</span></td><td>Stop the agent after DURATION, e.g. 90s or 30m, in whole milliseconds.</td><td class="c-dflt">30m0s</td></tr>
+        <tr><td><code>--worktree</code></td><td>Run the agent in a new detached git worktree of <code>--cwd</code>&#39;s repository, under <code>--run-dir</code> or $AITS_HOME/worktree.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--write</code></td><td>Let the agent edit files and run commands in its working directory without asking, inside its vendor&#39;s sandbox.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p>The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With neither AITS_HOME nor HOME set, every task command fails (invalid_input).</p>
+    <p><b>Prompt.</b> PROMPT, or &#34;-&#34; to read it from stdin, at most 16 MiB; more is invalid_input. It may use {{aits.date}} (the run&#39;s local date, YYYY-MM-DD), {{aits.task_id}} (the task id; for submit, the run id) and {{aits.run_dir}} (the directory the agent runs in), filled when the run starts, so a queued task gets the day it runs. Another {{aits.NAME}} is invalid_input; any other text, {{ included, is left alone.</p>
+    <p>A directory per run (<code>--run-dir</code> BASE): when the run starts, aits creates BASE/ID, mode 700, and the agent works there instead of <code>--cwd</code> (the two exclude each other); BASE is created if missing. ID is the task id, or for submit a new id of the same form. The result&#39;s dir (a task&#39;s run.dir) says where it ran. <code>--worktree</code> makes that directory a detached git worktree of <code>--cwd</code>&#39;s repository at its HEAD, under <code>--run-dir</code> BASE or else $AITS_HOME/worktree: one tree per agent, so parallel writers never share one. git must be on PATH; if it fails, nothing runs (a task ends not_started with git&#39;s message). aits never removes a worktree: review it, merge it, then git worktree remove it.</p>
+    <p>The prompt, <code>--cwd</code>, <code>--model</code>, <code>--allow-tool</code> and <code>--env</code> names must be valid UTF-8: a task is stored as JSON text.</p>
+    <p><b>Output.</b> the task id; with <code>--json</code> {&#34;id&#34;:&#34;…&#34;,&#34;status&#34;:&#34;queued&#34;}.</p>
+    <p><b>Follow-ups (--after ID).</b> <code>--agent</code> and <code>--cwd</code>, if given, must be ID&#39;s (<code>--cwd</code> is made absolute, symlinks not resolved). ID must not have failed or ended without a session, and may have only one follow-up that has not failed (one whose worker died counts until its agent is stopped; try again then). A queued follow-up whose parent does not exist, failed or has no session when done is failed by the next list or work (run status not_started); until then show reports it queued. An unreadable task file fails create (internal).</p>
+    <p>A follow-up runs with its parent&#39;s model unless it gives <code>--model</code>, which applies to the follow-up only. It also takes its parent&#39;s <code>--label</code> unless it gives its own.</p>
+    <p><b>Labels (--label LABEL).</b> letters, digits, &#39;.&#39;, &#39;_&#39; and &#39;-&#39;, starting with a letter or digit, at most 100 bytes. A label groups tasks, such as the runs of one scheduled runbook: list <code>--label</code> shows only them, and work <code>--label</code> claims only them.</p>
+    <p>Continuing a session (<code>--session</code> ID): work runs the task as shell submit <code>--session</code> ID does, in the same conversation, so a failed round or a session found with session search can be continued through the queue. <code>--agent</code> is required; <code>--cwd</code> defaults to the current directory, and should be the session&#39;s (the vendor reports a session it cannot find). It has no parent: it is claimable at once, and takes no <code>--model</code>, <code>--write</code> or <code>--allow-tool</code> from anything. <code>--after</code> cannot be combined with it. While another task that is queued or running continues ID (by <code>--session</code>, or as a follow-up of a task done in ID), or one that failed is still having its agent stopped, create refuses it: two agents continuing one conversation at once leave it undefined. aits cannot see an agent it did not start: continue a worker_died round only once no agent of it runs, since its agent may still be running while its worker is gone.</p>
+    <p>With <code>--write</code>, work runs the task as shell submit <code>--write</code> does, without the warning. A follow-up takes its own <code>--write</code>, never its parent&#39;s: without it, the agent resumes without write access. <code>--allow-tool</code> is the same: work grants the tools without warning again, and a follow-up only its own.</p>
+    <p><b>Model (--model).</b> passed to claude as <code>--model</code> MODEL and to codex as -m MODEL, for a new conversation and a resumed one. aits keeps no list of models: a name the vendor rejects is agent_failed. A name that starts with &#34;-&#34; or has spaces or control characters is invalid_input.</p>
+    <p><b>Write (--write).</b> the agent edits files and runs commands without asking, inside its vendor&#39;s sandbox; aits opens no network, and your own vendor settings still apply. shell submit (once the agent starts) and task create (once the task is stored) print on stderr, with <code>--json</code> too:</p>
+<pre class="out-block">aits: warning: --write lets the agent edit files and run commands in its working directory without asking</pre>
+<pre class="out-block">claude  --permission-mode acceptEdits and a sandbox in --settings: file
+        tools write in the working directory; commands write there and
+        in Claude Code&#39;s temp directory.
+codex   -s workspace-write: commands write in the working directory, /tmp
+        and $TMPDIR; .git stays read-only. Without --write codex gets
+        -s read-only, a resumed session too.</pre>
+    <p>A write anywhere else fails, such as a build cache under $HOME. A command the sandbox stops is not in denied_tools: it looks like any failed command. Claude Code leaves .claude/.cc-writes in the working directory.</p>
+    <p>Allowed tools (<code>--allow-tool</code> TOOL): the agent runs TOOL without asking, for this invocation only; every other call that needs approval is still refused and listed in denied_tools. TOOL is Claude Code&#39;s own syntax, such as Read, &#34;Bash(git diff:*)&#34; or mcp__server__tool, passed as <code>--allowed</code>Tools TOOL; aits does not check that it exists. Without <code>--write</code> an allowed command runs outside any sandbox, with the network; with <code>--write</code> it runs in the sandbox. codex has no list of allowed tools: <code>--allow-tool</code> with codex is invalid_input. A TOOL that is empty, starts with &#34;-&#34;, or has a comma or control characters is invalid_input. Like <code>--write</code> it warns on stderr, once per tool:</p>
+<pre class="out-block">aits: warning: --allow-tool lets the agent run TOOL without asking</pre>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  Queued.
+1  The queue could not be read or written.
+2  Usage error or invalid input; nothing was written.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); stdin_failed, stopped, internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="task-list">
+    <div class="cmd-h"><h2><span class="par">aits task</span> list</h2></div>
+    <p class="sum">List tasks, oldest first.</p>
+<pre class="usage">Usage: <span class="k">aits task list</span> [flags]</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--label</code> <span class="a">LABEL</span></td><td>Show only tasks labelled LABEL (create <code>--label</code>).</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--status</code> <span class="a">STATUS</span></td><td>Show only tasks whose status is STATUS: queued, running, done or failed.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p>The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With neither AITS_HOME nor HOME set, every task command fails (invalid_input).</p>
+    <p><b>Output.</b> one line per task, &#34;ID  STATUS  RUN_STATUS  AGENT  CREATED_AT&#34; (RUN_STATUS empty for a task with no run); with <code>--json</code> {&#34;tasks&#34;:[{&#34;id&#34;,&#34;status&#34;,&#34;agent&#34;,&#34;cwd&#34;,&#34;created_at&#34;,&#34;after&#34;,&#34;session&#34;,&#34;label&#34;,&#34;active_at&#34;,&#34;run&#34;}],&#34;skipped&#34;:[&#34;ID&#34;]}, with after only for a follow-up, session only for a <code>--session</code> task, label only for a labelled task, active_at only for a running task whose agent has printed output (lease.active_at in show), and run only once a task has one: its status, session_id, started_at, finished_at and message as in show, without the answer (read it with show).</p>
+    <p><code>--status</code> STATUS keeps only the tasks with that status (queued, running, done or failed), and <code>--label</code> LABEL only those labelled LABEL; given both, a task must match both. skipped is not filtered. A morning check of a scheduled queue:</p>
+<pre class="out-block">aits task list --status failed --json |
+  jq -r &#39;.tasks[] | &#34;\(.id) \(.run.status) \(.run.finished_at)&#34;&#39;</pre>
+    <p>Tasks of dead workers are reclaimed first, and queued follow-ups whose parent does not exist, failed or has no session when done are failed (run status not_started). A running task whose lock file is missing cannot be judged: it stays running, with &#34;aits: cannot tell whether the worker of task ID is alive: its lock file is missing&#34; on stderr.</p>
+    <p>A task file that cannot be read (not a regular file named by a task id, not JSON, not the record of that id, an unknown status, or running without a lease) is skipped and left as it is: its id is in &#34;skipped&#34; (always present, sorted) or, without <code>--json</code>, on stderr as &#34;aits: skipped task ID that could not be read&#34;. A running task whose file cannot be read is not reclaimed, and its agent is not stopped; a follow-up of a task whose file cannot be read stays queued.</p>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  Listed.
+1  The queue could not be read or updated.
+2  Usage error or invalid input.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="task-show">
+    <div class="cmd-h"><h2><span class="par">aits task</span> show</h2></div>
+    <p class="sum">Show one task and its run.</p>
+<pre class="usage">Usage: <span class="k">aits task show</span> [flags] ID</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p>The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With neither AITS_HOME nor HOME set, every task command fails (invalid_input).</p>
+    <h3>Task fields (--json)</h3>
+<pre class="out-block">id           Created by &#34;task create&#34;.
+status       queued, running, done or failed.
+agent, cwd, prompt, timeout_ms, created_at
+env          Variable names passed from the worker&#39;s environment.
+after        For a follow-up: the task whose session it continues.
+session      Set by create --session: the session it continues.
+model        Set by create --model, or taken from the parent of a
+             follow-up: the model the agent runs with.
+label        Set by create --label, or taken from the parent of a
+             follow-up: groups tasks for list --label and work --label.
+write        Set by create --write: the agent runs in its vendor&#39;s
+             sandbox and may write without asking.
+run_dir, worktree
+             Set by create --run-dir and --worktree: each run works in
+             a directory of its own, run.dir. A follow-up runs in its
+             parent&#39;s run.dir and takes neither.
+report       Set by create --report, or taken from the parent of a
+             follow-up: the run asks the agent for an AITS-REPORT line
+             (run.report, run.report_error; see shell submit --help).
+allow_tools  Set by create --allow-tool: the tools the agent runs
+             without asking.
+lease        While running: token, pgid and, once the agent has started,
+             started_at and active_at: when the agent last printed
+             output (a stream event), marked at most every 5s. A time
+             that stops moving while the task runs is a stuck agent:
+             aits judges nothing, see task cancel.
+run          Once worked: the result fields of &#34;shell submit --help&#34;
+             plus started_at and finished_at. run.status is a shell
+             status, not_started (the agent was never started: it could
+             not be started after the claim, or the task is a follow-up
+             whose parent does not exist, failed or has no session when
+             done), worker_died (its worker exited first; set by the
+             next work or list), or cancelled (set only by task cancel,
+             on a task no worker had claimed). A not_started,
+             worker_died or cancelled run has no exit_code and no
+             duration_ms, which are unknown; only a worker_died run
+             whose agent started has started_at.</pre>
+    <p><b>Text output.</b> &#34;ID  STATUS  AGENT  CWD&#34; and, for a done task, the answer on stdout; the session id, the denied calls and why a task failed on stderr, with control characters shown as Go escapes (\x1b, \r).</p>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  The task exists, whatever its status.
+1  It could not be read.
+2  Unknown id, usage error or invalid input.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="task-wait">
+    <div class="cmd-h"><h2><span class="par">aits task</span> wait</h2></div>
+    <p class="sum">Wait until a task, or all or any of several, is done or failed.</p>
+<pre class="usage">Usage: <span class="k">aits task wait</span> [flags] ID [ID...]</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--any</code></td><td>With several ids, return once any of them is done or failed, not all.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--timeout</code> <span class="a">DURATION</span></td><td>Give up after DURATION, e.g. 90s or 9m, leaving the task as it is (default: wait until it ends).</td><td class="c-dflt">0s</td></tr>
+      </tbody>
+    </table>
+    <p>The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With neither AITS_HOME nor HOME set, every task command fails (invalid_input).</p>
+    <h3>Task fields (--json)</h3>
+<pre class="out-block">id           Created by &#34;task create&#34;.
+status       queued, running, done or failed.
+agent, cwd, prompt, timeout_ms, created_at
+env          Variable names passed from the worker&#39;s environment.
+after        For a follow-up: the task whose session it continues.
+session      Set by create --session: the session it continues.
+model        Set by create --model, or taken from the parent of a
+             follow-up: the model the agent runs with.
+label        Set by create --label, or taken from the parent of a
+             follow-up: groups tasks for list --label and work --label.
+write        Set by create --write: the agent runs in its vendor&#39;s
+             sandbox and may write without asking.
+run_dir, worktree
+             Set by create --run-dir and --worktree: each run works in
+             a directory of its own, run.dir. A follow-up runs in its
+             parent&#39;s run.dir and takes neither.
+report       Set by create --report, or taken from the parent of a
+             follow-up: the run asks the agent for an AITS-REPORT line
+             (run.report, run.report_error; see shell submit --help).
+allow_tools  Set by create --allow-tool: the tools the agent runs
+             without asking.
+lease        While running: token, pgid and, once the agent has started,
+             started_at and active_at: when the agent last printed
+             output (a stream event), marked at most every 5s. A time
+             that stops moving while the task runs is a stuck agent:
+             aits judges nothing, see task cancel.
+run          Once worked: the result fields of &#34;shell submit --help&#34;
+             plus started_at and finished_at. run.status is a shell
+             status, not_started (the agent was never started: it could
+             not be started after the claim, or the task is a follow-up
+             whose parent does not exist, failed or has no session when
+             done), worker_died (its worker exited first; set by the
+             next work or list), or cancelled (set only by task cancel,
+             on a task no worker had claimed). A not_started,
+             worker_died or cancelled run has no exit_code and no
+             duration_ms, which are unknown; only a worker_died run
+             whose agent started has started_at.</pre>
+    <p><b>Text output.</b> &#34;ID  STATUS  AGENT  CWD&#34; and, for a done task, the answer on stdout; the session id, the denied calls and why a task failed on stderr, with control characters shown as Go escapes (\x1b, \r).</p>
+    <p>wait looks at the queue every 250ms and reclaims as list does, so a task whose worker died ends failed (worker_died), and a follow-up whose parent does not exist, failed or has no session when done ends failed (not_started), instead of being waited for. It starts no worker: a task nobody works is waited for until <code>--timeout</code>. It never takes or creates a task&#39;s lock file. A running task whose lock file is missing is reported once, as list reports it, and waited for.</p>
+    <p>Pass a <code>--timeout</code> below the limit of whatever runs wait, such as an agent&#39;s shell tool, and call wait again while the task is still running.</p>
+    <p>Several tasks (up to 256 ids, each once): wait returns once all of them are done or failed, or with <code>--any</code> once one is, so a caller running several workers reacts to the first that ends without polling. With <code>--json</code> it prints {&#34;ended&#34;:[TASK...], &#34;pending&#34;:[ID...]}: ended holds every task that had ended by then, in the order they ended, pending the ids still queued or running. Without <code>--json</code>, each ended task as wait shows one, then &#34;ID  STATUS&#34; for each pending task. On a timeout or a stop it prints the same, with &#34;error&#34;:{code, message} added, and exits 1. Wait on the pending ids again for the rest. One id prints the task alone, as before, with or without <code>--any</code>.</p>
+    <p><b>Event log.</b> to follow the queue rather than wait on ids, read $AITS_HOME/task/events.jsonl (tail -F). Each transition appends one line, {at, id, event, status, run_status, label}, where event is created, claimed, started (the agent began), ended (done or failed, including a worker_died or not_started reclaim) or cancelled; run_status and label are there when the task has them. create rotates it at 4 MiB, keeping events.jsonl.1 to .3. It is a hint: the task files stay the record, a line that could not be written is dropped without failing the command, and removing the log breaks nothing.</p>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  The task, or all or any of the tasks, is done or failed: read each
+   status.
+1  The timeout elapsed, wait was stopped, or the queue could not be read.
+2  Unknown or repeated id, usage error or invalid input.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="task-work">
+    <div class="cmd-h"><h2><span class="par">aits task</span> work</h2></div>
+    <p class="sum">Claim the oldest claimable task, run it, record the result, exit.</p>
+<pre class="usage">Usage: <span class="k">aits task work</span> [flags]</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--agent</code> <span class="a">AGENT</span></td><td>Only claim tasks for AGENT.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--jobs</code> <span class="a">N</span></td><td>Run up to N tasks at once, claiming more as they end, until nothing is claimable.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--label</code> <span class="a">LABEL</span></td><td>Only claim tasks labelled LABEL (create <code>--label</code>).</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--max-running</code> <span class="a">N</span></td><td>Claim only while fewer than N tasks (of <code>--label</code>, if given) are running in the queue.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p>The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With neither AITS_HOME nor HOME set, every task command fails (invalid_input).</p>
+    <h3>Task fields (--json)</h3>
+<pre class="out-block">id           Created by &#34;task create&#34;.
+status       queued, running, done or failed.
+agent, cwd, prompt, timeout_ms, created_at
+env          Variable names passed from the worker&#39;s environment.
+after        For a follow-up: the task whose session it continues.
+session      Set by create --session: the session it continues.
+model        Set by create --model, or taken from the parent of a
+             follow-up: the model the agent runs with.
+label        Set by create --label, or taken from the parent of a
+             follow-up: groups tasks for list --label and work --label.
+write        Set by create --write: the agent runs in its vendor&#39;s
+             sandbox and may write without asking.
+run_dir, worktree
+             Set by create --run-dir and --worktree: each run works in
+             a directory of its own, run.dir. A follow-up runs in its
+             parent&#39;s run.dir and takes neither.
+report       Set by create --report, or taken from the parent of a
+             follow-up: the run asks the agent for an AITS-REPORT line
+             (run.report, run.report_error; see shell submit --help).
+allow_tools  Set by create --allow-tool: the tools the agent runs
+             without asking.
+lease        While running: token, pgid and, once the agent has started,
+             started_at and active_at: when the agent last printed
+             output (a stream event), marked at most every 5s. A time
+             that stops moving while the task runs is a stuck agent:
+             aits judges nothing, see task cancel.
+run          Once worked: the result fields of &#34;shell submit --help&#34;
+             plus started_at and finished_at. run.status is a shell
+             status, not_started (the agent was never started: it could
+             not be started after the claim, or the task is a follow-up
+             whose parent does not exist, failed or has no session when
+             done), worker_died (its worker exited first; set by the
+             next work or list), or cancelled (set only by task cancel,
+             on a task no worker had claimed). A not_started,
+             worker_died or cancelled run has no exit_code and no
+             duration_ms, which are unknown; only a worker_died run
+             whose agent started has started_at.</pre>
+    <p><b>Text output.</b> &#34;ID  STATUS  AGENT  CWD&#34; and, for a done task, the answer on stdout; the session id, the denied calls and why a task failed on stderr, with control characters shown as Go escapes (\x1b, \r).</p>
+    <p>With nothing claimable (no task queued, none for AGENT with <code>--agent</code> or labelled LABEL with <code>--label</code>, or only follow-ups whose parent is not done or cannot be read), work exits 0, printing {&#34;status&#34;:&#34;empty&#34;} with <code>--json</code> and nothing otherwise. A worker whose task was reclaimed records nothing and fails with &#34;task ID was reclaimed before its run was recorded&#34;. A task file that cannot be read is skipped and left as it is, with &#34;aits: skipped task ID that could not be read&#34; on stderr. Running tasks whose lock file is missing are reported as list does. The agent is stopped as shell submit stops it. If its process group cannot be recorded in the task, the agent is killed at once, so that it never runs unrecorded: the run is stopped, with the reason as its message, or work fails (internal) if the run cannot be recorded either; the next list or work then reclaims the task.</p>
+    <p><b>Parallel work (--jobs N).</b> up to N tasks run at once in this process, each claimed, run and recorded as above; as one ends the next is claimed, until nothing is claimable, and work exits once its runs have ended. With <code>--json</code> it prints one task per line as each ends ({&#34;status&#34;:&#34;empty&#34;} if it claimed none). A signal stops every running agent (status stopped) and claims nothing more. Without <code>--jobs</code>, work runs one task and exits.</p>
+    <p><code>--max-running</code> N caps agents across every worker of the queue: a claim is made only while fewer than N tasks are running (of <code>--label</code>, if given), counted under the queue&#39;s lock; at the cap, work claims nothing, as if the queue were empty. Use it when overlapping cron runs start work:</p>
+<pre class="out-block">*/5 * * * *  aits task work --jobs 2 --max-running 4 --json &gt;&gt; ~/aits-work.log</pre>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  The task, or with --jobs every task, is done, or nothing was claimable.
+1  A task failed, or work could not finish.
+2  Usage error or invalid input.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); stopped, internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="task-cancel">
+    <div class="cmd-h"><h2><span class="par">aits task</span> cancel</h2></div>
+    <p class="sum">Withdraw a queued task, or stop a running one through its worker.</p>
+<pre class="usage">Usage: <span class="k">aits task cancel</span> [flags] ID</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--timeout</code> <span class="a">DURATION</span></td><td>Wait at most DURATION for a running task&#39;s worker to stop it.</td><td class="c-dflt">30s</td></tr>
+      </tbody>
+    </table>
+    <p>The queue is $AITS_HOME/task (default ~/.local/share/aits/task). With neither AITS_HOME nor HOME set, every task command fails (invalid_input).</p>
+    <p>A queued task becomes failed with run status cancelled and finished_at, under the lock a worker&#39;s claim takes, so a cancel and a claim never both succeed. Its file is kept, as for any failed task. A queued follow-up of it is failed at once (run status not_started), and the session it would have continued is free for a new task. Tasks of dead workers are reclaimed first, as list does.</p>
+    <p>A running task is stopped by its own worker, which started its agent: cancel leaves a stop request (ID.stop in the queue), the worker notices it within 250ms and stops the agent as a signal stops it (TERM to its group, KILL 5s later), and records the task failed with run status stopped and the message &#34;stopped by task cancel&#34;; run.session_id stays, so the session can be continued with create <code>--session</code>. cancel waits for that, up to <code>--timeout</code>, then prints the task. On a timeout (exit 1) the request stays and the worker still acts on it. A running task whose worker is gone is reclaimed instead and printed failed (worker_died). A running task whose lock file is missing gets the request, and is reported as list reports it.</p>
+    <p>A done or failed task cannot be cancelled: invalid_input, naming its status, and the task is unchanged.</p>
+    <p><b>Output.</b> the task, as show prints it.</p>
+    <h3>Task fields (--json)</h3>
+<pre class="out-block">id           Created by &#34;task create&#34;.
+status       queued, running, done or failed.
+agent, cwd, prompt, timeout_ms, created_at
+env          Variable names passed from the worker&#39;s environment.
+after        For a follow-up: the task whose session it continues.
+session      Set by create --session: the session it continues.
+model        Set by create --model, or taken from the parent of a
+             follow-up: the model the agent runs with.
+label        Set by create --label, or taken from the parent of a
+             follow-up: groups tasks for list --label and work --label.
+write        Set by create --write: the agent runs in its vendor&#39;s
+             sandbox and may write without asking.
+run_dir, worktree
+             Set by create --run-dir and --worktree: each run works in
+             a directory of its own, run.dir. A follow-up runs in its
+             parent&#39;s run.dir and takes neither.
+report       Set by create --report, or taken from the parent of a
+             follow-up: the run asks the agent for an AITS-REPORT line
+             (run.report, run.report_error; see shell submit --help).
+allow_tools  Set by create --allow-tool: the tools the agent runs
+             without asking.
+lease        While running: token, pgid and, once the agent has started,
+             started_at and active_at: when the agent last printed
+             output (a stream event), marked at most every 5s. A time
+             that stops moving while the task runs is a stuck agent:
+             aits judges nothing, see task cancel.
+run          Once worked: the result fields of &#34;shell submit --help&#34;
+             plus started_at and finished_at. run.status is a shell
+             status, not_started (the agent was never started: it could
+             not be started after the claim, or the task is a follow-up
+             whose parent does not exist, failed or has no session when
+             done), worker_died (its worker exited first; set by the
+             next work or list), or cancelled (set only by task cancel,
+             on a task no worker had claimed). A not_started,
+             worker_died or cancelled run has no exit_code and no
+             duration_ms, which are unknown; only a worker_died run
+             whose agent started has started_at.</pre>
+    <p><b>Text output.</b> &#34;ID  STATUS  AGENT  CWD&#34; and, for a done task, the answer on stdout; the session id, the denied calls and why a task failed on stderr, with control characters shown as Go escapes (\x1b, \r).</p>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  Cancelled, or stopped: read its status.
+1  The timeout elapsed, cancel was stopped, or the queue could not be read
+   or written.
+2  Unknown id, a done or failed task, usage error or invalid input;
+   nothing was changed.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); timeout, stopped, internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="job">
+    <div class="cmd-h"><h2>aits job</h2></div>
+    <p class="sum">Run scheduled commands with a timeout, a lock, a run record and alerts.</p>
+<pre class="usage">Usage: <span class="k">aits job</span> COMMAND</pre>
+    <h3>Commands</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr><td><a href="#job-run">run</a></td><td>Run a scheduled command once: timeout, lock, log, run record, alerts.</td></tr>
+        <tr><td><a href="#job-list">list</a></td><td>List every job that has run: its last run, last success and failure.</td></tr>
+        <tr><td><a href="#job-apply">apply</a></td><td>Install the jobs FILE declares for this host into your crontab.</td></tr>
+        <tr><td><a href="#job-sched">sched</a></td><td>Run the jobs FILE declares for this host when they are due, until stopped.</td></tr>
+      </tbody>
+    </table>
+    <p>Run &#39;aits job COMMAND <code>--help</code>&#39; for details.</p>
+    <p><b>Errors.</b> unknown_command, unknown_flag (exit 2).</p>
+    <p>A job is any command aits job run runs once, with a timeout, a lock, a log and alerts. Its schedule is cron&#39;s, or job sched&#39;s: one aits process that runs the jobs of a file when they are due, under a LaunchAgent that job apply <code>--sched</code> installs (see &#34;aits job sched <code>--help</code>&#34;). A crontab that backs up notes nightly and checks prices every 5 minutes:</p>
+<pre class="out-block">MAILTO=&#34;&#34;
+30 23 * * *  aits job run notes-backup --timeout 10m --on-alert ~/bin/notify -- ~/bin/notes-backup.sh
+*/5 * * * *  aits job run prices --timeout 4m --on-alert ~/bin/notify -- ~/bin/check-prices</pre>
+    <p>cron does not expand ~ in the path of a program, only the shell does: give absolute paths in a launchd agent&#39;s ProgramArguments. A job does not get your shell&#39;s environment (see &#34;aits task <code>--help</code>&#34;). To keep the jobs in a file and install them on each machine, see &#34;aits job apply <code>--help</code>&#34;.</p>
+  </section>
+
+  <section class="cmd" id="job-run">
+    <div class="cmd-h"><h2><span class="par">aits job</span> run</h2></div>
+    <p class="sum">Run a scheduled command once: timeout, lock, log, run record, alerts.</p>
+<pre class="usage">Usage: <span class="k">aits job run</span> [flags] NAME -- COMMAND [ARG...]</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--env</code> <span class="a">NAME</span></td><td>Pass the variable NAME from this environment to COMMAND and to the alert program. Repeatable.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--on-alert</code> <span class="a">PROGRAM</span></td><td>Deliver alerts by running PROGRAM, an absolute path, with the alert as JSON on stdin.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--timeout</code> <span class="a">DURATION</span></td><td>Stop COMMAND after DURATION, e.g. 90s or 30m.</td><td class="c-dflt">30m0s</td></tr>
+      </tbody>
+    </table>
+    <p>Jobs live in $AITS_HOME/job (default ~/.local/share/aits/job): per job NAME.log (rotated), NAME.json (its state) and NAME.lock. With neither AITS_HOME nor HOME set, every job command fails (invalid_input).</p>
+    <p>NAME is letters, digits, &#39;.&#39;, &#39;_&#39; and &#39;-&#39;, starting with a letter or digit, at most 100 bytes. COMMAND is found on PATH and run in aits&#39;s working directory, in its own process group, with stdin /dev/null and the explicit environment shell submit gives an agent (PATH, HOME, USER, LOGNAME, LANG, LC_*, TZ, TMPDIR and the proxy variables) plus each <code>--env</code> NAME. aits does not look at what COMMAND is: a job that runs an agent calls shell submit itself.</p>
+    <p><b>Log.</b> COMMAND&#39;s stdout and stderr are appended to NAME.log between a start line and an end line (time, status, exit code, duration). The log rotates before a run once it reaches 5 MiB; NAME.log.1 to NAME.log.3 are kept.</p>
+    <p><b>Overlap.</b> while a run of NAME holds NAME.lock, another run of NAME does not start COMMAND: it is skipped, with one line in the log, and exits 0.</p>
+    <p><b>Stopping.</b> on a timeout or a signal (SIGTERM, SIGINT, SIGHUP), aits sends TERM to the group and KILL 5s later, or at once on a second signal. Once COMMAND exits, whatever it left running in its group is killed.</p>
+    <p><b>Alerts.</b> aits decides, from NAME.json, whether a run is worth telling; the <code>--on-alert</code> program, if given, delivers it. A failure is any status but ok, skipped and stopped (a stop comes from outside, such as launchctl or a shutdown, and is not the job&#39;s failure).</p>
+<pre class="out-block">failure     The first failure, or one that differs from the last alerted
+            one: another status or exit code, or other output (numbers
+            and long hex strings aside).
+repeat      The same failure, 15m, 30m, 1h, 2h and 4h after the previous
+            alert, then every 6h.
+suppressed  The same failure within that time: nothing is delivered.
+recovery    The first ok run after a failure; the failure is cleared.
+none        Nothing to tell.</pre>
+    <p>The program gets one JSON object on stdin:</p>
+<pre class="out-block">{name, kind, status, exit_code, message, finished_at, failing_since,
+ failures, unalerted, output_tail, log}</pre>
+    <p>where failures counts the failed runs since failing_since, unalerted the failed runs since the previous alert that were not delivered, output_tail is the last 4 KiB of the run&#39;s output, and log is NAME.log. It runs with the same environment as COMMAND, for 30s at most, its output in the log. A program that fails is reported in alert_error and the log; the run&#39;s status and exit code stay COMMAND&#39;s.</p>
+    <p><b>Output.</b> with <code>--json</code>, one run record:</p>
+<pre class="out-block">name, status, started_at, finished_at, duration_ms, alert
+exit_code    Once COMMAND ran; -1 if a signal ended it.
+message      Every status but ok: one line explaining it.
+alert_error  When the --on-alert program failed.</pre>
+    <p>Without <code>--json</code>, &#34;NAME  STATUS  ALERT&#34; on stdout, and the message and the alert error on stderr.</p>
+    <h3>Statuses</h3>
+<pre class="out-block">ok            COMMAND exited 0.
+failed        COMMAND exited non-zero or was killed by a signal.
+timeout       --timeout elapsed; COMMAND was stopped.
+stopped       aits got a signal; COMMAND was stopped.
+start_failed  COMMAND could not be started, or an --env variable is not
+              set. It alerts like any failure.
+skipped       The previous run still holds the lock; nothing was run.</pre>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  The status is ok or skipped.
+1  Any other status, or the job&#39;s files could not be written.
+2  Usage error or invalid input; nothing was run.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="job-list">
+    <div class="cmd-h"><h2><span class="par">aits job</span> list</h2></div>
+    <p class="sum">List every job that has run: its last run, last success and failure.</p>
+<pre class="usage">Usage: <span class="k">aits job list</span> [flags]</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p>Jobs live in $AITS_HOME/job (default ~/.local/share/aits/job): per job NAME.log (rotated), NAME.json (its state) and NAME.lock. With neither AITS_HOME nor HOME set, every job command fails (invalid_input).</p>
+    <p><b>Output.</b> one line per job, by name, &#34;NAME  STATUS  FINISHED_AT  LAST_OK_AT  FAILING_SINCE&#34; (empty columns as -), then one line per jobs file a job sched has run, &#34;sched  FILE  CHECKED_AT&#34;; with <code>--json</code> {&#34;jobs&#34;:[{name, last, last_ok_at, failing}], &#34;sched&#34;:[{file, checked_at, next, error}], &#34;skipped&#34;:[NAME]}:</p>
+<pre class="out-block">last        The last run that was not skipped: job run&#39;s record.
+last_ok_at  When the job last ran ok.
+failing     While it fails: since, failures, signature, alerts,
+            last_alert_at and unalerted, as job run --help describes.
+checked_at  The minute job sched last checked FILE: a stale time means
+            no sched is running for it.
+next        [{name, at}]: when each of FILE&#39;s jobs for this host is due
+            next, as of checked_at; without at, never.
+error       Why sched could not reread FILE; it still runs the jobs it
+            read last.</pre>
+    <p>A NAME.json that cannot be read is skipped and named in &#34;skipped&#34; or, without <code>--json</code>, on stderr. A morning check:</p>
+<pre class="out-block">aits job list --json | jq -r &#39;.jobs[] | select(.failing) | &#34;\(.name) \(.failing.since)&#34;&#39;</pre>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  Listed.
+1  The job directory could not be read.
+2  Usage error or invalid input.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="job-apply">
+    <div class="cmd-h"><h2><span class="par">aits job</span> apply</h2></div>
+    <p class="sum">Install the jobs FILE declares for this host into your crontab.</p>
+<pre class="usage">Usage: <span class="k">aits job apply</span> [flags] FILE</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--dry-run</code></td><td>Report what would change, and change nothing.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+        <tr><td><code>--sched</code></td><td>Run the jobs from a LaunchAgent&#39;s job sched, not cron (macOS).</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p>FILE is JSON, for example:</p>
+<pre class="out-block">{&#34;path&#34;: &#34;~/.local/bin:/opt/homebrew/bin:/usr/bin:/bin&#34;,
+ &#34;jobs&#34;: [{&#34;name&#34;: &#34;notes-backup&#34;, &#34;schedule&#34;: &#34;30 23 * * *&#34;,
+           &#34;timeout&#34;: &#34;10m&#34;, &#34;on_alert&#34;: &#34;~/bin/notify&#34;, &#34;env&#34;: [&#34;NAME&#34;],
+           &#34;hosts&#34;: [&#34;mbp&#34;], &#34;command&#34;: [&#34;~/bin/notes-backup.sh&#34;]}]}</pre>
+<pre class="out-block">name      Required: the job&#39;s NAME, as job run takes it.
+schedule  Required: 5 cron fields (minute hour day month weekday).
+command   Required: the program, an absolute path or ~/, and its
+          arguments.
+timeout, env, on_alert
+          job run&#39;s --timeout, --env (each) and --on-alert; on_alert is
+          an absolute path or ~/.
+hosts     The short host names (the host name up to its first dot) to
+          install the job on; without it, every host.
+path      The PATH every job starts with; each entry absolute or ~/.</pre>
+    <p>~/ is $HOME. A key FILE does not know is an error.</p>
+    <p>Each job for this host becomes one line that runs this aits binary&#39;s job run, with every argument quoted for sh. The lines go in a block of your crontab between &#34;# BEGIN aits job apply FILE&#34; and &#34;# END aits job apply FILE&#34; (FILE as an absolute path); the block is replaced as a whole, and every line outside it is kept as it is. A job no longer in FILE, or no longer for this host, is removed; with no job for this host the block is removed. Edit FILE, not the block: apply refuses a block with a line it did not write. A host&#39;s paths are checked only on that host. After installing, apply reads the crontab back to check it.</p>
+    <p><code>--dry-run</code> checks FILE and the crontab and reports what would change, and changes nothing.</p>
+    <p><code>--sched</code> (macOS): run FILE&#39;s jobs from job sched instead of cron, under the claude.ai login and connectors a terminal has: cron cannot read the login keychain, a LaunchAgent can. apply writes ~/Library/LaunchAgents/aits.sched.ID.plist (ID from FILE&#39;s path), which runs this aits binary&#39;s &#34;job sched FILE <code>--json</code>&#34;, at login and again when it exits, with AITS_HOME when set and its output in the job directory&#39;s sched-ID.log; loads it with launchctl bootstrap gui/UID, after a bootout when it changed; then removes FILE&#39;s crontab block, so its jobs show as removed. Edits to FILE need no apply: sched rereads it. apply without <code>--sched</code> reverses this: it installs the block, then boots the agent out and deletes its plist. apply refuses a plist at that path it did not write. A LaunchAgent runs only while you are logged in; after upgrading aits, restart it with launchctl kickstart -k gui/$(id -u)/LABEL.</p>
+    <p><b>Output.</b> one line per job, &#34;NAME  added|changed|removed|unchanged&#34;, then &#34;LABEL  added|changed|removed|unchanged&#34; for the agent; with <code>--json</code> {&#34;host&#34;, &#34;added&#34;, &#34;changed&#34;, &#34;removed&#34;, &#34;unchanged&#34;, &#34;sched&#34;}: job names, and, on macOS once <code>--sched</code> was used for FILE, sched {label, plist, change}.</p>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  Installed, nothing to change, or --dry-run.
+1  crontab or launchctl is not on PATH or failed; the host name could not
+   be read.
+2  Usage error or invalid input: FILE, the crontab&#39;s block, a plist apply
+   did not write, or --sched off macOS; nothing was changed.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="job-sched">
+    <div class="cmd-h"><h2><span class="par">aits job</span> sched</h2></div>
+    <p class="sum">Run the jobs FILE declares for this host when they are due, until stopped.</p>
+<pre class="usage">Usage: <span class="k">aits job sched</span> [flags] FILE</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p>Jobs live in $AITS_HOME/job (default ~/.local/share/aits/job): per job NAME.log (rotated), NAME.json (its state) and NAME.lock. With neither AITS_HOME nor HOME set, every job command fails (invalid_input).</p>
+    <p>FILE is job apply&#39;s (see &#34;aits job apply <code>--help</code>&#34;). sched runs in the foreground until a signal, and is meant to be started and restarted by a supervisor: job apply <code>--sched</code> installs a LaunchAgent for it on macOS, where a job then has the login keychain, and so claude&#39;s claude.ai login and connectors, which cron does not.</p>
+    <p>Each minute sched rereads FILE and runs each job due since it last checked, as job run does: its own process group, timeout, lock, log, run record and alerts, with FILE&#39;s path as PATH and its env passed. A job is due when its schedule matches a minute, in local time; cron&#39;s day rule holds (with both day of month and day of week restricted, either matches). A job due more than once since the last check, such as while the Mac slept or sched was not running, runs once. A job whose previous run still holds its lock is skipped. A FILE that cannot be reread is reported on stderr and in job list; the jobs read last keep running. Only one sched runs per FILE.</p>
+    <p>On a signal (SIGTERM, SIGINT, SIGHUP) the running jobs are stopped as job run stops them (status stopped), and sched exits 0 once they have.</p>
+    <p><b>Output.</b> one line per run as it ends, job run&#39;s: &#34;NAME  STATUS  ALERT&#34;, or its record with <code>--json</code>. Each minute sched writes a heartbeat that job list shows: when it last checked FILE and when each job is due next.</p>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  Stopped by a signal.
+1  Another sched holds FILE, or the job directory could not be written.
+2  Usage error or invalid input: FILE; nothing was run.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); internal (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="version">
+    <div class="cmd-h"><h2>aits version</h2></div>
+    <p class="sum">Print the version of this aits binary.</p>
+<pre class="usage">Usage: <span class="k">aits version</span> [flags]</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <h3>Output</h3>
+<pre class="out-block">The main module version Go recorded when the binary was built: a release
+tag, or a pseudo-version ending in the commit, e.g.
+v0.0.0-20261015142825-3556be1bc9f6, with +dirty when the checkout had
+uncommitted changes or untracked files.
+With --json: {&#34;version&#34;:&#34;…&#34;}. &#34;go build&#34; in a git checkout and
+&#34;go install …@VERSION&#34; record it; -buildvcs=false or a copy without .git
+does not.</pre>
+    <h3>Exit codes</h3>
+<pre class="out-block">0  Printed.
+1  The binary records no version.
+2  Usage error or invalid input.</pre>
+    <p><b>Errors.</b> unknown_flag, invalid_input (exit 2); unknown_version (exit 1).</p>
+  </section>
+
+  <section class="cmd" id="help">
+    <div class="cmd-h"><h2>aits help</h2></div>
+    <p class="sum">Show help for aits or one of its commands.</p>
+<pre class="usage">Usage: <span class="k">aits help</span> [flags] [COMMAND...]</pre>
+    <h3>Flags</h3>
+    <table class="tbl">
+      <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th><th scope="col" class="c-dflt">Default</th></tr></thead>
+      <tbody>
+        <tr><td><code>--json</code></td><td>Print the result, or the error, as JSON on stdout.</td><td class="c-dflt"></td></tr>
+      </tbody>
+    </table>
+    <p><b>Errors.</b> unknown_command, unknown_flag (exit 2).</p>
+  </section>
+  </div>
+</div>
+</main>
+
+<p class="totop wrap"><a href="#top">Back to top <span aria-hidden="true">&#8593;</span></a></p>
+<footer>
+  <div class="wrap">
+    <div class="f1">
+      <a class="logo f-logo" href="index.html" aria-label="aits home"><span class="wm">aits</span><span class="cur" aria-hidden="true"></span></a>
+      <div class="f-inst"><code><span class="p">$ </span>go install <span class="nb">github.com/</span><wbr><span class="nb">agent-in-the-shell/</span><wbr><span class="nb">aits/cmd/</span><wbr><span class="nb">aits@latest</span></code><button class="copy" type="button" data-copy="go install github.com/agent-in-the-shell/aits/cmd/aits@latest" aria-label="Copy install command">Copy</button></div>
+      <span class="f-meta">pre-release &#183; MIT</span>
+    </div>
+    <nav class="f2" aria-label="Footer">
+      <a href="index.html">Home</a>
+      <a href="cli.html">CLI reference</a>
+      <a href="principles.html">Principles</a>
+      <a href="https://github.com/agent-in-the-shell/aits/blob/main/CONTRIBUTING.md">Contributing</a>
+      <a href="https://github.com/agent-in-the-shell/aits">GitHub</a>
+      <a href="https://github.com/agent-in-the-shell/aits/blob/main/LICENSE">License</a>
+    </nav>
+  </div>
+</footer>
+<script src="site.js"></script>
+<script src="base.js"></script>
+</body>
+</html>
